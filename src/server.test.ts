@@ -133,6 +133,77 @@ Deno.test({
   });
 });
 
+Deno.test({
+  name:
+    "Server: returns empty JSON object when Accept: application/json but no content defined",
+  ...serverTestOpts,
+}, async () => {
+  await withServer({}, async (_server, baseUrl) => {
+    const response = await fetch(`${baseUrl}/void-response`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ data: "test" }),
+    });
+    assertEquals(response.status, 200);
+
+    // When client accepts JSON but spec has no content, return empty object
+    const contentType = response.headers.get("Content-Type");
+    assertEquals(contentType, "application/json");
+
+    const body = await response.json();
+    assertEquals(body, {});
+  });
+});
+
+Deno.test({
+  name:
+    "Server: no Content-Type when client doesn't accept JSON and no content defined",
+  ...serverTestOpts,
+}, async () => {
+  await withServer({}, async (_server, baseUrl) => {
+    const response = await fetch(`${baseUrl}/void-response`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "text/plain", // Explicitly doesn't accept JSON
+      },
+      body: JSON.stringify({ data: "test" }),
+    });
+    assertEquals(response.status, 200);
+
+    // When client doesn't accept JSON and no content defined, no Content-Type
+    const contentType = response.headers.get("Content-Type");
+    assertEquals(contentType, null);
+
+    const body = await response.text();
+    assertEquals(body, "");
+  });
+});
+
+Deno.test({
+  name: "Server: readOnly properties should not be required in request body",
+  ...serverTestOpts,
+}, async () => {
+  await withServer({}, async (_server, baseUrl) => {
+    // Send request with only 'name' - 'id' is readOnly so shouldn't be required
+    const response = await fetch(`${baseUrl}/read-only-props`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ name: "test" }),
+    });
+
+    // Should succeed - readOnly 'id' property should not be required in request
+    assertEquals(response.status, 200);
+    await response.body?.cancel();
+  });
+});
+
 // =============================================================================
 // X-Steady-Mode Header
 // =============================================================================
