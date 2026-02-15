@@ -111,16 +111,10 @@ export interface ShutdownEvent extends LogEvent {
 export type LogLevel = "summary" | "details" | "full";
 
 /**
- * Output format
- */
-export type LogFormat = "text" | "json" | "ci";
-
-/**
  * Logger configuration options
  */
 export interface LoggerOptions {
   level: LogLevel;
-  format: LogFormat;
   color: boolean;
   logBodies: boolean;
 }

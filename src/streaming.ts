@@ -18,7 +18,6 @@
 import type { SchemaRegistry } from "@steady/json-schema";
 import { RegistryResponseGenerator } from "@steady/json-schema";
 import type { GenerateOptions } from "@steady/json-schema";
-import { warn } from "./logging/mod.ts";
 
 /** Streaming content types that trigger streaming behavior */
 export const STREAMING_CONTENT_TYPES = [
@@ -171,7 +170,8 @@ export function parseNDJSONExample(example: unknown): unknown[] {
 }
 
 /**
- * Creates a streaming response body as a ReadableStream
+ * Creates a streaming response body as a ReadableStream.
+ * Returns the stream and any warnings that should be logged by the caller.
  */
 export function createStreamingResponse(
   registry: SchemaRegistry,
@@ -179,34 +179,42 @@ export function createStreamingResponse(
   schemaPointer: string,
   format: "ndjson" | "sse",
   options: StreamingOptions = {},
-): ReadableStream<Uint8Array> {
+): { stream: ReadableStream<Uint8Array>; warnings: string[] } {
+  const warnings: string[] = [];
+
   // For SSE with event sequence examples, use the example-based streaming
   if (
     format === "sse" && options.example && isSSEEventSequence(options.example)
   ) {
-    return createSSEFromExample(options.example, options);
+    return { stream: createSSEFromExample(options.example, options), warnings };
   }
 
   // For NDJSON with examples (array of objects or multiline string), use example-based streaming
   if (format === "ndjson" && options.example) {
     if (isNDJSONExample(options.example)) {
-      return createNDJSONFromExample(options.example, options);
+      return {
+        stream: createNDJSONFromExample(options.example, options),
+        warnings,
+      };
     }
     // Example provided but not valid NDJSON format - warn and fall back to schema
-    warn(
+    warnings.push(
       `NDJSON example provided but not valid. ` +
         `Expected array of objects or multiline JSON string. Falling back to schema generation.`,
     );
   }
 
   // Otherwise, generate from schema
-  return createStreamFromSchema(
-    registry,
-    schema,
-    schemaPointer,
-    format,
-    options,
-  );
+  return {
+    stream: createStreamFromSchema(
+      registry,
+      schema,
+      schemaPointer,
+      format,
+      options,
+    ),
+    warnings,
+  };
 }
 
 /**

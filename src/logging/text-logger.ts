@@ -94,13 +94,11 @@ export class TextLogger extends BaseLogger {
       }
     }
 
-    // Response details
-    if (this.showFull() || this.shouldShowBodies()) {
-      console.log("  Response:");
-      this.logHeaders(event.response.headers, "    ");
-      if (event.response.body !== undefined) {
-        console.log(`    Body: ${this.formatBody(event.response.body)}`);
-      }
+    // Response details (headers always at details+, body gated on shouldShowBodies)
+    console.log("  Response:");
+    this.logHeaders(event.response.headers, "    ");
+    if (event.response.body !== undefined && this.shouldShowBodies()) {
+      console.log(`    Body: ${this.formatBody(event.response.body)}`);
     }
 
     console.log();
@@ -425,18 +423,28 @@ export class TextLogger extends BaseLogger {
   }
 
   warning(message: string, context?: Record<string, unknown>): void {
+    const ts = colorize(
+      `[${new Date().toLocaleTimeString()}]`,
+      colors.dim,
+      this.useColor,
+    );
     const prefix = colorize("[Steady] Warning:", colors.yellow, this.useColor);
-    console.warn(`${prefix} ${message}`);
+    console.log(`${ts} ${prefix} ${message}`);
     if (context && this.showFull()) {
-      console.warn(`  Context: ${JSON.stringify(context)}`);
+      console.log(`  Context: ${JSON.stringify(context)}`);
     }
   }
 
   error(message: string, context?: Record<string, unknown>): void {
+    const ts = colorize(
+      `[${new Date().toLocaleTimeString()}]`,
+      colors.dim,
+      this.useColor,
+    );
     const prefix = colorize("[Steady] Error:", colors.red, this.useColor);
-    console.error(`${prefix} ${message}`);
+    console.log(`${ts} ${prefix} ${message}`);
     if (context && this.showFull()) {
-      console.error(`  Context: ${JSON.stringify(context)}`);
+      console.log(`  Context: ${JSON.stringify(context)}`);
     }
   }
 }

@@ -2,7 +2,7 @@
  * CILogger - GitHub Actions annotation output.
  *
  * Minimal per-request output (only requests with diagnostics).
- * Uses ::error:: and ::warning:: annotations for GitHub Actions.
+ * Uses ::error::, ::warning::, and ::notice:: annotations for GitHub Actions.
  * All lines prefixed with STEADY: for easy filtering.
  * Summary-first shutdown with pass/fail verdict.
  */
@@ -33,7 +33,11 @@ export class CILogger extends BaseLogger {
     );
 
     for (const d of event.diagnostics) {
-      const level = d.severity === "error" ? "error" : "warning";
+      const level = d.severity === "error"
+        ? "error"
+        : d.severity === "info"
+        ? "notice"
+        : "warning";
       // GitHub Actions annotation format
       console.log(
         `::${level}::STEADY ${d.code} [${d.category}] ${d.requestPath}: ${d.message}`,
@@ -55,7 +59,11 @@ export class CILogger extends BaseLogger {
         `STEADY: ${event.diagnostics.length} spec diagnostics at startup`,
       );
       for (const d of event.diagnostics) {
-        const level = d.severity === "error" ? "error" : "warning";
+        const level = d.severity === "error"
+          ? "error"
+          : d.severity === "info"
+          ? "notice"
+          : "warning";
         console.log(`::${level}::STEADY ${d.code}: ${d.message}`);
       }
     }
@@ -80,6 +88,17 @@ export class CILogger extends BaseLogger {
       );
     }
 
+    if (
+      event.generationWarnings && event.generationWarnings.length > 0
+    ) {
+      const unique = [...new Set(event.generationWarnings)];
+      console.log(
+        `STEADY: ${unique.length} endpoint${
+          unique.length === 1 ? "" : "s"
+        } returned minimal responses`,
+      );
+    }
+
     if (topIssues.length > 0) {
       console.log(`STEADY: Top issues:`);
       for (const issue of topIssues) {
@@ -91,11 +110,13 @@ export class CILogger extends BaseLogger {
     }
   }
 
-  warning(message: string, _context?: Record<string, unknown>): void {
-    console.log(`::warning::STEADY: ${message}`);
+  warning(message: string, context?: Record<string, unknown>): void {
+    const ctx = context ? ` (${JSON.stringify(context)})` : "";
+    console.log(`::warning::STEADY: ${message}${ctx}`);
   }
 
-  error(message: string, _context?: Record<string, unknown>): void {
-    console.log(`::error::STEADY: ${message}`);
+  error(message: string, context?: Record<string, unknown>): void {
+    const ctx = context ? ` (${JSON.stringify(context)})` : "";
+    console.log(`::error::STEADY: ${message}${ctx}`);
   }
 }

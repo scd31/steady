@@ -672,7 +672,14 @@ export class MockServer {
         timing,
         diagnostics: [],
       });
-      console.error(error);
+      this.logger.error(
+        `Internal server error: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error instanceof Error && error.stack
+          ? { stack: error.stack }
+          : undefined,
+      );
 
       const serverError = new Response(
         JSON.stringify({ error: "Internal server error" }),
@@ -702,6 +709,7 @@ export class MockServer {
     responseBody?: unknown;
     responseWarning?: string;
   }): void {
+    if (this.config.quiet) return;
     const url = new URL(args.req.url);
 
     const event: RequestEvent = {
@@ -1160,8 +1168,12 @@ export class MockServer {
         const errorMessage = error instanceof Error
           ? error.message
           : "Unknown serialization error";
-        console.error(
-          `[Steady] Failed to serialize response body: ${errorMessage}`,
+        this.logger.warning(
+          `Failed to serialize response body: ${errorMessage}`,
+          {
+            hint:
+              "Response contains non-serializable values (circular references, BigInt, etc.)",
+          },
         );
         bodyString = JSON.stringify(
           {
@@ -1213,13 +1225,16 @@ export class MockServer {
       this.escapePointer(contentType)
     }/schema`;
 
-    const stream = createStreamingResponse(
+    const { stream, warnings } = createStreamingResponse(
       this.document.schemas,
       schema,
       schemaPointer,
       format,
       streamingOptions,
     );
+    for (const w of warnings) {
+      this.logger.warning(w);
+    }
 
     const headers = new Headers({
       "Content-Type": contentType,

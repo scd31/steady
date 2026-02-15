@@ -32,12 +32,3 @@ export {
   formatStatus,
   statusColor,
 } from "./colors.ts";
-
-/**
- * Log a warning message with [Steady] prefix
- */
-export function warn(message: string): void {
-  const YELLOW = "\x1b[33m";
-  const RESET = "\x1b[0m";
-  console.warn(`${YELLOW}[Steady] Warning: ${message}${RESET}`);
-}

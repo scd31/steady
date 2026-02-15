@@ -37,9 +37,9 @@ test_signal() {
   echo "Testing $mode with $signal on port $port..."
 
   if [ "$mode" = "deno" ]; then
-    deno run --allow-read --allow-net --allow-env cmd/steady.ts --no-log --port "$port" "$SPEC_FILE" >/dev/null 2>&1 &
+    deno run --allow-read --allow-net --allow-env cmd/steady.ts --quiet --port "$port" "$SPEC_FILE" >/dev/null 2>&1 &
   elif [ "$mode" = "npm" ]; then
-    node npm/cli/steady.js --no-log --port "$port" "$SPEC_FILE" >/dev/null 2>&1 &
+    node npm/cli/steady.js --quiet --port "$port" "$SPEC_FILE" >/dev/null 2>&1 &
   fi
   SERVER_PID=$!
 

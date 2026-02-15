@@ -199,11 +199,10 @@ export interface ServerConfig {
   port: number;
   host: string;
   rejectOnSdkError?: boolean;
-  verbose: boolean;
+  quiet?: boolean;
   logLevel: LogLevel;
   logFormat?: "text" | "json" | "ci";
   logBodies?: boolean;
-  showValidation?: boolean;
   color?: boolean;
   validator?: ValidatorConfig;
   generator?: GeneratorConfig;

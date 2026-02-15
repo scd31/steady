@@ -47,7 +47,7 @@ export class JsonLogger extends BaseLogger {
         code: d.code,
         severity: d.severity,
         category: d.category,
-        path: d.requestPath,
+        requestPath: d.requestPath,
         specPointer: d.specPointer,
         message: d.message,
         expected: d.expected,
@@ -74,7 +74,8 @@ export class JsonLogger extends BaseLogger {
         severity: d.severity,
         code: d.code,
         category: d.category,
-        pointer: d.specPointer,
+        requestPath: d.requestPath,
+        specPointer: d.specPointer,
         message: d.message,
         attribution: {
           confidence: d.attribution.confidence,
@@ -115,12 +116,19 @@ export class JsonLogger extends BaseLogger {
       output.coverage = event.coverage;
     }
 
+    if (
+      event.generationWarnings && event.generationWarnings.length > 0
+    ) {
+      output.generationWarnings = event.generationWarnings;
+    }
+
     console.log(JSON.stringify(output));
   }
 
   warning(message: string, context?: Record<string, unknown>): void {
     console.log(JSON.stringify({
       type: "warning",
+      id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       message,
       context,
@@ -130,6 +138,7 @@ export class JsonLogger extends BaseLogger {
   error(message: string, context?: Record<string, unknown>): void {
     console.log(JSON.stringify({
       type: "error",
+      id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       message,
       context,

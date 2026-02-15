@@ -74,7 +74,7 @@ export async function main() {
       "version",
       "auto-reload",
       "log-bodies",
-      "log",
+      "quiet",
       "reject-on-sdk-error",
       "validator-strict-oneof",
       "no-color",
@@ -101,15 +101,14 @@ export async function main() {
       h: "help",
       r: "auto-reload",
       p: "port",
+      q: "quiet",
       v: "log-level",
       verbose: "log-level",
     },
     default: {
       "log-level": "summary",
       "log-format": "text",
-      "log": true,
     },
-    negatable: ["log"],
   });
 
   // Resolve color: --no-color flag or NO_COLOR env force off, otherwise TTY detection
@@ -117,7 +116,7 @@ export async function main() {
     ? false
     : Deno.env.get("NO_COLOR") !== undefined
     ? false
-    : Deno.stderr.isTerminal();
+    : Deno.stdout.isTerminal();
 
   /** Format a CLI error prefix. */
   function cliError(msg: string): string {
@@ -285,7 +284,7 @@ export async function main() {
     logLevel,
     logFormat,
     logBodies: args["log-bodies"],
-    log: args.log,
+    quiet: args.quiet,
     rejectOnSdkError,
     portOverride,
     host: args.host,
@@ -357,7 +356,7 @@ async function startServer(
     logLevel: LogLevel;
     logFormat: LogFormat;
     logBodies: boolean;
-    log: boolean;
+    quiet: boolean;
     rejectOnSdkError: boolean;
     portOverride?: number;
     host?: string;
@@ -419,11 +418,10 @@ async function startServer(
     port,
     host: options.host || "localhost",
     rejectOnSdkError: options.rejectOnSdkError,
-    verbose: options.log,
-    logLevel: options.log ? options.logLevel : "summary",
+    quiet: options.quiet,
+    logLevel: options.logLevel,
     logFormat: options.logFormat,
     logBodies: options.logBodies,
-    showValidation: true,
     color: options.color,
     validator: options.validator,
     generator: options.generator,
@@ -448,7 +446,7 @@ async function startWithWatch(
     logLevel: LogLevel;
     logFormat: LogFormat;
     logBodies: boolean;
-    log: boolean;
+    quiet: boolean;
     rejectOnSdkError: boolean;
     portOverride?: number;
     host?: string;
@@ -646,7 +644,7 @@ Options:
   --log-level <level>      Set logging detail: summary|details|full (default: summary)
   --log-format <format>    Output format: text|json|ci (default: text, auto-detects CI)
   --log-bodies             Show request/response bodies in summary mode
-  --no-log                 Disable request logging
+  -q, --quiet              Suppress per-request logging (startup/shutdown still print)
   --reject-on-sdk-error    Return 400 for SDK issues (E3xxx) instead of mock response
   --fail-on-ambiguous      Exit 1 if any ambiguous diagnostics found (CI mode)
   --fail-on-warnings       Exit 1 if any warning-level diagnostics found (CI mode)

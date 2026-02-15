@@ -276,6 +276,85 @@ Deno.test("TextLogger: full mode shows reasoning chain", () => {
   }
 });
 
+Deno.test("TextLogger: details mode shows response headers but not body", () => {
+  const logs: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    logs.push(args.map(String).join(" "));
+  };
+
+  try {
+    const logger = new TextLogger({
+      level: "details",
+      color: false,
+    });
+
+    const event = createMockRequestEvent({
+      response: {
+        status: 200,
+        statusText: "OK",
+        timing: 10,
+        headers: new Headers({ "content-type": "application/json" }),
+        body: { responseField: "data" },
+      },
+    });
+    logger.request(event);
+
+    const output = logs.join("\n");
+    assertEquals(
+      output.includes("Response:"),
+      true,
+      "Details mode should show Response section",
+    );
+    assertEquals(
+      output.includes("content-type"),
+      true,
+      "Details mode should show response headers",
+    );
+    assertEquals(
+      output.includes("responseField"),
+      false,
+      "Details mode should NOT show response body without logBodies",
+    );
+  } finally {
+    console.log = originalLog;
+  }
+});
+
+Deno.test("TextLogger: warning and error go to console.log with timestamp prefix", () => {
+  const logs: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    logs.push(args.map(String).join(" "));
+  };
+
+  try {
+    const logger = new TextLogger({ color: false });
+
+    logger.warning("test warning");
+    logger.error("test error");
+
+    assertEquals(logs.length, 2);
+    // Timestamp format: [HH:MM:SS] or [H:MM:SS AM/PM] depending on locale
+    // All locales produce digits and colons inside the brackets
+    const tsPattern = /^\[\d{1,2}:\d{2}:\d{2}/;
+    assertEquals(
+      tsPattern.test(logs[0]!),
+      true,
+      `Warning should start with timestamp, got: ${logs[0]}`,
+    );
+    assertEquals(logs[0]?.includes("[Steady] Warning: test warning"), true);
+    assertEquals(
+      tsPattern.test(logs[1]!),
+      true,
+      `Error should start with timestamp, got: ${logs[1]}`,
+    );
+    assertEquals(logs[1]?.includes("[Steady] Error: test error"), true);
+  } finally {
+    console.log = originalLog;
+  }
+});
+
 Deno.test("TextLogger: bodies shown in full mode regardless of logBodies", () => {
   const logs: string[] = [];
   const originalLog = console.log;

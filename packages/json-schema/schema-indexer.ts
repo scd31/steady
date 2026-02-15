@@ -377,11 +377,7 @@ export class SchemaIndexer {
       return currentDepth;
     }
 
-    // Check depth limit and warn if hit
     if (currentDepth > 100) {
-      console.warn(
-        `Schema depth limit (100) reached - calculation may be incomplete`,
-      );
       return currentDepth;
     }
 

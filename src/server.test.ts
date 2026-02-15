@@ -30,7 +30,6 @@ async function withServer(
     port,
     host: "localhost",
     rejectOnSdkError: opts.rejectOnSdkError,
-    verbose: false,
     logLevel: "summary",
   });
 
@@ -627,7 +626,6 @@ async function withArrayServer(
   const server = new MockServer(spec, {
     port,
     host: "localhost",
-    verbose: false,
     logLevel: "summary",
     generator: opts.generator,
   });
@@ -818,7 +816,6 @@ async function withQueryPathServer(
   const server = new MockServer(spec, {
     port,
     host: "localhost",
-    verbose: false,
     logLevel: "summary",
   });
 
@@ -900,7 +897,6 @@ async function withSamePatternServer(
   const server = new MockServer(spec, {
     port,
     host: "localhost",
-    verbose: false,
     logLevel: "summary",
   });
 
@@ -964,7 +960,6 @@ async function withCursedQmarkServer(
   const server = new MockServer(spec, {
     port,
     host: "localhost",
-    verbose: false,
     logLevel: "summary",
   });
 
@@ -1071,7 +1066,6 @@ async function withCursedClientServer(
   const server = new MockServer(spec, {
     port,
     host: "localhost",
-    verbose: false,
     logLevel: "summary",
   });
 
@@ -1157,4 +1151,45 @@ Deno.test({
       "Triple-? URL must NOT match beta route",
     );
   });
+});
+
+// =============================================================================
+// Quiet Mode
+// =============================================================================
+
+Deno.test({
+  name: "Server: quiet mode suppresses per-request logging",
+  ...serverTestOpts,
+}, async () => {
+  const { spec } = await parseSpecFromFile(TEST_SPEC_PATH);
+  const port = 3100 + Math.floor(Math.random() * 900);
+  const server = new MockServer(spec, {
+    port,
+    host: "localhost",
+    quiet: true,
+    logLevel: "summary",
+  });
+
+  server.start();
+  await new Promise((r) => setTimeout(r, 10));
+
+  // Capture console.log during request
+  const logs: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    logs.push(args.map(String).join(" "));
+  };
+
+  try {
+    const response = await fetch(`http://localhost:${port}/users`);
+    assertEquals(response.status, 200);
+    await response.body?.cancel();
+
+    // No request log lines should appear
+    assertEquals(logs.length, 0, "quiet mode should suppress request logging");
+  } finally {
+    console.log = originalLog;
+    server.stop();
+    await new Promise((r) => setTimeout(r, 10));
+  }
 });

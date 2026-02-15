@@ -222,4 +222,58 @@ Deno.test("CILogger", async (t) => {
     const errLines = captureLog(() => logger.error("test error"));
     assertEquals(errLines[0], "::error::STEADY: test error");
   });
+
+  await t.step("warning and error include context when provided", () => {
+    const logger = new CILogger();
+    const warnLines = captureLog(() =>
+      logger.warning("something broke", { hint: "check the config" })
+    );
+    assertEquals(
+      warnLines[0]?.includes('{"hint":"check the config"}'),
+      true,
+      "Warning should include context JSON",
+    );
+
+    const errLines = captureLog(() =>
+      logger.error("fatal", { stack: "Error at line 1" })
+    );
+    assertEquals(
+      errLines[0]?.includes('{"stack":"Error at line 1"}'),
+      true,
+      "Error should include context JSON",
+    );
+  });
+
+  await t.step("info-severity diagnostics use ::notice:: annotation", () => {
+    const logger = new CILogger();
+    const lines = captureLog(() =>
+      logger.request(
+        makeRequestEvent([makeDiag({ severity: "info" })]),
+      )
+    );
+    assertEquals(lines[1]?.startsWith("::notice::"), true);
+  });
+
+  await t.step("shutdown includes generationWarnings when present", () => {
+    const logger = new CILogger();
+    const event: ShutdownEvent = {
+      id: "s5",
+      timestamp: new Date(),
+      type: "shutdown",
+      session: {
+        duration: 500,
+        requestCount: 5,
+        failedCount: 0,
+        validityRate: 1.0,
+        categoryBreakdown: {},
+      },
+      topIssues: [],
+      generationWarnings: ["GET /users", "POST /items"],
+    };
+    const lines = captureLog(() => logger.shutdown(event));
+    assertEquals(
+      lines.some((l) => l.includes("2 endpoints returned minimal responses")),
+      true,
+    );
+  });
 });

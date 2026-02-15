@@ -70,6 +70,7 @@ Deno.test("JsonLogger", async (t) => {
     assertEquals(diags.length, 1);
     const d = diags[0];
     assertEquals(d?.category, "sdk-issue");
+    assertEquals(d?.requestPath, "body.email");
     assertEquals(d?.specPointer, "#/test");
     const attr = d?.attribution as Record<string, unknown>;
     assertEquals(attr?.confidence, 1.0);
@@ -164,5 +165,95 @@ Deno.test("JsonLogger", async (t) => {
     assertEquals(attr?.reasoning, ["test shutdown reasoning"]);
     // category should NOT be inside attribution
     assertEquals(attr?.category, undefined);
+  });
+
+  await t.step(
+    "startup diagnostics use requestPath and specPointer fields",
+    () => {
+      const logger = new JsonLogger();
+      const event: StartupEvent = {
+        id: "s3",
+        timestamp: new Date("2025-01-01"),
+        type: "startup",
+        spec: { title: "Test API", version: "1.0", endpointCount: 3 },
+        server: { url: "http://localhost:3000", rejectOnSdkError: false },
+        diagnostics: [
+          makeDiag({
+            code: "E1004",
+            severity: "error",
+            category: "spec-issue",
+            requestPath: "",
+            specPointer: "#/paths/~1users/get",
+          }),
+        ],
+      };
+      const lines = captureLog(() => logger.startup(event));
+      const output = parseJsonLine(lines);
+      const diags = output.diagnostics as Record<string, unknown>[];
+      assertEquals(diags[0]?.specPointer, "#/paths/~1users/get");
+      assertEquals(diags[0]?.requestPath, "");
+      // Should NOT have old "pointer" field
+      assertEquals("pointer" in (diags[0] ?? {}), false);
+    },
+  );
+
+  await t.step("shutdown includes generationWarnings when present", () => {
+    const logger = new JsonLogger();
+    const event: ShutdownEvent = {
+      id: "s4",
+      timestamp: new Date("2025-01-01"),
+      type: "shutdown",
+      session: {
+        duration: 500,
+        requestCount: 5,
+        failedCount: 0,
+        validityRate: 1.0,
+        categoryBreakdown: {},
+      },
+      topIssues: [],
+      generationWarnings: ["GET /users", "POST /items"],
+    };
+    const lines = captureLog(() => logger.shutdown(event));
+    const output = parseJsonLine(lines);
+    assertEquals(output.generationWarnings, ["GET /users", "POST /items"]);
+  });
+
+  await t.step(
+    "shutdown omits generationWarnings when empty",
+    () => {
+      const logger = new JsonLogger();
+      const event: ShutdownEvent = {
+        id: "s5",
+        timestamp: new Date("2025-01-01"),
+        type: "shutdown",
+        session: {
+          duration: 500,
+          requestCount: 5,
+          failedCount: 0,
+          validityRate: 1.0,
+          categoryBreakdown: {},
+        },
+        topIssues: [],
+      };
+      const lines = captureLog(() => logger.shutdown(event));
+      const output = parseJsonLine(lines);
+      assertEquals(output.generationWarnings, undefined);
+    },
+  );
+
+  await t.step("warning and error events include id field", () => {
+    const logger = new JsonLogger();
+    const warnLines = captureLog(() =>
+      logger.warning("test warning", { key: "val" })
+    );
+    const warnOutput = parseJsonLine(warnLines);
+    assertEquals(typeof warnOutput.id, "string");
+    assertEquals((warnOutput.id as string).length > 0, true);
+    assertEquals(warnOutput.context, { key: "val" });
+
+    const errLines = captureLog(() => logger.error("test error"));
+    const errOutput = parseJsonLine(errLines);
+    assertEquals(typeof errOutput.id, "string");
+    assertEquals((errOutput.id as string).length > 0, true);
   });
 });

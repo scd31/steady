@@ -113,7 +113,7 @@ Deno.test("createStreamingResponse: generates NDJSON stream", async () => {
   };
 
   const registry = SchemaRegistry.fromDocument({ schema: doc });
-  const stream = createStreamingResponse(
+  const { stream } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -154,7 +154,7 @@ Deno.test("createStreamingResponse: generates SSE stream", async () => {
   };
 
   const registry = SchemaRegistry.fromDocument({ schema: doc });
-  const stream = createStreamingResponse(
+  const { stream } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -191,7 +191,7 @@ Deno.test("createStreamingResponse: uses deterministic seeds", async () => {
   const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   // Generate twice with same seed
-  const stream1 = createStreamingResponse(
+  const { stream: stream1 } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -199,7 +199,7 @@ Deno.test("createStreamingResponse: uses deterministic seeds", async () => {
     { count: 2, interval: 0, generatorOptions: { seed: 42 } },
   );
 
-  const stream2 = createStreamingResponse(
+  const { stream: stream2 } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -252,7 +252,7 @@ Deno.test("createStreamingResponse: handles $ref schemas", async () => {
   };
 
   const registry = SchemaRegistry.fromDocument(doc);
-  const stream = createStreamingResponse(
+  const { stream } = createStreamingResponse(
     registry,
     { $ref: "#/components/schemas/Event" },
     "#/test",
@@ -330,7 +330,7 @@ Deno.test("createStreamingResponse: SSE with example event sequence", async () =
     { event: "complete", data: { result: "success" } },
   ];
 
-  const stream = createStreamingResponse(
+  const { stream } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -371,7 +371,7 @@ Deno.test("createStreamingResponse: SSE adds done event if missing", async () =>
     { event: "message", data: { text: "World" } },
   ];
 
-  const stream = createStreamingResponse(
+  const { stream } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -402,7 +402,7 @@ Deno.test("createStreamingResponse: SSE supports custom event IDs", async () => 
     { id: "evt-002", event: "done", data: {} },
   ];
 
-  const stream = createStreamingResponse(
+  const { stream } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -433,7 +433,7 @@ Deno.test("createStreamingResponse: SSE supports retry field", async () => {
     { event: "done", data: {} },
   ];
 
-  const stream = createStreamingResponse(
+  const { stream } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -461,7 +461,7 @@ Deno.test("createStreamingResponse: SSE schema-based adds done event", async () 
   };
 
   const registry = SchemaRegistry.fromDocument({ schema: doc });
-  const stream = createStreamingResponse(
+  const { stream } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -570,7 +570,7 @@ Deno.test("createStreamingResponse: NDJSON with array example", async () => {
     { id: 3, status: "complete" },
   ];
 
-  const stream = createStreamingResponse(
+  const { stream } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -605,7 +605,7 @@ Deno.test("createStreamingResponse: NDJSON with multiline string example", async
 {"event":"progress","data":{"percent":50}}
 {"event":"done","data":{"result":"success"}}`;
 
-  const stream = createStreamingResponse(
+  const { stream } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -646,7 +646,7 @@ Deno.test("createStreamingResponse: NDJSON example does not add _stream metadata
 
   const exampleData = [{ id: 1, name: "test" }];
 
-  const stream = createStreamingResponse(
+  const { stream } = createStreamingResponse(
     registry,
     doc,
     "#/schema",
@@ -670,48 +670,37 @@ Deno.test("createStreamingResponse: NDJSON example does not add _stream metadata
   assertEquals(parsed, { id: 1, name: "test" });
 });
 
-Deno.test("createStreamingResponse: NDJSON with invalid example logs warning and falls back to schema", async () => {
+Deno.test("createStreamingResponse: NDJSON with invalid example returns warning and falls back to schema", async () => {
   const doc = {
     type: "object",
     properties: { id: { type: "integer" } },
   };
   const registry = SchemaRegistry.fromDocument({ schema: doc });
 
-  // Capture console.warn
-  const warnings: string[] = [];
-  const originalWarn = console.warn;
-  console.warn = (...args: unknown[]) => {
-    warnings.push(args.join(" "));
-  };
+  // Invalid example: plain string, not JSON
+  const { stream, warnings } = createStreamingResponse(
+    registry,
+    doc,
+    "#/schema",
+    "ndjson",
+    { example: "not valid json", count: 1, interval: 0 },
+  );
 
-  try {
-    // Invalid example: plain string, not JSON
-    const stream = createStreamingResponse(
-      registry,
-      doc,
-      "#/schema",
-      "ndjson",
-      { example: "not valid json", count: 1, interval: 0 },
-    );
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
 
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let fullText = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      fullText += decoder.decode(value);
-    }
-
-    // Should have warned about invalid example
-    assertEquals(warnings.length, 1);
-    assertStringIncludes(warnings[0]!, "NDJSON example provided but not valid");
-
-    // Should have fallen back to schema generation (with _stream metadata)
-    const parsed = JSON.parse(fullText.trim().split("\n")[0]!);
-    assertEquals(typeof parsed._stream, "object");
-  } finally {
-    console.warn = originalWarn;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    fullText += decoder.decode(value);
   }
+
+  // Should have returned a warning about invalid example
+  assertEquals(warnings.length, 1);
+  assertStringIncludes(warnings[0]!, "NDJSON example provided but not valid");
+
+  // Should have fallen back to schema generation (with _stream metadata)
+  const parsed = JSON.parse(fullText.trim().split("\n")[0]!);
+  assertEquals(typeof parsed._stream, "object");
 });
