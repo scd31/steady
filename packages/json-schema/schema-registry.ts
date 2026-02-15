@@ -11,9 +11,26 @@
  * - Validators and generators receive registry access for ref following
  */
 
-import { resolve as resolvePointer } from "@steady/json-pointer";
-import { RefGraph } from "./ref-graph.ts";
+import {
+  type FragmentPointer,
+  isFragmentPointer,
+  resolve as resolvePointer,
+} from "@steady/json-pointer";
 import type { GenerateOptions, Schema, SchemaType } from "./types.ts";
+
+/** Document index built from a single walk. All consumers share this. */
+export interface DocIndex {
+  /** Map of $anchor value to fragment pointer. */
+  anchors: Map<string, FragmentPointer>;
+  /** Map of $id value to fragment pointer. */
+  ids: Map<string, FragmentPointer>;
+  /** All unique $ref values found in the document. */
+  refs: Set<string>;
+  /** Fragment pointer -> set of $ref targets. */
+  edges: Map<FragmentPointer, Set<string>>;
+  /** Number of object nodes visited (proxy for schema count). */
+  pointerCount: number;
+}
 
 export interface SchemaRegistryOptions {
   /** Base URI for the document */
@@ -26,55 +43,118 @@ export interface SchemaRegistryOptions {
 export interface RegistrySchema {
   /** The raw schema object */
   raw: Schema | boolean;
-  /** JSON Pointer to this schema in the document */
-  pointer: string;
-  /** Whether this schema is part of a cycle */
-  isCyclic: boolean;
+  /** Fragment pointer to this schema in the document */
+  pointer: FragmentPointer;
 }
 
 export class SchemaRegistry {
   /** The full document - ALL refs resolve against this */
   readonly document: unknown;
-  /** Complete ref topology */
-  readonly refGraph: RefGraph;
+  /** Document index from a single walk */
+  readonly docIndex: DocIndex;
   /** Cached processed schemas by pointer */
-  private cache = new Map<string, RegistrySchema>();
+  private cache = new Map<FragmentPointer, RegistrySchema>();
   /** Base URI for the document */
   readonly baseUri: string;
 
-  constructor(document: unknown, options: SchemaRegistryOptions = {}) {
+  constructor(
+    document: unknown,
+    docIndex: DocIndex,
+    options: SchemaRegistryOptions = {},
+  ) {
     this.document = document;
+    this.docIndex = docIndex;
     this.baseUri = options.baseUri ?? "";
-    this.refGraph = RefGraph.build(document);
+  }
+
+  /**
+   * Build a SchemaRegistry from a document by walking it to extract ref data.
+   * For tests and standalone usage where a pre-computed DocIndex is not available.
+   */
+  static fromDocument(
+    document: unknown,
+    options: SchemaRegistryOptions = {},
+  ): SchemaRegistry {
+    const docIndex = SchemaRegistry.extractDocIndex(document);
+    return new SchemaRegistry(document, docIndex, options);
+  }
+
+  /**
+   * Walk a document to build a DocIndex. Collects anchors, ids, refs,
+   * and edges in a single pass. No cycle detection; that is a consumer
+   * concern (processor.ts uses computeCyclicRefs, spec-analyzer uses
+   * its own semantic DFS).
+   */
+  private static extractDocIndex(document: unknown): DocIndex {
+    const anchors = new Map<string, FragmentPointer>();
+    const ids = new Map<string, FragmentPointer>();
+    const refs = new Set<string>();
+    const edges = new Map<FragmentPointer, Set<string>>();
+    let pointerCount = 0;
+
+    function escapePointer(segment: string): string {
+      return segment.replace(/~/g, "~0").replace(/\//g, "~1");
+    }
+
+    function walk(value: unknown, pointer: FragmentPointer): void {
+      if (value === null || typeof value !== "object") return;
+
+      if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) {
+          const item = value[i];
+          if (item !== null && typeof item === "object") {
+            walk(item, `${pointer}/${i}`);
+          }
+        }
+        return;
+      }
+
+      const obj = value as Record<string, unknown>;
+      pointerCount++;
+
+      // Collect $anchor and $id
+      if (typeof obj.$anchor === "string") {
+        anchors.set(obj.$anchor, pointer);
+      }
+      if (typeof obj.$id === "string") {
+        ids.set(obj.$id, pointer);
+      }
+
+      // Collect $ref edges
+      if (typeof obj.$ref === "string") {
+        refs.add(obj.$ref);
+        const existing = edges.get(pointer);
+        if (existing) {
+          existing.add(obj.$ref);
+        } else {
+          edges.set(pointer, new Set([obj.$ref]));
+        }
+      }
+
+      for (const key of Object.keys(obj)) {
+        if (key === "$ref") continue;
+        const val = obj[key];
+        if (val === null || typeof val !== "object") continue;
+        walk(val, `${pointer}/${escapePointer(key)}`);
+      }
+    }
+
+    walk(document, "#");
+
+    return { anchors, ids, refs, edges, pointerCount };
   }
 
   /**
    * Resolve a JSON Pointer against the document.
-   * This ALWAYS works for valid pointers because document is the root.
-   *
-   * Handles URI fragment percent-encoding per RFC 3986.
-   * When JSON Pointers are used as URI fragments (e.g., #/paths/~1users~1%7Bid%7D),
-   * they may be percent-encoded. We decode before applying JSON Pointer resolution.
+   * Delegates percent-decoding and "#" handling to resolvePointer().
    */
   resolve(pointer: string): unknown {
     if (pointer === "#" || pointer === "") {
       return this.document;
     }
 
-    // Handle #/path/to/schema format
-    // Percent-decode for URI fragment compatibility (RFC 3986)
-    let path: string;
     try {
-      path = pointer.startsWith("#")
-        ? decodeURIComponent(pointer.slice(1))
-        : decodeURIComponent(pointer);
-    } catch {
-      // Invalid percent encoding
-      return undefined;
-    }
-
-    try {
-      return resolvePointer(this.document, path);
+      return resolvePointer(this.document, pointer);
     } catch {
       return undefined;
     }
@@ -83,11 +163,11 @@ export class SchemaRegistry {
   /**
    * Get a schema by pointer. Returns undefined if not found.
    */
-  get(pointer: string): RegistrySchema | undefined {
+  get(pointer: FragmentPointer): RegistrySchema | undefined {
     // Check cache first
-    let schema = this.cache.get(pointer);
-    if (schema) {
-      return schema;
+    const cached = this.cache.get(pointer);
+    if (cached) {
+      return cached;
     }
 
     // Resolve from document
@@ -102,10 +182,9 @@ export class SchemaRegistry {
     }
 
     // Create and cache the registry schema
-    schema = {
+    const schema: RegistrySchema = {
       raw: raw as Schema | boolean,
       pointer,
-      isCyclic: this.refGraph.isCyclic(pointer),
     };
     this.cache.set(pointer, schema);
 
@@ -127,7 +206,7 @@ export class SchemaRegistry {
    */
   resolveRef(ref: string): RegistrySchema | undefined {
     // Handle JSON Pointer references (e.g., "#/components/schemas/User")
-    if (ref.startsWith("#")) {
+    if (isFragmentPointer(ref)) {
       return this.get(ref);
     }
 
@@ -148,45 +227,24 @@ export class SchemaRegistry {
   }
 
   /**
-   * Find a schema by $anchor value
+   * Find a schema by $anchor value. O(1) via pre-computed index.
    */
   private findAnchor(anchor: string): RegistrySchema | undefined {
-    // Search through all pointers for matching $anchor
-    for (const pointer of this.refGraph.pointers) {
-      const schema = this.get(pointer);
-      if (schema && typeof schema.raw === "object" && schema.raw !== null) {
-        if ((schema.raw as Schema).$anchor === anchor) {
-          return schema;
-        }
-      }
-    }
-    return undefined;
+    const pointer = this.docIndex.anchors.get(anchor);
+    if (pointer === undefined) return undefined;
+    return this.get(pointer);
   }
 
   /**
-   * Find a schema by $id value (exact match only)
+   * Find a schema by $id value (exact match only). O(1) via pre-computed index.
    *
    * Per JSON Schema spec, $ref values are resolved as URI-references against
    * the base URI. We only match schemas whose $id exactly equals the reference.
    */
   private findById(id: string): RegistrySchema | undefined {
-    for (const pointer of this.refGraph.pointers) {
-      const schema = this.get(pointer);
-      if (schema && typeof schema.raw === "object" && schema.raw !== null) {
-        const schemaId = (schema.raw as Schema).$id;
-        if (schemaId === id) {
-          return schema;
-        }
-      }
-    }
-    return undefined;
-  }
-
-  /**
-   * Check if a reference would create a cycle
-   */
-  isCyclic(ref: string): boolean {
-    return this.refGraph.isCyclic(ref);
+    const pointer = this.docIndex.ids.get(id);
+    if (pointer === undefined) return undefined;
+    return this.get(pointer);
   }
 
   /**
@@ -198,7 +256,7 @@ export class SchemaRegistry {
 
     if (typeof components === "object" && components !== null) {
       for (const name of Object.keys(components as Record<string, unknown>)) {
-        const pointer = `#/components/schemas/${name}`;
+        const pointer: FragmentPointer = `#/components/schemas/${name}`;
         const schema = this.get(pointer);
         if (schema) {
           result.set(name, schema);
@@ -216,15 +274,11 @@ export class SchemaRegistry {
     totalRefs: number;
     totalPointers: number;
     cachedSchemas: number;
-    cyclicRefs: number;
-    cycles: number;
   } {
     return {
-      totalRefs: this.refGraph.refs.size,
-      totalPointers: this.refGraph.pointers.size,
+      totalRefs: this.docIndex.refs.size,
+      totalPointers: this.docIndex.pointerCount,
       cachedSchemas: this.cache.size,
-      cyclicRefs: this.refGraph.cyclicRefs.size,
-      cycles: this.refGraph.cycles.length,
     };
   }
 }
@@ -271,7 +325,7 @@ export class RegistryResponseGenerator {
   /**
    * Generate data for a schema at the given pointer
    */
-  generate(pointer: string): unknown {
+  generate(pointer: FragmentPointer): unknown {
     const schema = this.registry.get(pointer);
     if (!schema) {
       return null;

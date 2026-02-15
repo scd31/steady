@@ -11,7 +11,10 @@
 
 import type { Schema } from "@steady/json-schema";
 import type { SchemaRegistry } from "@steady/json-schema";
-import { resolve as resolvePointer } from "@steady/json-pointer";
+import {
+  isFragmentPointer,
+  resolve as resolvePointer,
+} from "@steady/json-pointer";
 import type {
   OpenAPISpec,
   OperationObject,
@@ -258,7 +261,7 @@ export class OpenAPISpecDocument {
    * Returns empty schema {} if the pointer can't be resolved.
    */
   resolveSchema(schemaPath: string): Schema {
-    if (this.registry) {
+    if (this.registry && isFragmentPointer(schemaPath)) {
       const result = this.registry.get(schemaPath);
       if (result && typeof result.raw === "object" && result.raw !== null) {
         return result.raw;

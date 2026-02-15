@@ -42,8 +42,11 @@ export class CILogger extends BaseLogger {
   }
 
   startup(event: StartupEvent): void {
+    const timingSuffix = event.timing
+      ? ` in ${Math.round(event.timing.total)}ms`
+      : "";
     console.log(
-      `STEADY: Loaded ${event.spec.title} v${event.spec.version} (${event.spec.endpointCount} endpoints)`,
+      `STEADY: Loaded ${event.spec.title} v${event.spec.version} (${event.spec.endpointCount} endpoints)${timingSuffix}`,
     );
     console.log(`STEADY: Server listening at ${event.server.url}`);
 

@@ -60,15 +60,14 @@ export class JsonSchemaProcessor {
     const schema = schemaObject as Schema | boolean;
 
     // 2. Resolve all references via SchemaRegistry
-    const registry = new SchemaRegistry(schema, {
+    const registry = SchemaRegistry.fromDocument(schema, {
       baseUri: source?.baseUri,
     });
-    const refGraph = registry.refGraph;
 
     const resolved = new Map<string, Schema | boolean>();
     const syntaxErrors: SchemaError[] = [];
 
-    for (const ref of refGraph.refs) {
+    for (const ref of registry.docIndex.refs) {
       // Validate ref syntax per RFC 6901. Syntax violations are fatal
       // (the schema itself is malformed). Resolution failures (valid
       // syntax but missing target) are non-fatal; the diagnostics
@@ -115,16 +114,7 @@ export class JsonSchemaProcessor {
     }
 
     // 3. Compute cycles using containment-aware algorithm
-    const cyclicRefs = computeCyclicRefs(refGraph.edges);
-
-    // Generate warnings for detected cycles
-    for (const cycle of refGraph.cycles) {
-      warnings.push({
-        type: "performance-concern" as const,
-        message: `Circular reference detected: ${cycle.join(" -> ")}`,
-        location: "#",
-      });
-    }
+    const cyclicRefs = computeCyclicRefs(registry.docIndex.edges);
 
     const refs: ProcessedSchema["refs"] = {
       resolved,

@@ -39,10 +39,16 @@ steady/
 │   │   └── ref-resolver.ts    # $ref resolution
 │   └── openapi/               # OpenAPI 3.x parser
 │       └── parser.ts          # YAML/JSON parsing
+├── sdk-tests/                 # SDK test suites with their OpenAPI specs
+│   └── cloudflare-python/     # Cloudflare spec at openapi-spec.yml
 ├── tests/edge-cases/          # Edge case tests
 └── test-fixtures/
     └── openapi-directory/     # Git submodule: 1970 real-world specs (99.5% pass)
 ```
+
+**Test specs**: Real-world specs live in `sdk-tests/` (e.g.,
+`sdk-tests/cloudflare-python/openapi-spec.yml`). When looking for a spec file,
+search the whole repo with glob, not just `test-fixtures/`.
 
 **Submodule**: Run `git submodule update --init` to fetch test fixtures.
 

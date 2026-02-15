@@ -25,6 +25,7 @@ import {
   formatDiagnosticSummary,
   formatExplainHint,
 } from "../src/logging/format-diagnostic.ts";
+import { PipelineTimer } from "../src/timing.ts";
 
 type LogFormat = "text" | "json" | "ci";
 
@@ -380,12 +381,19 @@ async function startServer(
 ): Promise<{ start: () => void; stop: () => Promise<void> }> {
   // Lazy import to avoid loading server code for validate command
   const { MockServer } = await import("../src/server.ts");
+
+  const timer = new PipelineTimer();
+
   // Parse the OpenAPI spec
-  const { spec, defaultedFields } = await parseSpecFromFile(specPath);
+  timer.start("parse");
+  const { spec, defaultedFields } = await parseSpecFromFile(specPath, timer);
+  timer.stop("parse");
 
   // Run spec analysis
+  timer.start("analyze");
   const baseUri = specPathToBaseUri(specPath);
-  const analysis = analyzeSpec(spec, { baseUri, defaultedFields });
+  const analysis = analyzeSpec(spec, { baseUri, defaultedFields, timer });
+  timer.stop("analyze");
   if (analysis.fatal) {
     throw new FatalSpecError(analysis.diagnostics);
   }
@@ -427,7 +435,9 @@ async function startServer(
   };
 
   // Create and start server
-  const server = new MockServer(spec, config);
+  timer.start("server-init");
+  const server = new MockServer(spec, config, analysis.docIndex, timer);
+  timer.stop("server-init");
   server.start();
   return server;
 }
@@ -560,12 +570,18 @@ Examples:
   }
 
   try {
+    const timer = new PipelineTimer();
+
     // Parse the spec - this will throw if invalid
-    const { spec, defaultedFields } = await parseSpecFromFile(specPath);
+    timer.start("parse");
+    const { spec, defaultedFields } = await parseSpecFromFile(specPath, timer);
+    timer.stop("parse");
 
     // Run spec analysis
+    timer.start("analyze");
     const baseUri = specPathToBaseUri(specPath);
-    const analysis = analyzeSpec(spec, { baseUri, defaultedFields });
+    const analysis = analyzeSpec(spec, { baseUri, defaultedFields, timer });
+    timer.stop("analyze");
 
     if (analysis.diagnostics.length === 0) {
       console.log("All good");

@@ -2,6 +2,12 @@ import { parse as parseYAML } from "@std/yaml";
 import { OpenAPISpec } from "./openapi.ts";
 import { ErrorContext, ParseError, SpecValidationError } from "./errors.ts";
 
+/** Minimal timer interface for startup instrumentation. */
+interface Timer {
+  start(name: string): void;
+  stop(name: string): void;
+}
+
 /**
  * Options for parsing OpenAPI specs
  */
@@ -26,15 +32,21 @@ export interface ParseResult {
 export function parseSpec(
   content: string,
   options: ParseOptions = {},
+  timer?: Timer,
 ): Promise<ParseResult> {
   const format = options.format ?? "auto";
 
   // Parse content based on format
   // Use "json" schema to prevent YAML from auto-converting date-like strings to Date objects
   // This ensures "2022-11-15" stays as a string, not a Date
+  timer?.start("yaml");
   let spec: unknown;
   try {
     if (format === "json") {
+      spec = JSON.parse(content);
+    } else if (content.trimStart().startsWith("{")) {
+      // Content is JSON regardless of file extension. JSON.parse is ~10x
+      // faster than the YAML parser for large documents.
       spec = JSON.parse(content);
     } else if (format === "yaml") {
       spec = parseYAML(content, { schema: "json" });
@@ -47,6 +59,7 @@ export function parseSpec(
       }
     }
   } catch (error) {
+    timer?.stop("yaml");
     const isJSON = format === "json" || content.trimStart().startsWith("{");
     throw new ParseError(`Invalid ${isJSON ? "JSON" : "YAML"} syntax`, {
       errorType: "parse",
@@ -59,18 +72,27 @@ export function parseSpec(
     });
   }
 
+  timer?.stop("yaml");
+
   // Validate and return (wrapped in Promise for backwards compatibility)
-  return Promise.resolve(validateOpenAPISpec(spec));
+  timer?.start("validate");
+  const result = validateOpenAPISpec(spec);
+  timer?.stop("validate");
+  return Promise.resolve(result);
 }
 
 /**
  * Load and parse an OpenAPI spec from a file or URL.
  * Convenience function that handles file/URL I/O and adds context to errors.
  */
-export async function parseSpecFromFile(path: string): Promise<ParseResult> {
+export async function parseSpecFromFile(
+  path: string,
+  timer?: Timer,
+): Promise<ParseResult> {
   const isUrl = path.startsWith("http://") || path.startsWith("https://");
 
   // Read content from file or URL
+  timer?.start("io");
   let content: string;
   if (isUrl) {
     try {
@@ -118,6 +140,8 @@ export async function parseSpecFromFile(path: string): Promise<ParseResult> {
     }
   }
 
+  timer?.stop("io");
+
   // Determine format from extension/URL
   const ext = path.toLowerCase();
   let format: "json" | "yaml" | "auto" = "auto";
@@ -129,7 +153,7 @@ export async function parseSpecFromFile(path: string): Promise<ParseResult> {
 
   // Parse with context
   try {
-    return await parseSpec(content, { format });
+    return await parseSpec(content, { format }, timer);
   } catch (error) {
     // Add file context to errors
     if (error instanceof ParseError || error instanceof SpecValidationError) {

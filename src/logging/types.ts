@@ -6,8 +6,10 @@
  */
 
 import type { Diagnostic, IssueCategory } from "../diagnostic.ts";
+import type { StartupTiming } from "../timing.ts";
 
 export type { IssueCategory } from "../diagnostic.ts";
+export type { StartupTiming } from "../timing.ts";
 
 /**
  * Base log event
@@ -67,6 +69,8 @@ export interface StartupEvent extends LogEvent {
   specPath?: string;
 
   diagnostics: Diagnostic[];
+
+  timing?: StartupTiming;
 }
 
 /**

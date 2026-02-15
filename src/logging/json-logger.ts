@@ -64,7 +64,7 @@ export class JsonLogger extends BaseLogger {
   }
 
   startup(event: StartupEvent): void {
-    const output = {
+    const output: Record<string, unknown> = {
       type: "startup",
       id: event.id,
       timestamp: event.timestamp.toISOString(),
@@ -83,6 +83,10 @@ export class JsonLogger extends BaseLogger {
         suggestion: d.suggestion,
       })),
     };
+
+    if (event.timing) {
+      output.timing = event.timing;
+    }
 
     console.log(JSON.stringify(output));
   }

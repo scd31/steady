@@ -6,17 +6,18 @@
  * proper cross-reference resolution.
  *
  * Usage:
- *   const doc = new OpenAPIDocument(spec);
+ *   const doc = new OpenAPIDocument(spec, docIndex);
  *   const generator = doc.getGenerator();
  *   const response = generator.generate("#/components/schemas/User");
  */
 
+import { type FragmentPointer, isFragmentPointer } from "@steady/json-pointer";
 import {
+  type DocIndex,
   RegistryResponseGenerator,
   type RegistrySchema,
   SchemaRegistry,
 } from "./schema-registry.ts";
-import { RefGraph } from "./ref-graph.ts";
 import type { GenerateOptions } from "./types.ts";
 
 export interface OpenAPIDocumentOptions {
@@ -29,13 +30,27 @@ export class OpenAPIDocument {
   readonly spec: unknown;
   /** Schema registry with document context */
   readonly schemas: SchemaRegistry;
-  /** Reference graph for the entire document */
-  readonly refGraph: RefGraph;
 
-  constructor(spec: unknown, options: OpenAPIDocumentOptions = {}) {
+  constructor(
+    spec: unknown,
+    docIndex: DocIndex,
+    options: OpenAPIDocumentOptions = {},
+  ) {
     this.spec = spec;
-    this.schemas = new SchemaRegistry(spec, options);
-    this.refGraph = this.schemas.refGraph;
+    this.schemas = new SchemaRegistry(spec, docIndex, options);
+  }
+
+  /**
+   * Build an OpenAPIDocument by walking the spec to extract ref data.
+   * For tests and standalone usage where a pre-computed DocIndex is not available.
+   */
+  static fromSpec(
+    spec: unknown,
+    options: OpenAPIDocumentOptions = {},
+  ): OpenAPIDocument {
+    const registry = SchemaRegistry.fromDocument(spec, options);
+    const doc = new OpenAPIDocument(spec, registry.docIndex, options);
+    return doc;
   }
 
   /**
@@ -48,7 +63,10 @@ export class OpenAPIDocument {
   /**
    * Generate a response for a schema at the given pointer
    */
-  generateResponse(pointer: string, options?: GenerateOptions): unknown {
+  generateResponse(
+    pointer: FragmentPointer,
+    options?: GenerateOptions,
+  ): unknown {
     const generator = new RegistryResponseGenerator(this.schemas, options);
     return generator.generate(pointer);
   }
@@ -56,7 +74,7 @@ export class OpenAPIDocument {
   /**
    * Get a schema by pointer
    */
-  getSchema(pointer: string): RegistrySchema | undefined {
+  getSchema(pointer: FragmentPointer): RegistrySchema | undefined {
     return this.schemas.get(pointer);
   }
 
@@ -75,21 +93,12 @@ export class OpenAPIDocument {
   }
 
   /**
-   * Check if a reference is cyclic
-   */
-  isCyclic(ref: string): boolean {
-    return this.refGraph.isCyclic(ref);
-  }
-
-  /**
    * Get document statistics
    */
   getStats(): {
     totalRefs: number;
     totalPointers: number;
     cachedSchemas: number;
-    cyclicRefs: number;
-    cycles: number;
   } {
     return this.schemas.getStats();
   }
@@ -136,7 +145,7 @@ export class OpenAPIDocument {
     method: string,
     statusCode: string,
   ): RegistrySchema | undefined {
-    const responsePointer = `#/paths/${
+    const responsePointer: FragmentPointer = `#/paths/${
       this.escapePointer(path)
     }/${method.toLowerCase()}/responses/${statusCode}/content/application~1json/schema`;
     return this.schemas.get(responsePointer);
@@ -176,7 +185,7 @@ export class OpenAPIDocument {
     }
 
     // Fall back to schema generation
-    const schemaPointer = `#/paths/${
+    const schemaPointer: FragmentPointer = `#/paths/${
       this.escapePointer(path)
     }/${method.toLowerCase()}/responses/${statusCode}/content/application~1json/schema`;
     const schema = this.schemas.get(schemaPointer);
@@ -188,8 +197,13 @@ export class OpenAPIDocument {
         "$ref" in schema.raw
       ) {
         const ref = (schema.raw as { $ref: string }).$ref;
-        const generator = new RegistryResponseGenerator(this.schemas, options);
-        return generator.generate(ref);
+        if (isFragmentPointer(ref)) {
+          const generator = new RegistryResponseGenerator(
+            this.schemas,
+            options,
+          );
+          return generator.generate(ref);
+        }
       }
 
       const generator = new RegistryResponseGenerator(this.schemas, options);

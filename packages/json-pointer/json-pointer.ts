@@ -76,10 +76,28 @@ export function formatPointer(segments: string[]): string {
 }
 
 /**
- * Resolve a JSON Pointer against a document
+ * Resolve a JSON Pointer against a document.
+ * Accepts both bare RFC 6901 pointers ("/foo/bar") and
+ * URI fragment pointers ("#/foo/bar").
+ *
+ * Fragment pointers (starting with "#") are percent-decoded per RFC 3986
+ * before JSON Pointer resolution. Bare pointers are used as-is.
  */
 export function resolve(document: unknown, pointer: string): unknown {
-  const segments = parsePointer(pointer);
+  let bare: string;
+  if (pointer.startsWith("#")) {
+    try {
+      bare = decodeURIComponent(pointer.slice(1));
+    } catch {
+      throw new JsonPointerError(
+        `Invalid percent encoding in pointer: ${pointer}`,
+        pointer,
+      );
+    }
+  } else {
+    bare = pointer;
+  }
+  const segments = parsePointer(bare);
   let current = document;
 
   for (let i = 0; i < segments.length; i++) {

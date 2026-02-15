@@ -38,7 +38,7 @@ export function sourceNodeFor(pointer: string): string {
  * Compute all cyclic ref pointers from a $ref edge map.
  *
  * @param edges - Map from source pointer to set of $ref target values.
- *   This is the same shape as RefGraph.edges.
+ *   This is the same shape as DocIndex.edges.
  * @returns Set of all pointers involved in cycles (both source and target).
  */
 export function computeCyclicRefs(

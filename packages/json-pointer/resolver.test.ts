@@ -49,7 +49,7 @@ Deno.test("resolveReference - throws for non-existent references", () => {
   assertThrows(
     () => resolveReference(doc, "#/nonexistent"),
     JsonPointerError,
-    "Reference #/nonexistent not found",
+    "Property 'nonexistent' not found",
   );
 });
 

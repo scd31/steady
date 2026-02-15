@@ -8,12 +8,13 @@ export {
   SchemaRegistry,
 } from "./schema-registry.ts";
 export type {
+  DocIndex,
   RegistrySchema,
   SchemaRegistryOptions,
 } from "./schema-registry.ts";
 
-// Reference graph
-export { RefGraph } from "./ref-graph.ts";
+// Re-export FragmentPointer from json-pointer for convenience
+export type { FragmentPointer } from "@steady/json-pointer";
 
 // Types
 export type {

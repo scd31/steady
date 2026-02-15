@@ -112,7 +112,7 @@ Deno.test("createStreamingResponse: generates NDJSON stream", async () => {
     required: ["id", "name"],
   };
 
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
   const stream = createStreamingResponse(
     registry,
     doc,
@@ -153,7 +153,7 @@ Deno.test("createStreamingResponse: generates SSE stream", async () => {
     },
   };
 
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
   const stream = createStreamingResponse(
     registry,
     doc,
@@ -188,7 +188,7 @@ Deno.test("createStreamingResponse: uses deterministic seeds", async () => {
     },
   };
 
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   // Generate twice with same seed
   const stream1 = createStreamingResponse(
@@ -251,7 +251,7 @@ Deno.test("createStreamingResponse: handles $ref schemas", async () => {
     },
   };
 
-  const registry = new SchemaRegistry(doc);
+  const registry = SchemaRegistry.fromDocument(doc);
   const stream = createStreamingResponse(
     registry,
     { $ref: "#/components/schemas/Event" },
@@ -322,7 +322,7 @@ Deno.test("isSSEEventSequence: rejects array without event/data fields", () => {
 
 Deno.test("createStreamingResponse: SSE with example event sequence", async () => {
   const doc = { type: "object" };
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleEvents = [
     { event: "start", data: { message: "Starting..." } },
@@ -364,7 +364,7 @@ Deno.test("createStreamingResponse: SSE with example event sequence", async () =
 
 Deno.test("createStreamingResponse: SSE adds done event if missing", async () => {
   const doc = { type: "object" };
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleEvents = [
     { event: "message", data: { text: "Hello" } },
@@ -395,7 +395,7 @@ Deno.test("createStreamingResponse: SSE adds done event if missing", async () =>
 
 Deno.test("createStreamingResponse: SSE supports custom event IDs", async () => {
   const doc = { type: "object" };
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleEvents = [
     { id: "evt-001", event: "message", data: { text: "Hello" } },
@@ -426,7 +426,7 @@ Deno.test("createStreamingResponse: SSE supports custom event IDs", async () => 
 
 Deno.test("createStreamingResponse: SSE supports retry field", async () => {
   const doc = { type: "object" };
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleEvents = [
     { event: "message", data: { text: "Hello" }, retry: 5000 },
@@ -460,7 +460,7 @@ Deno.test("createStreamingResponse: SSE schema-based adds done event", async () 
     properties: { value: { type: "integer" } },
   };
 
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
   const stream = createStreamingResponse(
     registry,
     doc,
@@ -562,7 +562,7 @@ Deno.test("parseNDJSONExample: returns array as-is", () => {
 
 Deno.test("createStreamingResponse: NDJSON with array example", async () => {
   const doc = { type: "object" };
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleData = [
     { id: 1, status: "pending" },
@@ -599,7 +599,7 @@ Deno.test("createStreamingResponse: NDJSON with array example", async () => {
 
 Deno.test("createStreamingResponse: NDJSON with multiline string example", async () => {
   const doc = { type: "object" };
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const multilineExample = `{"event":"start","data":{"jobId":"123"}}
 {"event":"progress","data":{"percent":50}}
@@ -642,7 +642,7 @@ Deno.test("createStreamingResponse: NDJSON with multiline string example", async
 
 Deno.test("createStreamingResponse: NDJSON example does not add _stream metadata", async () => {
   const doc = { type: "object" };
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleData = [{ id: 1, name: "test" }];
 
@@ -675,7 +675,7 @@ Deno.test("createStreamingResponse: NDJSON with invalid example logs warning and
     type: "object",
     properties: { id: { type: "integer" } },
   };
-  const registry = new SchemaRegistry({ schema: doc });
+  const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   // Capture console.warn
   const warnings: string[] = [];

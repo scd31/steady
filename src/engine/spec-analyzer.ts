@@ -12,13 +12,19 @@ import { resolve } from "@steady/json-pointer";
 import { JsonSchemaProcessor, type Schema } from "@steady/json-schema";
 import type { Diagnostic, DiagnosticDisplay } from "../diagnostic.ts";
 import { type ECode, getCode, hasCode } from "../codes/registry.ts";
+import type { PipelineTimer } from "../timing.ts";
 
 // ── Public interface ────────────────────────────────────────────────
+
+import type { DocIndex } from "@steady/json-schema";
+import type { FragmentPointer } from "@steady/json-pointer";
 
 export interface SpecAnalysisResult {
   diagnostics: Diagnostic[];
   /** True if any diagnostic has fatal: true in the registry. */
   fatal: boolean;
+  /** Document index for SchemaRegistry (from a single walk). */
+  docIndex: DocIndex;
 }
 
 export interface AnalyzeSpecOptions {
@@ -26,6 +32,8 @@ export interface AnalyzeSpecOptions {
   baseUri?: string;
   /** Fields where the parser applied defaults (triggers E1003 diagnostics). */
   defaultedFields?: string[];
+  /** Optional timer for startup instrumentation. */
+  timer?: PipelineTimer;
 }
 
 /**
@@ -37,27 +45,45 @@ export function analyzeSpec(
   options?: AnalyzeSpecOptions,
 ): SpecAnalysisResult {
   const diagnostics: Diagnostic[] = [];
+  const timer = options?.timer;
 
   // E1003: Missing metadata fields (parser applied defaults)
+  timer?.start("metadata");
   if (options?.defaultedFields && options.defaultedFields.length > 0) {
     diagnostics.push(...checkMissingMetadata(options.defaultedFields));
   }
+  timer?.stop("metadata");
 
   // Metaschema validation for OpenAPI 3.1.x
+  timer?.start("metaschema");
   diagnostics.push(...checkMetaschema(spec, options?.baseUri));
+  timer?.stop("metaschema");
 
+  timer?.start("structural");
   diagnostics.push(...checkMultipleQuestionMarks(spec));
   diagnostics.push(...checkQuestionMarkInParams(spec));
   diagnostics.push(...checkDuplicatePathPatterns(spec));
   diagnostics.push(...checkDuplicatePathParamNames(spec));
   diagnostics.push(...checkMissingResponses(spec));
   diagnostics.push(...checkInvalidComponentNames(spec));
+  timer?.stop("structural");
 
   // Single tree walk collects $ref info and schema pointers
+  timer?.start("walk");
   const walkResult = walkSpec(spec);
+  timer?.stop("walk");
+
+  timer?.start("refs");
   diagnostics.push(...checkRefSiblings(spec, walkResult.refs));
+  timer?.start("refs-unresolved");
   diagnostics.push(...checkUnresolvedRefs(spec, walkResult.refs));
+  timer?.stop("refs-unresolved");
+  timer?.start("refs-circular");
   diagnostics.push(...checkCircularRefs(walkResult.refs, spec));
+  timer?.stop("refs-circular");
+  timer?.stop("refs");
+
+  timer?.start("constraints");
   diagnostics.push(
     ...checkImpossibleConstraints(walkResult.schemas),
   );
@@ -67,13 +93,22 @@ export function analyzeSpec(
   diagnostics.push(
     ...checkNonStandardUsage(walkResult.schemas, spec.openapi),
   );
+  timer?.stop("constraints");
 
   const fatal = diagnostics.some((d) => {
     if (!hasCode(d.code)) return false;
     return getCode(d.code).fatal === true;
   });
 
-  return { diagnostics, fatal };
+  const docIndex: DocIndex = {
+    anchors: walkResult.anchors,
+    ids: walkResult.ids,
+    refs: walkResult.uniqueRefs,
+    edges: walkResult.edges,
+    pointerCount: walkResult.pointerCount,
+  };
+
+  return { diagnostics, fatal, docIndex };
 }
 
 // ── Utilities ───────────────────────────────────────────────────────
@@ -295,10 +330,8 @@ function isResolvedParamInfo(v: unknown): v is ResolvedParamInfo {
  */
 function resolveLocalRef(spec: OpenAPISpec, ref: string): unknown {
   if (!ref.startsWith("#")) return null;
-  const pointer = ref.slice(1); // Remove #
-  if (pointer === "") return spec;
   try {
-    return resolve(spec, pointer);
+    return resolve(spec, ref);
   } catch {
     return null;
   }
@@ -559,8 +592,8 @@ function checkInvalidComponentNames(spec: OpenAPISpec): Diagnostic[] {
 // E1005, E1007) and schema locations (for E1012).
 
 interface RefInfo {
-  /** JSON pointer to the object containing this $ref. */
-  pointer: string;
+  /** Fragment pointer to the object containing this $ref. */
+  pointer: FragmentPointer;
   /** The $ref value itself (e.g., "#/components/schemas/User"). */
   ref: string;
   /** Other keys on the same object alongside $ref. */
@@ -571,36 +604,78 @@ interface WalkResult {
   refs: RefInfo[];
   /** All schema objects found, with their JSON pointers. */
   schemas: Array<{ schema: Record<string, unknown>; pointer: string }>;
+  /** Map of $anchor value to FragmentPointer. */
+  anchors: Map<string, FragmentPointer>;
+  /** Map of $id value to FragmentPointer. */
+  ids: Map<string, FragmentPointer>;
+  /** All unique $ref values. */
+  uniqueRefs: Set<string>;
+  /** FragmentPointer -> set of $ref targets. Collected during walk. */
+  edges: Map<FragmentPointer, Set<string>>;
+  /** Number of object nodes visited. */
+  pointerCount: number;
 }
 
 function walkSpec(spec: OpenAPISpec): WalkResult {
   const refs: RefInfo[] = [];
   const schemas: WalkResult["schemas"] = [];
+  const anchors = new Map<string, FragmentPointer>();
+  const ids = new Map<string, FragmentPointer>();
+  const uniqueRefs = new Set<string>();
+  const edges = new Map<FragmentPointer, Set<string>>();
+  let pointerCount = 0;
 
-  // ── Generic tree walker for $ref collection ───────────────────
-  function walkForRefs(obj: unknown, pointer: string): void {
+  // ── Generic tree walker for $ref, $anchor, $id, edge collection ─
+  function walkForRefs(obj: unknown, pointer: FragmentPointer): void {
     if (!isObject(obj)) {
       if (Array.isArray(obj)) {
         for (let i = 0; i < obj.length; i++) {
-          walkForRefs(obj[i], `${pointer}/${i}`);
+          const item = obj[i];
+          if (item !== null && typeof item === "object") {
+            const child: FragmentPointer = `${pointer}/${i}`;
+            walkForRefs(item, child);
+          }
         }
       }
       return;
     }
 
+    pointerCount++;
+
     if (typeof obj.$ref === "string") {
       const siblingKeys = Object.keys(obj).filter((k) => k !== "$ref");
       refs.push({ pointer, ref: obj.$ref, siblingKeys });
+      uniqueRefs.add(obj.$ref);
+
+      // Collect edge for DocIndex
+      const existing = edges.get(pointer);
+      if (existing) {
+        existing.add(obj.$ref);
+      } else {
+        edges.set(pointer, new Set([obj.$ref]));
+      }
     }
 
-    for (const [key, value] of Object.entries(obj)) {
+    // Collect $anchor and $id indexes for O(1) lookup
+    if (typeof obj.$anchor === "string") {
+      anchors.set(obj.$anchor, pointer);
+    }
+    if (typeof obj.$id === "string") {
+      ids.set(obj.$id, pointer);
+    }
+
+    for (const key of Object.keys(obj)) {
       if (key === "$ref") continue;
-      walkForRefs(value, `${pointer}/${escapeJsonPointer(key)}`);
+      const value = (obj as Record<string, unknown>)[key];
+      // Skip primitives - they can't contain $ref
+      if (value === null || typeof value !== "object") continue;
+      const child: FragmentPointer = `${pointer}/${escapeJsonPointer(key)}`;
+      walkForRefs(value, child);
     }
   }
 
   // Collect all $refs from the entire spec
-  walkForRefs(spec, "");
+  walkForRefs(spec, "#");
 
   // ── Schema walker for constraint checking ─────────────────────
   function visitSchema(obj: unknown, pointer: string): void {
@@ -906,7 +981,15 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
     }
   }
 
-  return { refs, schemas };
+  return {
+    refs,
+    schemas,
+    anchors,
+    ids,
+    uniqueRefs,
+    edges,
+    pointerCount,
+  };
 }
 
 // ── E1007: Keywords alongside $ref (3.0.x only) ────────────────────
@@ -924,7 +1007,7 @@ function checkRefSiblings(
   for (const info of refs) {
     if (info.siblingKeys.length === 0) continue;
     // Steady doesn't serve webhooks. Skip refs from webhook schemas
-    if (info.pointer.startsWith("/webhooks/")) continue;
+    if (info.pointer.startsWith("#/webhooks/")) continue;
     // summary/description alongside $ref are so commonly used that flagging
     // them would be noisy. Skip them.
     const meaningful = info.siblingKeys.filter(
@@ -935,7 +1018,7 @@ function checkRefSiblings(
     diagnostics.push(
       specDiagnostic(
         "E1007",
-        `#${info.pointer}`,
+        info.pointer,
         `Keywords [${
           meaningful.join(", ")
         }] alongside $ref are ignored in OpenAPI ${spec.openapi}`,
@@ -964,41 +1047,57 @@ function checkUnresolvedRefs(
   refs: RefInfo[],
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
+  // Cache: pointer -> resolves successfully?
+  // 19K refs often share ~4K unique targets; resolve each only once.
+  const resolveCache = new Map<string, boolean>();
 
   for (const info of refs) {
     if (!info.ref.startsWith("#")) continue;
+    if (info.ref === "#") continue; // Root document always resolves
 
-    const pointer = info.ref.slice(1); // Remove #
-    if (pointer === "") continue; // #  → root document, always resolves
+    const cached = resolveCache.get(info.ref);
+    if (cached === true) continue;
+    if (cached === false) {
+      diagnostics.push(
+        unresolvedRefDiagnostic(info),
+      );
+      continue;
+    }
 
     try {
-      resolve(spec, pointer);
+      resolve(spec, info.ref);
+      resolveCache.set(info.ref, true);
     } catch {
+      resolveCache.set(info.ref, false);
       diagnostics.push(
-        specDiagnostic(
-          "E1004",
-          `#${info.pointer}`,
-          `Unresolved reference: ${info.ref}`,
-          {
-            suggestion: "Check that the referenced path exists in the spec",
-            actual: info.ref,
-            display: {
-              context: [{
-                text: `$ref: '${info.ref}'`,
-                highlight: {
-                  start: 6,
-                  end: 6 + info.ref.length + 2,
-                  label: "Target does not exist",
-                },
-              }],
-            },
-          },
-        ),
+        unresolvedRefDiagnostic(info),
       );
     }
   }
 
   return diagnostics;
+}
+
+function unresolvedRefDiagnostic(info: RefInfo): Diagnostic {
+  return specDiagnostic(
+    "E1004",
+    info.pointer,
+    `Unresolved reference: ${info.ref}`,
+    {
+      suggestion: "Check that the referenced path exists in the spec",
+      actual: info.ref,
+      display: {
+        context: [{
+          text: `$ref: '${info.ref}'`,
+          highlight: {
+            start: 6,
+            end: 6 + info.ref.length + 2,
+            label: "Target does not exist",
+          },
+        }],
+      },
+    },
+  );
 }
 
 // ── E1005: Circular $ref ────────────────────────────────────────────
@@ -1009,36 +1108,33 @@ function checkCircularRefs(
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
-  // Collect all ref targets as graph nodes
+  // Collect all ref targets as graph nodes (already #-prefixed via $ref values)
   const targets = new Set<string>();
   for (const info of refs) {
     if (!info.ref.startsWith("#")) continue;
-    targets.add(info.ref.slice(1));
+    targets.add(info.ref);
   }
 
-  // Build a sorted list of targets for efficient prefix matching
-  const sortedTargets = [...targets].sort((a, b) => b.length - a.length);
-
-  // Build adjacency list AND track which RefInfos create each edge
+  // Build adjacency list AND track which RefInfos create each edge.
+  // All keys/values use #-prefixed pointers (FragmentPointer convention).
   const edges = new Map<string, Set<string>>();
   const edgeRefs = new Map<string, Map<string, RefInfo[]>>();
 
   for (const info of refs) {
     if (!info.ref.startsWith("#")) continue;
-    const refTarget = info.ref.slice(1);
 
-    // Find which target this ref is nested under.
-    // The longest target that is a prefix of the ref's pointer.
+    // Find which target this ref is nested under (longest prefix match).
+    // Walk up the pointer path checking each ancestor against the target set.
     let container: string | null = null;
-    for (const t of sortedTargets) {
-      if (
-        info.pointer === t ||
-        (t === "" && info.pointer.length > 0) ||
-        info.pointer.startsWith(t + "/")
-      ) {
-        container = t;
-        break; // sortedTargets is longest-first, so first match is longest
+    let path: string = info.pointer;
+    while (path.length > 0) {
+      if (targets.has(path)) {
+        container = path;
+        break;
       }
+      const lastSlash = path.lastIndexOf("/");
+      if (lastSlash < 0) break;
+      path = path.slice(0, lastSlash);
     }
 
     if (container === null) continue;
@@ -1046,9 +1142,9 @@ function checkCircularRefs(
     // Add to adjacency list
     const existing = edges.get(container);
     if (existing) {
-      existing.add(refTarget);
+      existing.add(info.ref);
     } else {
-      edges.set(container, new Set([refTarget]));
+      edges.set(container, new Set([info.ref]));
     }
 
     // Track RefInfo for this edge
@@ -1057,10 +1153,10 @@ function checkCircularRefs(
       containerMap = new Map();
       edgeRefs.set(container, containerMap);
     }
-    let targetList = containerMap.get(refTarget);
+    let targetList = containerMap.get(info.ref);
     if (!targetList) {
       targetList = [];
-      containerMap.set(refTarget, targetList);
+      containerMap.set(info.ref, targetList);
     }
     targetList.push(info);
   }
@@ -1087,6 +1183,7 @@ function checkCircularRefs(
           if (startIdx < 0) continue;
 
           const cyclePath = stack.slice(startIdx);
+
           const cycleKey = [...cyclePath].sort().join(",");
           if (reported.has(cycleKey)) continue;
 
@@ -1105,7 +1202,7 @@ function checkCircularRefs(
             diagnostics.push(
               specDiagnostic(
                 "E1005",
-                `#${next}`,
+                next,
                 `Forced circular reference (no base case) at ${next}`,
                 {
                   suggestion:

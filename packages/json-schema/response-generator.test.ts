@@ -15,7 +15,7 @@ import type { Schema } from "./types.ts";
 function createRegistry(schema: Schema): SchemaRegistry {
   // Wrap the schema in a document structure that SchemaRegistry expects
   const document = { schema };
-  return new SchemaRegistry(document);
+  return SchemaRegistry.fromDocument(document);
 }
 
 Deno.test("RegistryResponseGenerator - generates string for simple string schema", () => {
@@ -196,7 +196,7 @@ Deno.test("RegistryResponseGenerator - allOf with $ref resolves referenced schem
     },
   };
 
-  const registry = new SchemaRegistry(document);
+  const registry = SchemaRegistry.fromDocument(document);
   const generator = new RegistryResponseGenerator(registry);
 
   const result = generator.generate(
@@ -283,7 +283,7 @@ Deno.test("RegistryResponseGenerator - allOf with nested $ref-to-allOf flattens 
     },
   };
 
-  const registry = new SchemaRegistry(document);
+  const registry = SchemaRegistry.fromDocument(document);
   const generator = new RegistryResponseGenerator(registry);
 
   const result = generator.generate(
@@ -354,7 +354,7 @@ Deno.test("RegistryResponseGenerator - seeded RNG produces deterministic output 
     },
   };
 
-  const registry = new SchemaRegistry(document);
+  const registry = SchemaRegistry.fromDocument(document);
 
   // Create generator with fixed seed
   const generator = new RegistryResponseGenerator(registry, { seed: 42 });
@@ -392,7 +392,7 @@ Deno.test("RegistryResponseGenerator - different seeds produce different output"
     },
   };
 
-  const registry = new SchemaRegistry(document);
+  const registry = SchemaRegistry.fromDocument(document);
 
   const generator1 = new RegistryResponseGenerator(registry, { seed: 42 });
   const generator2 = new RegistryResponseGenerator(registry, { seed: 12345 });
@@ -432,7 +432,7 @@ Deno.test("SchemaRegistry - $id lookup requires exact match", () => {
     },
   };
 
-  const registry = new SchemaRegistry(document);
+  const registry = SchemaRegistry.fromDocument(document);
   const generator = new RegistryResponseGenerator(registry, { seed: 42 });
 
   const result = generator.generate(
@@ -474,7 +474,7 @@ Deno.test("SchemaRegistry - $id lookup does not do basename matching", () => {
     },
   };
 
-  const registry = new SchemaRegistry(document);
+  const registry = SchemaRegistry.fromDocument(document);
   const generator = new RegistryResponseGenerator(registry, { seed: 42 });
 
   const result = generator.generate(
@@ -603,7 +603,7 @@ Deno.test("RegistryResponseGenerator - nested anyOf in array items should not re
     },
   };
 
-  const registry = new SchemaRegistry(document);
+  const registry = SchemaRegistry.fromDocument(document);
   const generator = new RegistryResponseGenerator(registry, { seed: 42 });
 
   const result = generator.generate(
@@ -690,7 +690,7 @@ Deno.test("RegistryResponseGenerator - allOf with nullable should return valid v
     },
   };
 
-  const registry = new SchemaRegistry(document);
+  const registry = SchemaRegistry.fromDocument(document);
   const generator = new RegistryResponseGenerator(registry, { seed: 42 });
 
   const result = generator.generate(

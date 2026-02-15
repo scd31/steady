@@ -10,6 +10,7 @@
  */
 
 import type { ResponseObject, ServerConfig } from "./types.ts";
+import type { PipelineTimer } from "./timing.ts";
 import {
   HEADERS,
   isReference,
@@ -27,7 +28,8 @@ import {
   OpenAPIDocument,
   RegistryResponseGenerator,
 } from "@steady/json-schema";
-import type { GenerateOptions } from "@steady/json-schema";
+import type { DocIndex, GenerateOptions } from "@steady/json-schema";
+import { isFragmentPointer } from "@steady/json-pointer";
 import type { Logger } from "./logging/logger.ts";
 import type {
   RequestEvent,
@@ -152,9 +154,17 @@ export class MockServer {
   constructor(
     private spec: OpenAPISpec,
     private config: ServerConfig,
+    docIndex?: DocIndex,
+    private timer?: PipelineTimer,
   ) {
     // Create document-centric processor - all $refs will resolve correctly
-    this.document = new OpenAPIDocument(spec);
+    timer?.start("document");
+    if (docIndex) {
+      this.document = new OpenAPIDocument(spec, docIndex);
+    } else {
+      this.document = OpenAPIDocument.fromSpec(spec);
+    }
+    timer?.stop("document");
 
     this.abortController = new AbortController();
     this.sessionStore = new SessionStore();
@@ -179,6 +189,7 @@ export class MockServer {
     }
 
     // Diagnostics engine: all ref resolution flows through SchemaRegistry
+    timer?.start("diagnostics-engine");
     const registry = this.document.schemas;
     const specDoc = new OpenAPISpecDocument(spec, registry);
     const treeValidator = new TreeValidator({
@@ -191,13 +202,16 @@ export class MockServer {
       },
     });
     this.diagnosticEngine = new DiagnosticEngine(specDoc, treeValidator);
+    timer?.stop("diagnostics-engine");
 
     // Diagnostic collector for session-level aggregation
     this.collector = new DiagnosticCollector();
     this.collector.setStaticDiagnostics(config.startupDiagnostics ?? []);
 
     // Pre-compile all path patterns at construction time
+    timer?.start("compile-routes");
     this.compileRoutes();
+    timer?.stop("compile-routes");
   }
 
   /**
@@ -317,6 +331,8 @@ export class MockServer {
     this.sessionStore.setAllEndpoints(allEndpoints);
     this.endpointCount = allEndpoints.length;
 
+    const timing = this.timer?.getResult();
+
     const event: StartupEvent = {
       id: crypto.randomUUID(),
       timestamp: new Date(),
@@ -332,6 +348,7 @@ export class MockServer {
       },
       specPath: this.config.specPath,
       diagnostics: startupDiags,
+      ...(timing ? { timing } : {}),
     };
 
     this.logger.startup(event);
@@ -747,7 +764,6 @@ export class MockServer {
         schemas: {
           totalRefs: stats.totalRefs,
           cached: stats.cachedSchemas,
-          cyclicRefs: stats.cyclicRefs,
         },
       }),
       {
@@ -1238,7 +1254,9 @@ export class MockServer {
     // If schema is a reference, use the document to resolve and generate
     if (typeof schema === "object" && schema !== null && "$ref" in schema) {
       const ref = (schema as { $ref: string }).$ref;
-      return this.document.generateResponse(ref, generatorOptions);
+      if (isFragmentPointer(ref)) {
+        return this.document.generateResponse(ref, generatorOptions);
+      }
     }
 
     // For inline schemas, create a generator with document access

@@ -27,6 +27,7 @@ import type {
   ShutdownEvent,
   StartupEvent,
 } from "./types.ts";
+import type { PhaseTiming, StartupTiming } from "../timing.ts";
 import type { Diagnostic } from "../diagnostic.ts";
 
 export class TextLogger extends BaseLogger {
@@ -235,7 +236,7 @@ export class TextLogger extends BaseLogger {
   }
 
   startup(event: StartupEvent): void {
-    const { spec, server, diagnostics } = event;
+    const { spec, server, diagnostics, timing } = event;
 
     console.log(
       colorize("Steady", colors.bold, this.useColor) +
@@ -262,10 +263,20 @@ export class TextLogger extends BaseLogger {
 
     let loaded =
       `Loaded: ${spec.endpointCount}/${spec.endpointCount} endpoints`;
+    if (timing) {
+      loaded += ` ${
+        colorize(`(${Math.round(timing.total)}ms)`, colors.dim, this.useColor)
+      }`;
+    }
     if (diagnostics.length > 0) {
       loaded += ` (${formatDiagnosticSummary(diagnostics, this.useColor)})`;
     }
     console.log(loaded);
+
+    // Show phase timing in details/full mode
+    if (timing && this.showDetails()) {
+      this.logTimingTree(timing);
+    }
 
     console.log(
       `Ready to accept requests on ${server.url}${
@@ -273,6 +284,51 @@ export class TextLogger extends BaseLogger {
       }`,
     );
     console.log();
+  }
+
+  /** Render a timing tree to the console. */
+  private logTimingTree(timing: StartupTiming): void {
+    for (const phase of timing.phases) {
+      this.logPhase(phase, "  ");
+    }
+    if (timing.memory) {
+      const mb = (timing.memory.heapUsed / (1024 * 1024)).toFixed(1);
+      console.log(
+        `  ${
+          colorize(`memory: ${mb} MB heap used`, colors.dim, this.useColor)
+        }`,
+      );
+    }
+  }
+
+  /** Recursively render a phase and its children. */
+  private logPhase(phase: PhaseTiming, indent: string): void {
+    const ms = Math.round(phase.duration);
+    if (phase.children && phase.children.length > 0) {
+      const childSummary = phase.children
+        .map((c) => `${c.name} ${Math.round(c.duration)}ms`)
+        .join(", ");
+      console.log(
+        `${indent}${
+          colorize(
+            `${phase.name} ${ms}ms (${childSummary})`,
+            colors.dim,
+            this.useColor,
+          )
+        }`,
+      );
+      if (this.showFull()) {
+        for (const child of phase.children) {
+          this.logPhase(child, indent + "  ");
+        }
+      }
+    } else {
+      console.log(
+        `${indent}${
+          colorize(`${phase.name} ${ms}ms`, colors.dim, this.useColor)
+        }`,
+      );
+    }
   }
 
   shutdown(event: ShutdownEvent): void {

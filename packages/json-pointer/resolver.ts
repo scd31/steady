@@ -2,7 +2,7 @@
  * Reference resolution utilities for OpenAPI specs
  */
 
-import { exists, JsonPointerError, resolve } from "./json-pointer.ts";
+import { JsonPointerError, resolve } from "./json-pointer.ts";
 
 export interface ReferenceContext {
   document: unknown;
@@ -11,11 +11,12 @@ export interface ReferenceContext {
 }
 
 /**
- * Resolve an OpenAPI reference object
+ * Resolve an OpenAPI reference object.
  *
- * Handles URI fragment percent-encoding per RFC 3986.
- * When JSON Pointers are used as URI fragments (e.g., #/paths/~1users~1%7Bid%7D),
- * they may be percent-encoded. We decode before applying JSON Pointer resolution.
+ * Calls resolve() directly, which handles "#" stripping and
+ * percent-decoding for fragment pointers per RFC 3986.
+ * Errors propagate naturally: invalid percent encoding, missing
+ * properties, etc. each produce a specific JsonPointerError.
  */
 export function resolveReference(
   document: unknown,
@@ -30,36 +31,14 @@ export function resolveReference(
     );
   }
 
-  // Remove "#" and percent-decode the URI fragment
-  // Per RFC 3986, URI fragments may be percent-encoded
-  let pointer: string;
-  try {
-    pointer = decodeURIComponent(ref.slice(1));
-  } catch (error) {
-    if (error instanceof URIError) {
-      throw new JsonPointerError(
-        `Invalid percent encoding in reference: ${ref}`,
-        ref,
-      );
-    }
-    throw error;
-  }
-
-  if (!exists(document, pointer)) {
-    throw new JsonPointerError(
-      `Reference ${ref} not found in document`,
-      pointer,
-    );
-  }
-
-  // Check for circular references if context provided
+  // Check for circular references before resolving
   if (context) {
     if (context.visited.has(ref)) {
       throw new JsonPointerError(
         `Circular reference detected: ${
           [...context.visited, ref].join(" -> ")
         }`,
-        pointer,
+        ref,
       );
     }
 
@@ -69,12 +48,11 @@ export function resolveReference(
       path: [...context.path, ref],
     };
 
-    // If the resolved value contains more references, resolve them too
-    const resolved = resolve(document, pointer);
+    const resolved = resolve(document, ref);
     return resolveNestedReferences(resolved, document, newContext);
   }
 
-  return resolve(document, pointer);
+  return resolve(document, ref);
 }
 
 /**
