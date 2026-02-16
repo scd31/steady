@@ -47,9 +47,9 @@ export interface TypeSchema extends BaseSchema {
   // Numeric validation
   multipleOf?: number;
   maximum?: number;
-  exclusiveMaximum?: number;
+  exclusiveMaximum?: number | boolean; // boolean in OpenAPI 3.0, number in 3.1/JSON Schema
   minimum?: number;
-  exclusiveMinimum?: number;
+  exclusiveMinimum?: number | boolean; // boolean in OpenAPI 3.0, number in 3.1/JSON Schema
 
   // String validation
   maxLength?: number;

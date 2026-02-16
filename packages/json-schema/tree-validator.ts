@@ -646,7 +646,8 @@ export class TreeValidator {
       });
     }
     if (
-      schema.exclusiveMinimum !== undefined && data <= schema.exclusiveMinimum
+      typeof schema.exclusiveMinimum === "number" &&
+      data <= schema.exclusiveMinimum
     ) {
       errors.push({
         valid: false,
@@ -656,9 +657,22 @@ export class TreeValidator {
         expected: schema.exclusiveMinimum,
         actual: data,
       });
+    } else if (
+      schema.exclusiveMinimum === true && schema.minimum !== undefined &&
+      data <= schema.minimum
+    ) {
+      errors.push({
+        valid: false,
+        keyword: "exclusiveMinimum",
+        path: dataPath,
+        schemaPath,
+        expected: schema.minimum,
+        actual: data,
+      });
     }
     if (
-      schema.exclusiveMaximum !== undefined && data >= schema.exclusiveMaximum
+      typeof schema.exclusiveMaximum === "number" &&
+      data >= schema.exclusiveMaximum
     ) {
       errors.push({
         valid: false,
@@ -666,6 +680,18 @@ export class TreeValidator {
         path: dataPath,
         schemaPath,
         expected: schema.exclusiveMaximum,
+        actual: data,
+      });
+    } else if (
+      schema.exclusiveMaximum === true && schema.maximum !== undefined &&
+      data >= schema.maximum
+    ) {
+      errors.push({
+        valid: false,
+        keyword: "exclusiveMaximum",
+        path: dataPath,
+        schemaPath,
+        expected: schema.maximum,
         actual: data,
       });
     }

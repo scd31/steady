@@ -1,6 +1,8 @@
 // Complete OpenAPI 3.0/3.1 type definitions
 // Based on OpenAPI Specification v3.1.0
 
+import type { Schema } from "@steady/json-schema";
+
 export interface OpenAPISpec {
   openapi: string;
   info: InfoObject;
@@ -151,91 +153,13 @@ export interface ComponentsObject {
   pathItems?: { [name: string]: PathItemObject | ReferenceObject }; // OpenAPI 3.1
 }
 
-export interface SchemaObject {
-  // Reference
-  $ref?: string;
-
-  // JSON Schema compatibility (OpenAPI 3.1)
-  $schema?: string;
-  $id?: string;
-  $anchor?: string;
-  $dynamicRef?: string;
-  $dynamicAnchor?: string;
-  $comment?: string;
-
-  // Basic validation
-  type?:
-    | "string"
-    | "number"
-    | "integer"
-    | "boolean"
-    | "array"
-    | "object"
-    | "null"
-    | Array<
-      "string" | "number" | "integer" | "boolean" | "array" | "object" | "null"
-    >; // OpenAPI 3.1
-  format?: string;
-
-  // OpenAPI 3.1 - const and enum
-  const?: unknown;
-  enum?: unknown[];
-
-  // String validation
-  minLength?: number;
-  maxLength?: number;
-  pattern?: string;
-
-  // Number validation
-  minimum?: number;
-  maximum?: number;
-  exclusiveMinimum?: boolean | number; // boolean in 3.0.x, number in 3.1.x
-  exclusiveMaximum?: boolean | number; // boolean in 3.0.x, number in 3.1.x
-  multipleOf?: number;
-
-  // Array validation
-  items?: SchemaObject;
-  minItems?: number;
-  maxItems?: number;
-
-  // Object validation
-  properties?: { [name: string]: SchemaObject };
-  required?: string[];
-  additionalProperties?: boolean | SchemaObject;
-  patternProperties?: { [pattern: string]: SchemaObject }; // OpenAPI 3.1
-  propertyNames?: SchemaObject; // OpenAPI 3.1
-  unevaluatedProperties?: boolean | SchemaObject; // OpenAPI 3.1
-  minProperties?: number;
-  maxProperties?: number;
-
-  // Composition
-  allOf?: SchemaObject[];
-  oneOf?: SchemaObject[];
-  anyOf?: SchemaObject[];
-  not?: SchemaObject;
-
-  // Conditional schema (OpenAPI 3.1)
-  if?: SchemaObject;
-  then?: SchemaObject;
-  else?: SchemaObject;
-  dependentSchemas?: { [name: string]: SchemaObject };
-
-  // Metadata
-  title?: string;
-  description?: string;
-  default?: unknown;
-  example?: unknown; // Deprecated in favor of examples in JSON Schema 2020-12
-  examples?: unknown[]; // OpenAPI 3.1 - JSON Schema 2020-12
-
-  // OpenAPI specific
-  nullable?: boolean; // Deprecated in OpenAPI 3.1, use type: ["string", "null"] instead
-  discriminator?: DiscriminatorObject;
-  xml?: XMLObject;
-  externalDocs?: ExternalDocsObject;
-  deprecated?: boolean;
-  readOnly?: boolean;
-  writeOnly?: boolean;
-}
+/**
+ * Schema type for OpenAPI specifications.
+ * This is the canonical JSON Schema type from @steady/json-schema, which
+ * includes all JSON Schema 2020-12 keywords plus OpenAPI extensions
+ * (nullable, discriminator, xml, externalDocs).
+ */
+export type SchemaObject = Schema;
 
 export interface DiscriminatorObject {
   propertyName: string;

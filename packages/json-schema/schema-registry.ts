@@ -530,11 +530,15 @@ export class RegistryResponseGenerator {
   }
 
   private generateInteger(schema: Schema): number {
-    const min = schema.exclusiveMinimum !== undefined
+    const min = typeof schema.exclusiveMinimum === "number"
       ? schema.exclusiveMinimum + 1
+      : schema.exclusiveMinimum === true
+      ? (schema.minimum ?? 0) + 1
       : (schema.minimum ?? 0);
-    const max = schema.exclusiveMaximum !== undefined
+    const max = typeof schema.exclusiveMaximum === "number"
       ? schema.exclusiveMaximum - 1
+      : schema.exclusiveMaximum === true
+      ? (schema.maximum ?? 100) - 1
       : (schema.maximum ?? 100);
     let num = Math.floor(min + this.random() * (max - min + 1));
     if (schema.multipleOf && schema.multipleOf > 0) {
@@ -544,11 +548,15 @@ export class RegistryResponseGenerator {
   }
 
   private generateNumber(schema: Schema): number {
-    const min = schema.exclusiveMinimum !== undefined
+    const min = typeof schema.exclusiveMinimum === "number"
       ? schema.exclusiveMinimum + Number.EPSILON
+      : schema.exclusiveMinimum === true
+      ? (schema.minimum ?? 0) + Number.EPSILON
       : (schema.minimum ?? 0);
-    const max = schema.exclusiveMaximum !== undefined
+    const max = typeof schema.exclusiveMaximum === "number"
       ? schema.exclusiveMaximum - Number.EPSILON
+      : schema.exclusiveMaximum === true
+      ? (schema.maximum ?? 100) - Number.EPSILON
       : (schema.maximum ?? 100);
     let num = min + this.random() * (max - min);
     if (schema.multipleOf && schema.multipleOf > 0) {

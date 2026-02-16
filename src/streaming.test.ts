@@ -3,6 +3,7 @@
  */
 
 import { assertEquals, assertStringIncludes } from "@std/assert";
+import type { Schema } from "@steady/json-schema";
 import {
   createStreamingResponse,
   getStreamFormat,
@@ -110,7 +111,7 @@ Deno.test("createStreamingResponse: generates NDJSON stream", async () => {
       name: { type: "string" },
     },
     required: ["id", "name"],
-  };
+  } satisfies Schema;
 
   const registry = SchemaRegistry.fromDocument({ schema: doc });
   const { stream } = createStreamingResponse(
@@ -151,7 +152,7 @@ Deno.test("createStreamingResponse: generates SSE stream", async () => {
     properties: {
       value: { type: "integer" },
     },
-  };
+  } satisfies Schema;
 
   const registry = SchemaRegistry.fromDocument({ schema: doc });
   const { stream } = createStreamingResponse(
@@ -186,7 +187,7 @@ Deno.test("createStreamingResponse: uses deterministic seeds", async () => {
     properties: {
       id: { type: "integer" },
     },
-  };
+  } satisfies Schema;
 
   const registry = SchemaRegistry.fromDocument({ schema: doc });
 
@@ -321,7 +322,7 @@ Deno.test("isSSEEventSequence: rejects array without event/data fields", () => {
 });
 
 Deno.test("createStreamingResponse: SSE with example event sequence", async () => {
-  const doc = { type: "object" };
+  const doc = { type: "object" } satisfies Schema;
   const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleEvents = [
@@ -363,7 +364,7 @@ Deno.test("createStreamingResponse: SSE with example event sequence", async () =
 });
 
 Deno.test("createStreamingResponse: SSE adds done event if missing", async () => {
-  const doc = { type: "object" };
+  const doc = { type: "object" } satisfies Schema;
   const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleEvents = [
@@ -394,7 +395,7 @@ Deno.test("createStreamingResponse: SSE adds done event if missing", async () =>
 });
 
 Deno.test("createStreamingResponse: SSE supports custom event IDs", async () => {
-  const doc = { type: "object" };
+  const doc = { type: "object" } satisfies Schema;
   const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleEvents = [
@@ -425,7 +426,7 @@ Deno.test("createStreamingResponse: SSE supports custom event IDs", async () => 
 });
 
 Deno.test("createStreamingResponse: SSE supports retry field", async () => {
-  const doc = { type: "object" };
+  const doc = { type: "object" } satisfies Schema;
   const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleEvents = [
@@ -458,7 +459,7 @@ Deno.test("createStreamingResponse: SSE schema-based adds done event", async () 
   const doc = {
     type: "object",
     properties: { value: { type: "integer" } },
-  };
+  } satisfies Schema;
 
   const registry = SchemaRegistry.fromDocument({ schema: doc });
   const { stream } = createStreamingResponse(
@@ -561,7 +562,7 @@ Deno.test("parseNDJSONExample: returns array as-is", () => {
 });
 
 Deno.test("createStreamingResponse: NDJSON with array example", async () => {
-  const doc = { type: "object" };
+  const doc = { type: "object" } satisfies Schema;
   const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleData = [
@@ -598,7 +599,7 @@ Deno.test("createStreamingResponse: NDJSON with array example", async () => {
 });
 
 Deno.test("createStreamingResponse: NDJSON with multiline string example", async () => {
-  const doc = { type: "object" };
+  const doc = { type: "object" } satisfies Schema;
   const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const multilineExample = `{"event":"start","data":{"jobId":"123"}}
@@ -641,7 +642,7 @@ Deno.test("createStreamingResponse: NDJSON with multiline string example", async
 });
 
 Deno.test("createStreamingResponse: NDJSON example does not add _stream metadata", async () => {
-  const doc = { type: "object" };
+  const doc = { type: "object" } satisfies Schema;
   const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   const exampleData = [{ id: 1, name: "test" }];
@@ -674,7 +675,7 @@ Deno.test("createStreamingResponse: NDJSON with invalid example returns warning 
   const doc = {
     type: "object",
     properties: { id: { type: "integer" } },
-  };
+  } satisfies Schema;
   const registry = SchemaRegistry.fromDocument({ schema: doc });
 
   // Invalid example: plain string, not JSON

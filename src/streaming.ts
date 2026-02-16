@@ -15,9 +15,10 @@
  * - No example: generates from schema
  */
 
-import type { SchemaRegistry } from "@steady/json-schema";
+import type { Schema, SchemaRegistry } from "@steady/json-schema";
 import { RegistryResponseGenerator } from "@steady/json-schema";
 import type { GenerateOptions } from "@steady/json-schema";
+import type { ReferenceObject } from "@steady/openapi";
 
 /** Streaming content types that trigger streaming behavior */
 export const STREAMING_CONTENT_TYPES = [
@@ -49,7 +50,7 @@ export function isStreamingContentType(
   contentType: string,
 ): contentType is StreamingContentType {
   const normalized = contentType.toLowerCase().split(";")[0]?.trim() ?? "";
-  return STREAMING_CONTENT_TYPES.includes(normalized as StreamingContentType);
+  return (STREAMING_CONTENT_TYPES as readonly string[]).includes(normalized);
 }
 
 /** Get the streaming format for a content type */
@@ -175,7 +176,7 @@ export function parseNDJSONExample(example: unknown): unknown[] {
  */
 export function createStreamingResponse(
   registry: SchemaRegistry,
-  schema: unknown,
+  schema: Schema | ReferenceObject,
   schemaPointer: string,
   format: "ndjson" | "sse",
   options: StreamingOptions = {},
@@ -247,7 +248,11 @@ function createSSEFromExample(
           return;
         }
 
-        const event = events[eventIndex]!;
+        const event = events[eventIndex];
+        if (!event) {
+          controller.close();
+          return;
+        }
         const formatted = formatSSEEvent(event, eventIndex);
         controller.enqueue(encoder.encode(formatted));
 
@@ -305,7 +310,11 @@ function createNDJSONFromExample(
           return;
         }
 
-        const item = items[itemIndex]!;
+        const item = items[itemIndex];
+        if (item === undefined) {
+          controller.close();
+          return;
+        }
         // Output as JSON line without adding metadata
         const line = JSON.stringify(item) + "\n";
         controller.enqueue(encoder.encode(line));
@@ -380,7 +389,7 @@ function formatSSEEvent(event: SSEEvent, index: number): string {
  */
 function createStreamFromSchema(
   registry: SchemaRegistry,
-  schema: unknown,
+  schema: Schema | ReferenceObject,
   schemaPointer: string,
   format: "ndjson" | "sse",
   options: StreamingOptions,
@@ -417,8 +426,8 @@ function createStreamFromSchema(
         });
 
         let item: unknown;
-        if (typeof schema === "object" && schema !== null && "$ref" in schema) {
-          const ref = (schema as { $ref: string }).$ref;
+        if ("$ref" in schema && typeof schema.$ref === "string") {
+          const ref = schema.$ref;
           const resolved = registry.resolveRef(ref);
           if (resolved) {
             item = generator.generateFromSchema(resolved.raw, ref);
@@ -426,12 +435,7 @@ function createStreamFromSchema(
             item = { error: `Unresolved reference: ${ref}` };
           }
         } else {
-          item = generator.generateFromSchema(
-            schema as Parameters<
-              RegistryResponseGenerator["generateFromSchema"]
-            >[0],
-            schemaPointer,
-          );
+          item = generator.generateFromSchema(schema, schemaPointer);
         }
 
         // Format the item based on stream type
@@ -499,14 +503,13 @@ function addStreamingMetadata(
 ): unknown {
   // If item is an object, add metadata fields
   if (typeof item === "object" && item !== null && !Array.isArray(item)) {
-    return {
-      ...(item as Record<string, unknown>),
+    return Object.assign({}, item, {
       _stream: {
         index,
         total,
         timestamp: new Date().toISOString(),
       },
-    };
+    });
   }
   // For non-objects, wrap in an object
   return {

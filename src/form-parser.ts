@@ -138,9 +138,10 @@ export function parseFormData(
       propertySchema?.type === "array"
     ) {
       const parts = stringValues[0]!.split(",");
+      const rawItems = propertySchema.items;
       const itemSchema =
-        propertySchema.items && !isReference(propertySchema.items)
-          ? propertySchema.items
+        rawItems && !Array.isArray(rawItems) && !isReference(rawItems)
+          ? rawItems
           : undefined;
       const finalValue = parts.map((v) => coerceValue(v.trim(), itemSchema));
       const path = parseKeyToPath(key, formObjectFormat);
@@ -259,13 +260,12 @@ function getPropertySchema(
 
     if (current.type === "array" && isNumericString(segment)) {
       // Array index - get items schema
-      const itemsSchema: SchemaObject | ReferenceObject | undefined =
-        current.items;
-      if (!itemsSchema) return undefined;
-      if (isReference(itemsSchema)) {
-        current = resolveSchema?.(itemsSchema);
+      const rawItems: SchemaObject | SchemaObject[] | undefined = current.items;
+      if (!rawItems || Array.isArray(rawItems)) return undefined;
+      if (isReference(rawItems)) {
+        current = resolveSchema?.(rawItems);
       } else {
-        current = itemsSchema;
+        current = rawItems;
       }
     } else if (current.properties) {
       // Object property
@@ -366,7 +366,9 @@ function coerceValue(
       if (value.includes(",")) {
         const items = schema.items;
         return value.split(",").map((v) =>
-          items && !isReference(items) ? coerceValue(v.trim(), items) : v.trim()
+          items && !Array.isArray(items) && !isReference(items)
+            ? coerceValue(v.trim(), items)
+            : v.trim()
         );
       }
       // Don't auto-wrap single values - caller handles array structure

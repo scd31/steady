@@ -29,6 +29,14 @@ import { PipelineTimer } from "../src/timing.ts";
 
 type LogFormat = "text" | "json" | "ci";
 
+function isLogLevel(value: string): value is LogLevel {
+  return value === "summary" || value === "details" || value === "full";
+}
+
+function isLogFormat(value: string): value is LogFormat {
+  return value === "text" || value === "json" || value === "ci";
+}
+
 /** Options shared between startServer and startWithWatch. */
 interface ServerOptions {
   logLevel: LogLevel;
@@ -176,26 +184,31 @@ export async function main() {
   // Parse options
   const specPath = firstArg;
   // Map "debug" to "full" for undocumented -v debug alias
-  const logLevel =
-    (args["log-level"] === "debug" ? "full" : args["log-level"]) as LogLevel;
+  const rawLogLevel = args["log-level"] === "debug"
+    ? "full"
+    : args["log-level"];
+  if (!isLogLevel(rawLogLevel)) {
+    console.error(cliError(`Invalid --log-level: ${rawLogLevel}`));
+    console.error(`Valid values: summary, details, full`);
+    Deno.exit(1);
+  }
+  const logLevel: LogLevel = rawLogLevel;
+
   // Auto-detect CI: when CI=true env is set and user did NOT explicitly pass --log-format,
   // default to "ci". Check raw args to distinguish explicit --log-format text from the default.
   const rawHasLogFormat = Deno.args.some((a) =>
     a === "--log-format" || a.startsWith("--log-format=")
   );
-  const logFormat: LogFormat = !rawHasLogFormat && Deno.env.get("CI") === "true"
+  const rawLogFormat = !rawHasLogFormat && Deno.env.get("CI") === "true"
     ? "ci"
-    : (args["log-format"] as LogFormat);
-  const portOverride = args.port ? parseInt(args.port, 10) : undefined;
-
-  // Validate log format
-  if (logFormat !== "text" && logFormat !== "json" && logFormat !== "ci") {
-    console.error(
-      cliError(`Invalid --log-format: ${logFormat}`),
-    );
+    : args["log-format"];
+  if (!isLogFormat(rawLogFormat)) {
+    console.error(cliError(`Invalid --log-format: ${rawLogFormat}`));
     console.error(`Valid values: text, json, ci`);
     Deno.exit(1);
   }
+  const logFormat: LogFormat = rawLogFormat;
+  const portOverride = args.port ? parseInt(args.port, 10) : undefined;
 
   // Determine reject-on-sdk-error
   const rejectOnSdkError = args["reject-on-sdk-error"] ?? false;

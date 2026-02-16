@@ -25,6 +25,7 @@ import type {
   OpenAPISpec,
   OperationObject,
   PathItemObject,
+  ReferenceObject,
 } from "@steady/openapi";
 import { MatchError, missingExampleError } from "./errors.ts";
 import {
@@ -1042,18 +1043,20 @@ export class MockServer {
           if (mediaType.example !== undefined) {
             streamingOptions.example = mediaType.example;
           }
-          // Streaming responses don't capture body for logging
-          return {
-            response: this.generateStreamingResponse(
-              mediaType.schema,
-              pathPattern,
-              method,
-              statusCode,
-              selectedContentType,
-              streamingOptions,
-            ),
-            body: "[streaming]",
-          };
+          // Streaming responses need a schema to generate from
+          if (mediaType.schema) {
+            return {
+              response: this.generateStreamingResponse(
+                mediaType.schema,
+                pathPattern,
+                method,
+                statusCode,
+                selectedContentType,
+                streamingOptions,
+              ),
+              body: "[streaming]",
+            };
+          }
         }
       }
 
@@ -1164,7 +1167,7 @@ export class MockServer {
    * Generate a streaming response (NDJSON or SSE)
    */
   private generateStreamingResponse(
-    schema: unknown,
+    schema: Schema | ReferenceObject,
     pathPattern: string,
     method: string,
     statusCode: string,
@@ -1218,40 +1221,31 @@ export class MockServer {
    * Generate data from a schema object using the document-centric approach
    */
   private generateFromSchemaObject(
-    schema: unknown,
+    schema: Schema | ReferenceObject,
     pathPattern: string,
     method: string,
     statusCode: string,
     generatorOptions: GenerateOptions,
   ): unknown {
-    // If schema is a reference, use the document to resolve and generate
-    if (
-      typeof schema === "object" && schema !== null && "$ref" in schema &&
-      typeof (schema as Record<string, unknown>)["$ref"] === "string"
-    ) {
-      const ref = (schema as Record<string, unknown>)["$ref"] as string;
-      if (isFragmentPointer(ref)) {
-        return this.document.generateResponse(ref, generatorOptions);
+    // If schema is a $ref, use the document to resolve and generate
+    if ("$ref" in schema && typeof schema.$ref === "string") {
+      if (isFragmentPointer(schema.$ref)) {
+        return this.document.generateResponse(schema.$ref, generatorOptions);
       }
+      return null;
     }
 
-    // For inline schemas, create a generator with document access
+    // Inline schema: generate directly
     const generator = new RegistryResponseGenerator(
       this.document.schemas,
       generatorOptions,
     );
-
-    // schema is unknown from the OpenAPI content type's schema field.
-    // If it's a boolean or plain object, generateFromSchema handles it.
-    if (typeof schema === "boolean" || typeof schema === "object") {
-      return generator.generateFromSchema(
-        (schema ?? {}) as Schema | boolean,
-        `#/paths/${
-          escapeSegment(pathPattern)
-        }/${method}/responses/${statusCode}/content/application~1json/schema`,
-      );
-    }
-    return null;
+    return generator.generateFromSchema(
+      schema,
+      `#/paths/${
+        escapeSegment(pathPattern)
+      }/${method}/responses/${statusCode}/content/application~1json/schema`,
+    );
   }
 
   /**
