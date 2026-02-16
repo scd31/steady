@@ -18,6 +18,15 @@ export class JsonLogger extends BaseLogger {
     super({ ...options, color: false });
   }
 
+  /** Convert Headers to a plain object for JSON serialization. */
+  private headersToObject(headers: Headers): Record<string, string> {
+    const obj: Record<string, string> = {};
+    headers.forEach((value, key) => {
+      obj[key] = value;
+    });
+    return obj;
+  }
+
   request(event: RequestEvent): void {
     const output: Record<string, unknown> = {
       type: "request",
@@ -28,6 +37,9 @@ export class JsonLogger extends BaseLogger {
         path: event.request.path,
         pathPattern: event.request.pathPattern,
         query: event.request.query || undefined,
+        ...(this.showDetails()
+          ? { headers: this.headersToObject(event.request.headers) }
+          : {}),
         ...(this.shouldShowBodies() && event.request.body !== undefined
           ? { body: event.request.body }
           : {}),
@@ -36,6 +48,9 @@ export class JsonLogger extends BaseLogger {
         status: event.response.status,
         statusText: event.response.statusText,
         timing: event.response.timing,
+        ...(this.showDetails()
+          ? { headers: this.headersToObject(event.response.headers) }
+          : {}),
         ...(this.shouldShowBodies() && event.response.body !== undefined
           ? { body: event.response.body }
           : {}),

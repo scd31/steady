@@ -4,7 +4,8 @@
 
 ### Features
 
-- E1012 allOf enum/type intersection, discriminator valid values, E3009 confidence
+- E1012 allOf enum/type intersection, discriminator valid values, E3009
+  confidence
 - E1012 spec patterns, CI logger module, and test improvements
 - format-aware query parameter parsing and dead code cleanup
 - per-request minimal response warning and populated expected fields

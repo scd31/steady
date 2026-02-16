@@ -241,6 +241,41 @@ Deno.test("JsonLogger", async (t) => {
     },
   );
 
+  await t.step("details level includes request and response headers", () => {
+    const logger = new JsonLogger({ level: "details" });
+    const event = makeRequestEvent();
+    event.request.headers = new Headers({
+      "content-type": "application/json",
+      "x-api-key": "secret",
+    });
+    event.response.headers = new Headers({
+      "content-type": "application/json",
+      "x-steady-valid": "true",
+    });
+    const lines = captureLog(() => logger.request(event));
+    const output = parseJsonLine(lines);
+    const req = output.request as Record<string, unknown>;
+    const res = output.response as Record<string, unknown>;
+    assertEquals(req.headers, {
+      "content-type": "application/json",
+      "x-api-key": "secret",
+    });
+    assertEquals(res.headers, {
+      "content-type": "application/json",
+      "x-steady-valid": "true",
+    });
+  });
+
+  await t.step("summary level omits headers", () => {
+    const logger = new JsonLogger({ level: "summary" });
+    const event = makeRequestEvent();
+    event.request.headers = new Headers({ "content-type": "application/json" });
+    const lines = captureLog(() => logger.request(event));
+    const output = parseJsonLine(lines);
+    const req = output.request as Record<string, unknown>;
+    assertEquals(req.headers, undefined);
+  });
+
   await t.step("warning and error events include id field", () => {
     const logger = new JsonLogger();
     const warnLines = captureLog(() =>

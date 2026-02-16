@@ -339,13 +339,13 @@ Deno.test("TextLogger: warning and error go to console.log with timestamp prefix
     // All locales produce digits and colons inside the brackets
     const tsPattern = /^\[\d{1,2}:\d{2}:\d{2}/;
     assertEquals(
-      tsPattern.test(logs[0]!),
+      tsPattern.test(logs[0] ?? ""),
       true,
       `Warning should start with timestamp, got: ${logs[0]}`,
     );
     assertEquals(logs[0]?.includes("[Steady] Warning: test warning"), true);
     assertEquals(
-      tsPattern.test(logs[1]!),
+      tsPattern.test(logs[1] ?? ""),
       true,
       `Error should start with timestamp, got: ${logs[1]}`,
     );
