@@ -9,6 +9,7 @@
  * works against the SpecDocument interface, not raw OpenAPI types.
  */
 
+import { isSchema } from "@steady/json-schema";
 import type { Schema } from "@steady/json-schema";
 import type { SchemaRegistry } from "@steady/json-schema";
 import {
@@ -69,14 +70,6 @@ function isParameterLike(value: unknown): value is ParameterObject {
 function isRequestBodyLike(value: unknown): value is RequestBodyObject {
   if (!isPlainObject(value)) return false;
   return "content" in value && isPlainObject(value["content"]);
-}
-
-/**
- * Type guard for Schema. Since all Schema fields are optional,
- * any plain object satisfies the structural contract.
- */
-function isSchemaLike(value: unknown): value is Schema {
-  return isPlainObject(value);
 }
 
 /**
@@ -163,7 +156,7 @@ export class OpenAPISpecDocument {
     // Map to ResolvedParameter
     return Array.from(merged.values()).map(({ param, pointer }) => {
       const rawSchema = param.schema;
-      const hasSchema = rawSchema !== undefined && isSchemaLike(rawSchema);
+      const hasSchema = rawSchema !== undefined && isSchema(rawSchema);
 
       return {
         name: param.name,
@@ -206,7 +199,7 @@ export class OpenAPISpecDocument {
     if (!jsonContent?.schema) return null;
 
     // Ensure schema is a plain object (not a $ref, those should be resolved upstream)
-    if (!isSchemaLike(jsonContent.schema)) return null;
+    if (!isSchema(jsonContent.schema)) return null;
 
     // Build the schema path
     const escapedPath = escapeSegment(pathPattern);
@@ -308,7 +301,7 @@ export class OpenAPISpecDocument {
     const pointer = stripFragment(schemaPath);
     try {
       const resolved = resolvePointer(this.spec, pointer);
-      if (isSchemaLike(resolved)) {
+      if (isSchema(resolved)) {
         return resolved;
       }
       return {};

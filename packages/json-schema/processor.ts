@@ -57,12 +57,28 @@ export class JsonSchemaProcessor {
       }
     }
 
-    const schema = schemaObject as Schema | boolean;
-
-    // 2. Resolve all references via SchemaRegistry
-    const registry = SchemaRegistry.fromDocument(schema, {
+    // 2. Resolve all references via SchemaRegistry (accepts unknown)
+    const registry = SchemaRegistry.fromDocument(schemaObject, {
       baseUri: source?.baseUri,
     });
+
+    // Get the root schema through the registry. The registry validates
+    // that it's a schema-like value (object or boolean) via isSchema().
+    const root = registry.get("#");
+    if (!root) {
+      return {
+        valid: false,
+        errors: [{
+          type: "schema-invalid",
+          instancePath: "",
+          schemaPath: "#",
+          keyword: "type",
+          message: "Schema must be an object or boolean",
+        }],
+        warnings,
+      };
+    }
+    const schema = root.raw;
 
     const resolved = new Map<string, Schema | boolean>();
     const syntaxErrors: SchemaError[] = [];

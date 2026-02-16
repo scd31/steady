@@ -9,7 +9,7 @@
 import type { ComponentsObject, OpenAPISpec } from "@steady/openapi";
 import { openapi31Metaschema } from "@steady/openapi";
 import { escapeSegment, resolve } from "@steady/json-pointer";
-import { JsonSchemaProcessor, type Schema } from "@steady/json-schema";
+import { JsonSchemaProcessor } from "@steady/json-schema";
 import type { Diagnostic, DiagnosticDisplay } from "../diagnostic.ts";
 import { type ECode, getCode, hasCode } from "../codes/registry.ts";
 import type { PipelineTimer } from "../timing.ts";
@@ -186,7 +186,7 @@ function checkMissingMetadata(defaultedFields: string[]): Diagnostic[] {
 
 // ── Metaschema validation (E1006 fatal / E1015 info) ────────────────
 
-const metaschema = openapi31Metaschema as unknown as Schema;
+const metaschema = openapi31Metaschema;
 
 /**
  * Translate a metaschema keyword into a user-facing message.
@@ -652,7 +652,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
 
     for (const key of Object.keys(obj)) {
       if (key === "$ref") continue;
-      const value = (obj as Record<string, unknown>)[key];
+      const value = obj[key];
       // Skip primitives - they can't contain $ref
       if (value === null || typeof value !== "object") continue;
       const child: FragmentPointer = `${pointer}/${escapeSegment(key)}`;

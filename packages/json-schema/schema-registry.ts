@@ -15,8 +15,10 @@ import {
   escapeSegment,
   type FragmentPointer,
   isFragmentPointer,
+  isPlainObject,
   resolve as resolvePointer,
 } from "@steady/json-pointer";
+import { isSchema } from "./types.ts";
 import type { GenerateOptions, Schema, SchemaType } from "./types.ts";
 
 /** Document index built from a single walk. All consumers share this. */
@@ -94,8 +96,6 @@ export class SchemaRegistry {
     let pointerCount = 0;
 
     function walk(value: unknown, pointer: FragmentPointer): void {
-      if (value === null || typeof value !== "object") return;
-
       if (Array.isArray(value)) {
         for (let i = 0; i < value.length; i++) {
           const item = value[i];
@@ -106,7 +106,9 @@ export class SchemaRegistry {
         return;
       }
 
-      const obj = value as Record<string, unknown>;
+      if (!isPlainObject(value)) return;
+
+      const obj = value;
       pointerCount++;
 
       // Collect $anchor and $id
@@ -173,28 +175,19 @@ export class SchemaRegistry {
       return undefined;
     }
 
-    // Validate it's a schema-like object
-    if (!this.isSchemaLike(raw)) {
+    // Validate it's a schema-like object (boolean or plain object)
+    if (typeof raw !== "boolean" && !isSchema(raw)) {
       return undefined;
     }
 
     // Create and cache the registry schema
     const schema: RegistrySchema = {
-      raw: raw as Schema | boolean,
+      raw,
       pointer,
     };
     this.cache.set(pointer, schema);
 
     return schema;
-  }
-
-  /**
-   * Check if a value looks like a schema
-   */
-  private isSchemaLike(value: unknown): boolean {
-    if (typeof value === "boolean") return true;
-    if (typeof value !== "object" || value === null) return false;
-    return true; // Objects can be schemas
   }
 
   /**
@@ -251,8 +244,8 @@ export class SchemaRegistry {
     const result = new Map<string, RegistrySchema>();
     const components = this.resolve("#/components/schemas");
 
-    if (typeof components === "object" && components !== null) {
-      for (const name of Object.keys(components as Record<string, unknown>)) {
+    if (isPlainObject(components)) {
+      for (const name of Object.keys(components)) {
         const pointer: FragmentPointer = `#/components/schemas/${
           escapeSegment(name)
         }`;
@@ -301,19 +294,19 @@ export class RegistryResponseGenerator {
     // Default to exactly 1 item (no randomness)
     // If only min is set: exact count (min=max=value)
     // If only max is set: range from default 1 to max
-    const minSet = options.arrayMin !== undefined;
-    const maxSet = options.arrayMax !== undefined;
-    if (minSet && maxSet) {
-      this.arrayMin = options.arrayMin!;
-      this.arrayMax = options.arrayMax!;
-    } else if (minSet) {
+    const minVal = options.arrayMin;
+    const maxVal = options.arrayMax;
+    if (minVal !== undefined && maxVal !== undefined) {
+      this.arrayMin = minVal;
+      this.arrayMax = maxVal;
+    } else if (minVal !== undefined) {
       // Only min set: exact count
-      this.arrayMin = options.arrayMin!;
-      this.arrayMax = options.arrayMin!;
-    } else if (maxSet) {
+      this.arrayMin = minVal;
+      this.arrayMax = minVal;
+    } else if (maxVal !== undefined) {
       // Only max set: range from 1 to max
       this.arrayMin = 1;
-      this.arrayMax = options.arrayMax!;
+      this.arrayMax = maxVal;
     } else {
       // Neither set: exactly 1 item
       this.arrayMin = 1;
@@ -399,14 +392,15 @@ export class RegistryResponseGenerator {
       const nonNullOptions = schema.anyOf.filter(
         (s) => typeof s !== "boolean" && s.type !== "null",
       );
-      const optionToUse = nonNullOptions.length > 0
-        ? nonNullOptions[0]!
-        : schema.anyOf[0]!;
-      return this.generateFromSchema(optionToUse, `${pointer}/anyOf/0`);
+      const first = nonNullOptions[0] ?? schema.anyOf[0];
+      if (first === undefined) return {};
+      return this.generateFromSchema(first, `${pointer}/anyOf/0`);
     }
 
     if (schema.oneOf?.length) {
-      return this.generateFromSchema(schema.oneOf[0]!, `${pointer}/oneOf/0`);
+      const first = schema.oneOf[0];
+      if (first === undefined) return {};
+      return this.generateFromSchema(first, `${pointer}/oneOf/0`);
     }
 
     if (schema.allOf?.length) {
@@ -468,31 +462,27 @@ export class RegistryResponseGenerator {
       let resolved: Schema = subSchema;
       if (subSchema.$ref) {
         const refResult = this.registry.resolveRef(subSchema.$ref);
-        if (refResult) {
-          resolved = refResult.raw as Schema;
+        if (refResult && typeof refResult.raw !== "boolean") {
+          resolved = refResult.raw;
         }
       }
 
-      for (const [key, value] of Object.entries(resolved)) {
-        if (key === "allOf") {
-          // Recursively flatten nested allOf
-          this.mergeAllOfInto(
-            merged,
-            value as Array<Schema | boolean>,
-            depth + 1,
-          );
-        } else if (key === "properties" && merged.properties) {
-          merged.properties = {
-            ...merged.properties,
-            ...(value as Schema["properties"]),
-          };
-        } else if (key === "required" && merged.required) {
-          merged.required = [
-            ...new Set([...merged.required, ...(value as string[])]),
-          ];
-        } else {
-          (merged as Record<string, unknown>)[key] = value;
-        }
+      // Destructure special-cased fields, merge the rest directly
+      const { allOf, properties, required, ...rest } = resolved;
+      Object.assign(merged, rest);
+
+      if (allOf) {
+        this.mergeAllOfInto(merged, allOf, depth + 1);
+      }
+      if (properties) {
+        merged.properties = merged.properties
+          ? { ...merged.properties, ...properties }
+          : { ...properties };
+      }
+      if (required) {
+        merged.required = merged.required
+          ? [...new Set([...merged.required, ...required])]
+          : [...required];
       }
     }
   }
@@ -501,7 +491,7 @@ export class RegistryResponseGenerator {
     if (schema.type) {
       if (Array.isArray(schema.type)) {
         const nonNull = schema.type.filter((t) => t !== "null");
-        return nonNull.length > 0 ? nonNull[0]! : null;
+        return nonNull[0] ?? null;
       }
       return schema.type;
     }
@@ -585,10 +575,12 @@ export class RegistryResponseGenerator {
         return new Date(
           Date.now() - Math.floor(this.random() * 365 * 24 * 60 * 60 * 1000),
         ).toISOString();
-      case "date":
-        return new Date(
+      case "date": {
+        const iso = new Date(
           Date.now() - Math.floor(this.random() * 365 * 24 * 60 * 60 * 1000),
-        ).toISOString().split("T")[0]!;
+        ).toISOString();
+        return iso.split("T")[0] ?? iso;
+      }
       case "time": {
         const h = Math.floor(this.random() * 24).toString().padStart(2, "0");
         const m = Math.floor(this.random() * 60).toString().padStart(2, "0");
@@ -633,20 +625,20 @@ export class RegistryResponseGenerator {
     // Generate prefix items first
     if (schema.prefixItems) {
       for (let i = 0; i < schema.prefixItems.length && i < length; i++) {
+        const item = schema.prefixItems[i];
+        if (item === undefined) continue;
         array.push(
-          this.generateFromSchema(
-            schema.prefixItems[i]!,
-            `${pointer}/prefixItems/${i}`,
-          ),
+          this.generateFromSchema(item, `${pointer}/prefixItems/${i}`),
         );
       }
     }
 
     // Generate remaining items
-    if (schema.items && array.length < length) {
-      const itemSchema = schema.items as Schema;
+    if (schema.items && !Array.isArray(schema.items) && array.length < length) {
       for (let i = array.length; i < length; i++) {
-        array.push(this.generateFromSchema(itemSchema, `${pointer}/items`));
+        array.push(
+          this.generateFromSchema(schema.items, `${pointer}/items`),
+        );
       }
     }
 
@@ -662,9 +654,10 @@ export class RegistryResponseGenerator {
     // Generate required properties
     if (schema.required) {
       for (const prop of schema.required) {
-        if (schema.properties?.[prop]) {
+        const propSchema = schema.properties?.[prop];
+        if (propSchema) {
           obj[prop] = this.generateFromSchema(
-            schema.properties[prop]!,
+            propSchema,
             `${pointer}/properties/${prop}`,
           );
         } else {
@@ -702,6 +695,11 @@ export class RegistryResponseGenerator {
   }
 
   private pick<T>(array: T[]): T {
-    return array[Math.floor(this.random() * array.length)]!;
+    const index = Math.floor(this.random() * array.length);
+    const picked = array[index];
+    if (picked === undefined) {
+      throw new Error("pick() called on empty array");
+    }
+    return picked;
   }
 }

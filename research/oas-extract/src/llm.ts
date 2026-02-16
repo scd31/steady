@@ -291,6 +291,7 @@ Only return the JSON object, nothing else.`;
 
     if (
       schema.type === "array" && schema.items &&
+      !Array.isArray(schema.items) &&
       !this.isReferenceObject(schema.items)
     ) {
       return `array of ${this.getSchemaPreview(schema.items)}`;

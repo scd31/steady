@@ -2,6 +2,7 @@
 
 import type { Diagnostic, IssueCategory } from "./diagnostic.ts";
 import type { LogLevel } from "./logging/mod.ts";
+import { isPlainObject } from "@steady/json-pointer";
 
 export { VERSION } from "./version.ts";
 
@@ -284,10 +285,5 @@ import type { ReferenceObject } from "@steady/openapi";
  * Type guard to check if a value is a ReferenceObject
  */
 export function isReference(value: unknown): value is ReferenceObject {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "$ref" in value &&
-    typeof (value as ReferenceObject).$ref === "string"
-  );
+  return isPlainObject(value) && typeof value.$ref === "string";
 }

@@ -137,7 +137,9 @@ export function parseFormData(
       formArrayFormat === "comma" && stringValues.length === 1 &&
       propertySchema?.type === "array"
     ) {
-      const parts = stringValues[0]!.split(",");
+      const first = stringValues[0];
+      if (first === undefined) continue;
+      const parts = first.split(",");
       const rawItems = propertySchema.items;
       const itemSchema =
         rawItems && !Array.isArray(rawItems) && !isReference(rawItems)

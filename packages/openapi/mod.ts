@@ -5,8 +5,12 @@ export { ParseError, SpecValidationError, SteadyError } from "./errors.ts";
 export { SpecValidationError as ValidationError } from "./errors.ts";
 export type { ErrorContext } from "./errors.ts";
 export * from "./openapi.ts";
-export {
-  default as openapi31Metaschema,
-} from "./schemas/openapi-3.1.json" with {
-  type: "json",
-};
+import _metaschema from "./schemas/openapi-3.1.json" with { type: "json" };
+
+/**
+ * The OpenAPI 3.1 metaschema for validating OpenAPI 3.1 specs.
+ * Exported with its natural JSON import type. SchemaSource.metaschema
+ * accepts `unknown`, so no casting is needed at this boundary.
+ * MetaschemaValidator narrows via isSchema internally.
+ */
+export const openapi31Metaschema = _metaschema;

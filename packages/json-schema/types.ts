@@ -3,6 +3,7 @@
  * Based on JSON Schema 2020-12 specification
  */
 
+import { isPlainObject } from "@steady/json-pointer";
 import type { FragmentPointer } from "@steady/json-pointer";
 
 export interface JsonSchemaDialects {
@@ -115,6 +116,30 @@ export interface OpenApiExtensions {
 
 export type Schema = TypeSchema & OpenApiExtensions;
 
+/**
+ * Type guard narrowing `unknown` to `Schema` at JSON/document boundaries.
+ *
+ * This is structurally correct, not a shortcut. Every property in the
+ * Schema interface is optional, so an empty `{}` is a valid Schema. The
+ * JSON Schema 2020-12 spec reinforces this: any JSON object is a valid
+ * schema, and unknown keywords are silently ignored (section 6.5).
+ *
+ * TypeScript cannot assign `Record<string, unknown>` (what `isPlainObject`
+ * narrows to) directly to an interface with typed optional properties,
+ * because `unknown` is not assignable to specific types like
+ * `SchemaType | SchemaType[]`. A type predicate is the intended TypeScript
+ * mechanism for this boundary. Exhaustive field checking is impractical
+ * for 40+ optional properties and provides no practical safety gain since
+ * all consumers already guard each property access at runtime.
+ *
+ * This is the ONE canonical definition. Do not create local copies.
+ * Import this at boundaries where untyped data enters the Schema world:
+ * pointer resolution, JSON imports, parsed input.
+ */
+export function isSchema(value: unknown): value is Schema {
+  return isPlainObject(value);
+}
+
 export type SchemaType =
   | "null"
   | "boolean"
@@ -226,7 +251,7 @@ export interface ComplexityMetrics {
 }
 
 export interface SchemaSource {
-  metaschema?: Schema;
+  metaschema?: unknown;
   baseUri?: string;
   file?: string;
   location?: string; // JSON Pointer in OpenAPI spec

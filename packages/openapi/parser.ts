@@ -1,4 +1,5 @@
 import { parse as parseYAML } from "@std/yaml";
+import { isPlainObject } from "@steady/json-pointer";
 import { OpenAPISpec } from "./openapi.ts";
 import { ErrorContext, ParseError, SpecValidationError } from "./errors.ts";
 
@@ -179,7 +180,7 @@ function validateOpenAPISpec(
   spec: unknown,
 ): ParseResult {
   // Basic structural validation - must be an object
-  if (typeof spec !== "object" || spec === null || Array.isArray(spec)) {
+  if (!isPlainObject(spec)) {
     throw new SpecValidationError("Invalid OpenAPI spec structure", {
       errorType: "validate",
       reason: "OpenAPI spec must be an object, not an array or primitive value",
@@ -187,7 +188,7 @@ function validateOpenAPISpec(
     });
   }
 
-  const s = spec as Record<string, unknown>;
+  const s = spec;
   const defaultedFields: string[] = [];
 
   // Validate openapi version field. Default if missing, throw if unsupported
@@ -195,37 +196,35 @@ function validateOpenAPISpec(
     s.openapi = "3.1.0";
     defaultedFields.push("openapi");
   } else {
-    const version = s.openapi;
-    if (!version.startsWith("3.0.") && !version.startsWith("3.1.")) {
+    if (!s.openapi.startsWith("3.0.") && !s.openapi.startsWith("3.1.")) {
       throw new SpecValidationError(
-        `Unsupported OpenAPI version: ${version}`,
+        `Unsupported OpenAPI version: ${s.openapi}`,
         {
           errorType: "validate",
           reason: "Steady only supports OpenAPI 3.0.x and 3.1.x specifications",
-          suggestion: version.startsWith("2.")
+          suggestion: s.openapi.startsWith("2.")
             ? "Convert your Swagger 2.0 spec to OpenAPI 3.0+ using a migration tool"
-            : `Update your spec to use a supported OpenAPI version (found: ${version})`,
+            : `Update your spec to use a supported OpenAPI version (found: ${s.openapi})`,
         },
       );
     }
   }
 
-  const version = s.openapi as string;
+  // After validation, openapi is guaranteed to be a string
+  const version = String(s.openapi);
 
   // Validate info object. Apply defaults for missing metadata
-  if (!s.info || typeof s.info !== "object" || Array.isArray(s.info)) {
+  if (!isPlainObject(s.info)) {
     s.info = { title: "Untitled API", version: "unknown" };
     defaultedFields.push("info");
   } else {
-    const info = s.info as Record<string, unknown>;
-
-    if (typeof info.title !== "string") {
-      info.title = "Untitled API";
+    if (typeof s.info.title !== "string") {
+      s.info.title = "Untitled API";
       defaultedFields.push("info.title");
     }
 
-    if (typeof info.version !== "string") {
-      info.version = "unknown";
+    if (typeof s.info.version !== "string") {
+      s.info.version = "unknown";
       defaultedFields.push("info.version");
     }
   }
@@ -243,10 +242,10 @@ function validateOpenAPISpec(
   }
   const has31Fields = s.jsonSchemaDialect !== undefined ||
     s.webhooks !== undefined ||
-    (s.components && typeof s.components === "object" &&
-      (s.components as Record<string, unknown>).pathItems !== undefined);
+    (isPlainObject(s.components) && s.components.pathItems !== undefined);
 
-  const info = s.info as Record<string, unknown>;
+  // s.info was validated/defaulted above to always be a plain object
+  const info = isPlainObject(s.info) ? s.info : { title: "", version: "" };
   const errors: SpecValidationError[] = [];
 
   function addError(message: string, context: Omit<ErrorContext, "errorType">) {
@@ -298,15 +297,10 @@ function validateOpenAPISpec(
     }
 
     // Validate components.pathItems
-    if (
-      s.components && typeof s.components === "object" &&
-      !Array.isArray(s.components)
-    ) {
-      const components = s.components as Record<string, unknown>;
+    if (isPlainObject(s.components)) {
       if (
-        components.pathItems !== undefined &&
-        (typeof components.pathItems !== "object" ||
-          components.pathItems === null || Array.isArray(components.pathItems))
+        s.components.pathItems !== undefined &&
+        !isPlainObject(s.components.pathItems)
       ) {
         addError("Invalid components.pathItems", {
           reason: "The components.pathItems field must be an object",
@@ -319,19 +313,45 @@ function validateOpenAPISpec(
 
   // Throw collected errors (structural issues that prevent serving)
   if (errors.length > 0) {
-    if (errors.length === 1) {
-      throw errors[0]!;
-    } else {
-      throw new SpecValidationError(
-        `Found ${errors.length} validation errors`,
-        {
-          errorType: "validate",
-          reason: errors.map((e) => e.message).join("; "),
-          allErrors: errors,
-        },
-      );
+    const first = errors[0];
+    if (errors.length === 1 && first) {
+      throw first;
     }
+    throw new SpecValidationError(
+      `Found ${errors.length} validation errors`,
+      {
+        errorType: "validate",
+        reason: errors.map((e) => e.message).join("; "),
+        allErrors: errors,
+      },
+    );
   }
 
-  return { spec: spec as OpenAPISpec, defaultedFields };
+  // The function validated and defaulted all required OpenAPISpec fields
+  // (openapi, info.title, info.version, paths). This type guard bridges
+  // the validated Record to the typed interface.
+  if (!isOpenAPISpec(s)) {
+    throw new SpecValidationError(
+      "Spec validation produced invalid structure",
+      {
+        errorType: "validate",
+        reason:
+          "Internal error: validated spec does not match OpenAPISpec shape",
+      },
+    );
+  }
+  return { spec: s, defaultedFields };
+}
+
+/** Type guard for the validation boundary: checks the 3 required OpenAPISpec fields. */
+function isOpenAPISpec(
+  value: Record<string, unknown>,
+): value is Record<string, unknown> & OpenAPISpec {
+  return (
+    typeof value.openapi === "string" &&
+    isPlainObject(value.info) &&
+    typeof value.info.title === "string" &&
+    typeof value.info.version === "string" &&
+    isPlainObject(value.paths)
+  );
 }

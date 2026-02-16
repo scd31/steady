@@ -6,6 +6,7 @@
  */
 
 import type { QueryArrayFormat, QueryObjectFormat } from "./types.ts";
+import { isPlainObject } from "@steady/json-pointer";
 
 // Re-export types for convenience
 export type { QueryArrayFormat, QueryObjectFormat };
@@ -237,7 +238,7 @@ export function setNestedValue(
 ): void {
   if (path.length === 0) return;
 
-  let current: Record<string, unknown> = obj;
+  let current: unknown = obj;
 
   for (let i = 0; i < path.length - 1; i++) {
     const segment = path[i];
@@ -245,25 +246,40 @@ export function setNestedValue(
 
     if (segment === undefined || nextSegment === undefined) continue;
 
-    if (!(segment in current)) {
-      current[segment] = isNumericString(nextSegment)
-        ? []
-        : Object.create(null);
+    if (isPlainObject(current)) {
+      // Ensure container exists at this segment
+      if (!(segment in current)) {
+        current[segment] = isNumericString(nextSegment)
+          ? []
+          : Object.create(null);
+      }
+      const next = current[segment];
+      if (typeof next !== "object" || next === null) {
+        current[segment] = isNumericString(nextSegment)
+          ? []
+          : Object.create(null);
+      }
+      current = current[segment];
+    } else if (Array.isArray(current)) {
+      const idx = parseInt(segment, 10);
+      if (isNaN(idx) || idx < 0) break;
+      current = current[idx];
+    } else {
+      break;
     }
-
-    const next = current[segment];
-    if (typeof next !== "object" || next === null) {
-      current[segment] = isNumericString(nextSegment)
-        ? []
-        : Object.create(null);
-    }
-
-    current = current[segment] as Record<string, unknown>;
   }
 
+  // Set the final value
   const lastKey = path[path.length - 1];
   if (lastKey !== undefined) {
-    current[lastKey] = value;
+    if (isPlainObject(current)) {
+      current[lastKey] = value;
+    } else if (Array.isArray(current)) {
+      const idx = parseInt(lastKey, 10);
+      if (!isNaN(idx) && idx >= 0) {
+        current[idx] = value;
+      }
+    }
   }
 }
 

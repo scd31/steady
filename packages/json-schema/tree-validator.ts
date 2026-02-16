@@ -21,7 +21,9 @@ import {
   isFragmentPointer,
   isPlainObject,
 } from "@steady/json-pointer";
+import { isSchema } from "./types.ts";
 import type { Schema } from "./types.ts";
+import type { SchemaRegistry } from "./schema-registry.ts";
 
 // ── Output types ───────────────────────────────────────────────────
 
@@ -45,36 +47,24 @@ export interface ValidationNode {
   variantIndex?: number;
 }
 
-// ── Type guards ──────────────────────────────────────────────────
-
-/**
- * Type guard for Schema. Since all Schema fields are optional,
- * any plain object from parsed JSON structurally satisfies Schema.
- */
-function isSchemaLike(value: unknown): value is Schema {
-  return isPlainObject(value);
-}
-
 // ── Options ──────────────────────────────────────────────────────
 
 interface TreeValidatorOptions {
   /**
-   * External $ref resolver for references the validator can't resolve
-   * locally (e.g., "#/components/schemas/Account" needs the full spec).
-   *
-   * Called with the $ref string. Return Schema if resolved, undefined
-   * to fall back to local resolution within the schema.
+   * Schema registry for resolving $refs against the full document.
+   * When provided, refs that can't be resolved locally within the
+   * schema will be resolved via the registry.
    */
-  resolveRef?: (ref: string) => Schema | undefined;
+  registry?: SchemaRegistry;
 }
 
 // ── Validator ──────────────────────────────────────────────────────
 
 export class TreeValidator {
-  private readonly externalResolver?: (ref: string) => Schema | undefined;
+  private readonly registry?: SchemaRegistry;
 
   constructor(options?: TreeValidatorOptions) {
-    this.externalResolver = options?.resolveRef;
+    this.registry = options?.registry;
   }
 
   /**
@@ -960,14 +950,15 @@ export class TreeValidator {
   private resolveRef(
     ref: string,
     rootSchema: Schema | boolean,
-  ): Schema | undefined {
+  ): Schema | boolean | undefined {
     // Try local resolution first (for in-schema refs like #/$defs/X)
     const local = this.resolveRefLocally(ref, rootSchema);
     if (local !== undefined) return local;
 
-    // Fall back to external resolver (for document-level refs like #/components/schemas/X)
-    if (this.externalResolver) {
-      return this.externalResolver(ref);
+    // Fall back to registry (for document-level refs like #/components/schemas/X)
+    if (this.registry) {
+      const result = this.registry.resolveRef(ref);
+      return result?.raw;
     }
 
     return undefined;
@@ -993,7 +984,7 @@ export class TreeValidator {
       current = current[unescaped];
     }
 
-    if (isSchemaLike(current)) {
+    if (isSchema(current)) {
       return current;
     }
     return undefined;
@@ -1042,10 +1033,10 @@ function canonicalJson(value: unknown): string {
     return "[" + value.map(canonicalJson).join(",") + "]";
   }
 
-  const obj = value as Record<string, unknown>;
-  const keys = Object.keys(obj).sort();
+  if (!isPlainObject(value)) return JSON.stringify(value);
+  const keys = Object.keys(value).sort();
   const pairs = keys.map((k) =>
-    JSON.stringify(k) + ":" + canonicalJson(obj[k])
+    JSON.stringify(k) + ":" + canonicalJson(value[k])
   );
   return "{" + pairs.join(",") + "}";
 }

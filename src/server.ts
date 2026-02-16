@@ -185,15 +185,7 @@ export class MockServer {
     timer?.start("diagnostics-engine");
     const registry = this.document.schemas;
     this.specDoc = new OpenAPISpecDocument(spec, registry);
-    const treeValidator = new TreeValidator({
-      resolveRef: (ref) => {
-        const result = registry.resolveRef(ref);
-        if (result && typeof result.raw === "object" && result.raw !== null) {
-          return result.raw;
-        }
-        return undefined;
-      },
-    });
+    const treeValidator = new TreeValidator({ registry });
     this.diagnosticEngine = new DiagnosticEngine(this.specDoc, treeValidator);
     timer?.stop("diagnostics-engine");
 

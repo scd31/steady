@@ -15,6 +15,7 @@ import {
   escapeSegment,
   type FragmentPointer,
   isFragmentPointer,
+  isPlainObject,
 } from "@steady/json-pointer";
 import {
   type DocIndex,
@@ -114,10 +115,14 @@ export class OpenAPIDocument {
     | { title?: string; version?: string; description?: string }
     | undefined {
     const info = this.schemas.resolve("#/info");
-    if (typeof info === "object" && info !== null) {
-      return info as { title?: string; version?: string; description?: string };
-    }
-    return undefined;
+    if (!isPlainObject(info)) return undefined;
+    return {
+      title: typeof info.title === "string" ? info.title : undefined,
+      version: typeof info.version === "string" ? info.version : undefined,
+      description: typeof info.description === "string"
+        ? info.description
+        : undefined,
+    };
   }
 
   /**
@@ -125,8 +130,8 @@ export class OpenAPIDocument {
    */
   getPaths(): Record<string, unknown> | undefined {
     const paths = this.schemas.resolve("#/paths");
-    if (typeof paths === "object" && paths !== null) {
-      return paths as Record<string, unknown>;
+    if (isPlainObject(paths)) {
+      return paths;
     }
     return undefined;
   }
@@ -176,13 +181,10 @@ export class OpenAPIDocument {
       escapeSegment(path)
     }/${method.toLowerCase()}/responses/${statusCode}/content/application~1json/examples`;
     const examples = this.schemas.resolve(examplesPointer);
-    if (typeof examples === "object" && examples !== null) {
+    if (isPlainObject(examples)) {
       const firstExample = Object.values(examples)[0];
-      if (
-        typeof firstExample === "object" && firstExample !== null &&
-        "value" in firstExample
-      ) {
-        return (firstExample as { value: unknown }).value;
+      if (isPlainObject(firstExample) && "value" in firstExample) {
+        return firstExample.value;
       }
     }
 
@@ -196,9 +198,9 @@ export class OpenAPIDocument {
       // If schema has $ref, follow it
       if (
         typeof schema.raw === "object" && schema.raw !== null &&
-        "$ref" in schema.raw
+        schema.raw.$ref
       ) {
-        const ref = (schema.raw as { $ref: string }).$ref;
+        const ref = schema.raw.$ref;
         if (isFragmentPointer(ref)) {
           const generator = new RegistryResponseGenerator(
             this.schemas,

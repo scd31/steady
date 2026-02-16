@@ -12,6 +12,7 @@
 import { assertEquals } from "@std/assert";
 import { assertSnapshot } from "@std/testing/snapshot";
 import { parseSpecFromFile } from "@steady/openapi";
+import { SchemaRegistry } from "../../packages/json-schema/schema-registry.ts";
 import { OpenAPISpecDocument } from "../../packages/openapi/document.ts";
 import { TreeValidator } from "../../packages/json-schema/tree-validator.ts";
 import {
@@ -27,13 +28,9 @@ async function getEngine(): Promise<DiagnosticEngine> {
   if (engine) return engine;
 
   const { spec } = await parseSpecFromFile("test-fixtures/acme-api-3.1.yaml");
-  const doc = new OpenAPISpecDocument(spec);
-  const validator = new TreeValidator({
-    resolveRef: (ref) => {
-      const schema = doc.resolveSchema(ref);
-      return schema;
-    },
-  });
+  const registry = SchemaRegistry.fromDocument(spec);
+  const doc = new OpenAPISpecDocument(spec, registry);
+  const validator = new TreeValidator({ registry });
   engine = new DiagnosticEngine(doc, validator);
   return engine;
 }

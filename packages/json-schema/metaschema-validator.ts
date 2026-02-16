@@ -9,12 +9,9 @@
  * any external resolver or preprocessing.
  */
 
-import type { FragmentPointer } from "@steady/json-pointer";
-import type {
-  Schema,
-  SchemaValidationError,
-  SchemaValidationResult,
-} from "./types.ts";
+import { type FragmentPointer, isPlainObject } from "@steady/json-pointer";
+import { isSchema } from "./types.ts";
+import type { SchemaValidationError, SchemaValidationResult } from "./types.ts";
 import { TreeValidator } from "./tree-validator.ts";
 
 /** Validation tree node shape (matches TreeValidator output). */
@@ -71,11 +68,14 @@ export class MetaschemaValidator {
   private validators: Map<string, TreeValidator> = new Map();
 
   /**
-   * Validate a schema against the JSON Schema metaschema
+   * Validate a schema against the JSON Schema metaschema.
+   *
+   * Accepts `unknown` for the metaschema parameter so callers (e.g.,
+   * JSON imports) don't need to cast. Narrows via isSchema internally.
    */
   validate(
     schemaObject: unknown,
-    metaschema: Schema,
+    metaschema: unknown,
   ): SchemaValidationResult {
     // First, check if it's a valid JSON value
     if (schemaObject === undefined) {
@@ -87,6 +87,20 @@ export class MetaschemaValidator {
           keyword: "type",
           message: "Schema must be a valid JSON value (not undefined)",
           suggestion: "Ensure the schema is properly loaded and parsed",
+        }],
+      };
+    }
+
+    // Narrow metaschema at the boundary
+    if (!isSchema(metaschema)) {
+      return {
+        valid: false,
+        errors: [{
+          instancePath: "",
+          schemaPath: "#",
+          keyword: "type",
+          message: "Metaschema must be a plain object",
+          suggestion: "Ensure the metaschema is a valid JSON Schema object",
         }],
       };
     }
@@ -187,7 +201,8 @@ export class MetaschemaValidator {
       return errors;
     }
 
-    const schema = schemaObject as Record<string, unknown>;
+    if (!isPlainObject(schemaObject)) return errors;
+    const schema = schemaObject;
 
     // Check for conflicting keywords
     if (schema.if && !schema.then && !schema.else) {
