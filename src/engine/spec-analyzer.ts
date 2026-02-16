@@ -8,11 +8,12 @@
 
 import type { ComponentsObject, OpenAPISpec } from "@steady/openapi";
 import { openapi31Metaschema } from "@steady/openapi";
-import { resolve } from "@steady/json-pointer";
+import { escapeSegment, resolve } from "@steady/json-pointer";
 import { JsonSchemaProcessor, type Schema } from "@steady/json-schema";
 import type { Diagnostic, DiagnosticDisplay } from "../diagnostic.ts";
 import { type ECode, getCode, hasCode } from "../codes/registry.ts";
 import type { PipelineTimer } from "../timing.ts";
+import { HTTP_METHODS } from "../types.ts";
 
 // ── Public interface ────────────────────────────────────────────────
 
@@ -127,10 +128,6 @@ function numProp(
   return typeof v === "number" ? v : undefined;
 }
 
-function escapeJsonPointer(s: string): string {
-  return s.replace(/~/g, "~0").replace(/\//g, "~1");
-}
-
 function specDiagnostic(
   code: ECode,
   specPointer: string,
@@ -164,17 +161,6 @@ function specDiagnostic(
     },
   };
 }
-
-const HTTP_METHODS = [
-  "get",
-  "post",
-  "put",
-  "delete",
-  "patch",
-  "head",
-  "options",
-  "trace",
-] as const;
 
 // ── E1003: Missing required metadata ─────────────────────────────────
 
@@ -298,7 +284,7 @@ function checkMultipleQuestionMarks(spec: OpenAPISpec): Diagnostic[] {
       diagnostics.push(
         specDiagnostic(
           "E1013",
-          `#/paths/${escapeJsonPointer(path)}`,
+          `#/paths/${escapeSegment(path)}`,
           `Path "${path}" contains ${qCount} question marks`,
           {
             suggestion:
@@ -395,8 +381,8 @@ function checkParamForQuestionMark(
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const base = method
-    ? `#/paths/${escapeJsonPointer(path)}/${method}`
-    : `#/paths/${escapeJsonPointer(path)}`;
+    ? `#/paths/${escapeSegment(path)}/${method}`
+    : `#/paths/${escapeSegment(path)}`;
 
   if (param.name.includes("?")) {
     diagnostics.push(
@@ -490,7 +476,7 @@ function checkDuplicatePathParamNames(spec: OpenAPISpec): Diagnostic[] {
         diagnostics.push(
           specDiagnostic(
             "E1009",
-            `#/paths/${escapeJsonPointer(path)}`,
+            `#/paths/${escapeSegment(path)}`,
             `Path "${path}" has duplicate parameter name "{${name}}"`,
             {
               suggestion:
@@ -525,7 +511,7 @@ function checkMissingResponses(spec: OpenAPISpec): Diagnostic[] {
         diagnostics.push(
           specDiagnostic(
             "E1010",
-            `#/paths/${escapeJsonPointer(path)}/${method}/responses`,
+            `#/paths/${escapeSegment(path)}/${method}/responses`,
             `Operation ${method.toUpperCase()} ${path} has no response definitions`,
             {
               suggestion:
@@ -571,7 +557,7 @@ function checkInvalidComponentNames(spec: OpenAPISpec): Diagnostic[] {
         diagnostics.push(
           specDiagnostic(
             "E1011",
-            `#/components/${section}/${escapeJsonPointer(name)}`,
+            `#/components/${section}/${escapeSegment(name)}`,
             `Component name "${name}" contains invalid characters`,
             {
               suggestion:
@@ -669,7 +655,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
       const value = (obj as Record<string, unknown>)[key];
       // Skip primitives - they can't contain $ref
       if (value === null || typeof value !== "object") continue;
-      const child: FragmentPointer = `${pointer}/${escapeJsonPointer(key)}`;
+      const child: FragmentPointer = `${pointer}/${escapeSegment(key)}`;
       walkForRefs(value, child);
     }
   }
@@ -688,7 +674,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
     const properties = obj.properties;
     if (isObject(properties)) {
       for (const [name, sub] of Object.entries(properties)) {
-        visitSchema(sub, `${pointer}/properties/${escapeJsonPointer(name)}`);
+        visitSchema(sub, `${pointer}/properties/${escapeSegment(name)}`);
       }
     }
 
@@ -707,7 +693,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
       for (const [pattern, sub] of Object.entries(patternProperties)) {
         visitSchema(
           sub,
-          `${pointer}/patternProperties/${escapeJsonPointer(pattern)}`,
+          `${pointer}/patternProperties/${escapeSegment(pattern)}`,
         );
       }
     }
@@ -730,7 +716,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
     const defs = obj.$defs;
     if (isObject(defs)) {
       for (const [name, sub] of Object.entries(defs)) {
-        visitSchema(sub, `${pointer}/$defs/${escapeJsonPointer(name)}`);
+        visitSchema(sub, `${pointer}/$defs/${escapeSegment(name)}`);
       }
     }
 
@@ -748,7 +734,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
     for (const [name, schema] of Object.entries(spec.components.schemas)) {
       visitSchema(
         schema,
-        `#/components/schemas/${escapeJsonPointer(name)}`,
+        `#/components/schemas/${escapeSegment(name)}`,
       );
     }
   }
@@ -765,7 +751,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
         if (param.schema && !("$ref" in param.schema)) {
           visitSchema(
             param.schema,
-            `#/paths/${escapeJsonPointer(path)}/parameters/${i}/schema`,
+            `#/paths/${escapeSegment(path)}/parameters/${i}/schema`,
           );
         }
       }
@@ -775,7 +761,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
       const operation = pathItem[method];
       if (!operation) continue;
 
-      const opPointer = `#/paths/${escapeJsonPointer(path)}/${method}`;
+      const opPointer = `#/paths/${escapeSegment(path)}/${method}`;
 
       // Operation parameter schemas
       if (operation.parameters) {
@@ -800,7 +786,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
               visitSchema(
                 mediaObj.schema,
                 `${opPointer}/requestBody/content/${
-                  escapeJsonPointer(mediaType)
+                  escapeSegment(mediaType)
                 }/schema`,
               );
             }
@@ -815,7 +801,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
         ) {
           if (!isObject(response) || "$ref" in response) continue;
           const responsePointer = `${opPointer}/responses/${
-            escapeJsonPointer(statusCode)
+            escapeSegment(statusCode)
           }`;
 
           // Response content schemas
@@ -826,7 +812,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
                 visitSchema(
                   mediaObj.schema,
                   `${responsePointer}/content/${
-                    escapeJsonPointer(mediaType)
+                    escapeSegment(mediaType)
                   }/schema`,
                 );
               }
@@ -844,7 +830,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
                 visitSchema(
                   headerObj.schema,
                   `${responsePointer}/headers/${
-                    escapeJsonPointer(headerName)
+                    escapeSegment(headerName)
                   }/schema`,
                 );
               }
@@ -862,8 +848,8 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
           for (const [cbPath, cbPathItem] of Object.entries(cbObj)) {
             if (!isObject(cbPathItem)) continue;
             const cbPointer = `${opPointer}/callbacks/${
-              escapeJsonPointer(cbName)
-            }/${escapeJsonPointer(cbPath)}`;
+              escapeSegment(cbName)
+            }/${escapeSegment(cbPath)}`;
             for (const cbMethod of HTTP_METHODS) {
               const cbOp = cbPathItem[cbMethod];
               if (!isObject(cbOp)) continue;
@@ -880,7 +866,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
                       visitSchema(
                         mtObj.schema,
                         `${cbPointer}/${cbMethod}/requestBody/content/${
-                          escapeJsonPointer(mt)
+                          escapeSegment(mt)
                         }/schema`,
                       );
                     }
@@ -904,8 +890,8 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
                         visitSchema(
                           mtObj.schema,
                           `${cbPointer}/${cbMethod}/responses/${
-                            escapeJsonPointer(sc)
-                          }/content/${escapeJsonPointer(mt)}/schema`,
+                            escapeSegment(sc)
+                          }/content/${escapeSegment(mt)}/schema`,
                         );
                       }
                     }
@@ -926,7 +912,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
       for (const method of HTTP_METHODS) {
         const operation = pathItem[method];
         if (!operation) continue;
-        const opPointer = `#/webhooks/${escapeJsonPointer(name)}/${method}`;
+        const opPointer = `#/webhooks/${escapeSegment(name)}/${method}`;
 
         if (operation.parameters) {
           for (let i = 0; i < operation.parameters.length; i++) {
@@ -949,7 +935,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
                 visitSchema(
                   mtObj.schema,
                   `${opPointer}/requestBody/content/${
-                    escapeJsonPointer(mt)
+                    escapeSegment(mt)
                   }/schema`,
                 );
               }
@@ -968,8 +954,8 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
                 if (isObject(mtObj) && mtObj.schema) {
                   visitSchema(
                     mtObj.schema,
-                    `${opPointer}/responses/${escapeJsonPointer(sc)}/content/${
-                      escapeJsonPointer(mt)
+                    `${opPointer}/responses/${escapeSegment(sc)}/content/${
+                      escapeSegment(mt)
                     }/schema`,
                   );
                 }

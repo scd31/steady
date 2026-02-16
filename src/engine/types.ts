@@ -6,6 +6,7 @@
  */
 
 import type { Schema } from "@steady/json-schema";
+import type { FragmentPointer } from "@steady/json-pointer";
 import type { Diagnostic } from "../diagnostic.ts";
 
 // ValidationNode is the canonical type from TreeValidator.
@@ -42,7 +43,7 @@ export interface CompositionContext {
   /** Node's request path segments (e.g., ["body"] or ["body", "payment"]). */
   path: string[];
   /** Node's spec pointer (e.g., "#/.../oneOf"). */
-  schemaPath: string;
+  schemaPath: FragmentPointer;
   /** Resolved schema for the composition node. */
   schema: Schema;
   /** Request data at this path (for discriminator, property overlap). */
@@ -58,5 +59,5 @@ export interface CompositionContext {
  * metadata, sibling schema access, etc.).
  */
 export interface SpecResolver {
-  resolve(schemaPath: string): Schema;
+  resolve(schemaPath: FragmentPointer): Schema;
 }

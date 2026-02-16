@@ -11,9 +11,17 @@
  */
 export type FragmentPointer = `#${string}`;
 
+/** Bare RFC 6901 pointer: "" (root) or "/foo/bar". */
+export type JsonPointer = "" | `/${string}`;
+
 /** Type guard: narrows a string to FragmentPointer if it starts with "#". */
 export function isFragmentPointer(s: string): s is FragmentPointer {
   return s.startsWith("#");
+}
+
+/** Type guard: narrows a string to JsonPointer if it's "" or starts with "/". */
+export function isJsonPointer(s: string): s is JsonPointer {
+  return s === "" || s.startsWith("/");
 }
 
 export {
@@ -28,12 +36,12 @@ export {
   unescapeSegment,
 } from "./json-pointer.ts";
 
-export {
-  findCircularReferences,
-  getAllReferences,
-  isValidReference,
-  resolveReference,
-} from "./resolver.ts";
+/** Type guard: narrows unknown to Record<string, unknown> for plain objects. */
+export function isPlainObject(
+  value: unknown,
+): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 export {
   explainInvalidRef,
@@ -41,6 +49,4 @@ export {
   type PointerValidationResult,
   validatePointer,
   validateRef,
-  // Backwards compatibility alias
-  type ValidationResult,
 } from "./rfc6901-validator.ts";

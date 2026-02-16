@@ -11,7 +11,11 @@
  *   const response = generator.generate("#/components/schemas/User");
  */
 
-import { type FragmentPointer, isFragmentPointer } from "@steady/json-pointer";
+import {
+  escapeSegment,
+  type FragmentPointer,
+  isFragmentPointer,
+} from "@steady/json-pointer";
 import {
   type DocIndex,
   RegistryResponseGenerator,
@@ -131,9 +135,7 @@ export class OpenAPIDocument {
    * Get a specific operation by path and method
    */
   getOperation(path: string, method: string): unknown {
-    const pointer = `#/paths/${
-      this.escapePointer(path)
-    }/${method.toLowerCase()}`;
+    const pointer = `#/paths/${escapeSegment(path)}/${method.toLowerCase()}`;
     return this.schemas.resolve(pointer);
   }
 
@@ -146,7 +148,7 @@ export class OpenAPIDocument {
     statusCode: string,
   ): RegistrySchema | undefined {
     const responsePointer: FragmentPointer = `#/paths/${
-      this.escapePointer(path)
+      escapeSegment(path)
     }/${method.toLowerCase()}/responses/${statusCode}/content/application~1json/schema`;
     return this.schemas.get(responsePointer);
   }
@@ -162,7 +164,7 @@ export class OpenAPIDocument {
   ): unknown {
     // First try to get example from operation response
     const examplePointer = `#/paths/${
-      this.escapePointer(path)
+      escapeSegment(path)
     }/${method.toLowerCase()}/responses/${statusCode}/content/application~1json/example`;
     const example = this.schemas.resolve(examplePointer);
     if (example !== undefined) {
@@ -171,7 +173,7 @@ export class OpenAPIDocument {
 
     // Then try examples array
     const examplesPointer = `#/paths/${
-      this.escapePointer(path)
+      escapeSegment(path)
     }/${method.toLowerCase()}/responses/${statusCode}/content/application~1json/examples`;
     const examples = this.schemas.resolve(examplesPointer);
     if (typeof examples === "object" && examples !== null) {
@@ -186,7 +188,7 @@ export class OpenAPIDocument {
 
     // Fall back to schema generation
     const schemaPointer: FragmentPointer = `#/paths/${
-      this.escapePointer(path)
+      escapeSegment(path)
     }/${method.toLowerCase()}/responses/${statusCode}/content/application~1json/schema`;
     const schema = this.schemas.get(schemaPointer);
 
@@ -211,12 +213,5 @@ export class OpenAPIDocument {
     }
 
     return null;
-  }
-
-  /**
-   * Escape a path for use in JSON Pointer
-   */
-  private escapePointer(path: string): string {
-    return path.replace(/~/g, "~0").replace(/\//g, "~1");
   }
 }

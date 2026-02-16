@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import type { FragmentPointer } from "@steady/json-pointer";
 import type { Schema } from "./types.ts";
 import type { SchemaValidator } from "../../src/engine/diagnostic-engine.ts";
 import { TreeValidator } from "./tree-validator.ts";
@@ -10,7 +11,7 @@ import { TreeValidator } from "./tree-validator.ts";
 function validate(
   schema: Schema,
   data: unknown,
-  schemaPath = "#/schema",
+  schemaPath: FragmentPointer = "#/schema",
   dataPath = ["body"],
 ) {
   const validator = new TreeValidator();

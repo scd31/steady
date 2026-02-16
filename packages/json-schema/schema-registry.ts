@@ -12,6 +12,7 @@
  */
 
 import {
+  escapeSegment,
   type FragmentPointer,
   isFragmentPointer,
   resolve as resolvePointer,
@@ -92,10 +93,6 @@ export class SchemaRegistry {
     const edges = new Map<FragmentPointer, Set<string>>();
     let pointerCount = 0;
 
-    function escapePointer(segment: string): string {
-      return segment.replace(/~/g, "~0").replace(/\//g, "~1");
-    }
-
     function walk(value: unknown, pointer: FragmentPointer): void {
       if (value === null || typeof value !== "object") return;
 
@@ -135,7 +132,7 @@ export class SchemaRegistry {
         if (key === "$ref") continue;
         const val = obj[key];
         if (val === null || typeof val !== "object") continue;
-        walk(val, `${pointer}/${escapePointer(key)}`);
+        walk(val, `${pointer}/${escapeSegment(key)}`);
       }
     }
 
@@ -148,7 +145,7 @@ export class SchemaRegistry {
    * Resolve a JSON Pointer against the document.
    * Delegates percent-decoding and "#" handling to resolvePointer().
    */
-  resolve(pointer: string): unknown {
+  resolve(pointer: FragmentPointer | string): unknown {
     if (pointer === "#" || pointer === "") {
       return this.document;
     }
@@ -256,7 +253,9 @@ export class SchemaRegistry {
 
     if (typeof components === "object" && components !== null) {
       for (const name of Object.keys(components as Record<string, unknown>)) {
-        const pointer: FragmentPointer = `#/components/schemas/${name}`;
+        const pointer: FragmentPointer = `#/components/schemas/${
+          escapeSegment(name)
+        }`;
         const schema = this.get(pointer);
         if (schema) {
           result.set(name, schema);

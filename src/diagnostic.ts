@@ -5,6 +5,8 @@
  * where, whose responsibility it is, and what to do about it.
  */
 
+import type { ECode } from "./codes/registry.ts";
+
 /** Structured display context for compiler-style output. */
 export interface DiagnosticDisplay {
   /** Lines shown in the pipe section (between | markers). */
@@ -52,7 +54,7 @@ export type DiagnosticLocation =
  */
 export interface Diagnostic {
   /** E-code (e.g., "E3007"). */
-  code: string;
+  code: ECode;
 
   severity: Severity;
 

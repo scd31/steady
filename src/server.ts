@@ -13,6 +13,9 @@ import type { ResponseObject, ServerConfig } from "./types.ts";
 import type { PipelineTimer } from "./timing.ts";
 import {
   HEADERS,
+  HTTP_METHODS,
+  type HttpMethod,
+  isHttpMethod,
   isReference,
   isValidArrayFormat,
   isValidObjectFormat,
@@ -28,8 +31,8 @@ import {
   OpenAPIDocument,
   RegistryResponseGenerator,
 } from "@steady/json-schema";
-import type { DocIndex, GenerateOptions } from "@steady/json-schema";
-import { isFragmentPointer } from "@steady/json-pointer";
+import type { DocIndex, GenerateOptions, Schema } from "@steady/json-schema";
+import { escapeSegment, isFragmentPointer } from "@steady/json-pointer";
 import type { Logger } from "./logging/logger.ts";
 import type {
   RequestEvent,
@@ -39,6 +42,7 @@ import type {
 import { TextLogger } from "./logging/text-logger.ts";
 import { JsonLogger } from "./logging/json-logger.ts";
 import { CILogger } from "./logging/ci-logger.ts";
+import { getStatusText } from "./logging/colors.ts";
 import { isParseError, parseRequestBody } from "./body-parser.ts";
 import { OpenAPISpecDocument } from "../packages/openapi/document.ts";
 import { TreeValidator } from "../packages/json-schema/tree-validator.ts";
@@ -109,20 +113,6 @@ function acceptsJson(acceptTypes: string[]): boolean {
   return false;
 }
 
-// isMinimalResponse is extracted to diagnostics/response-check.ts for testability
-
-/** HTTP methods supported by OpenAPI */
-const HTTP_METHODS = [
-  "get",
-  "post",
-  "put",
-  "delete",
-  "patch",
-  "head",
-  "options",
-] as const;
-type HttpMethod = typeof HTTP_METHODS[number];
-
 /** Pre-compiled path pattern with associated path item */
 interface CompiledPath {
   pattern: string;
@@ -135,6 +125,8 @@ interface CompiledPath {
 export class MockServer {
   /** Document-centric OpenAPI processing */
   private document: OpenAPIDocument;
+  /** Structured spec access with $ref resolution */
+  private specDoc: OpenAPISpecDocument;
   private abortController: AbortController;
   private logger: Logger;
   private diagnosticEngine: DiagnosticEngine;
@@ -191,7 +183,7 @@ export class MockServer {
     // Diagnostics engine: all ref resolution flows through SchemaRegistry
     timer?.start("diagnostics-engine");
     const registry = this.document.schemas;
-    const specDoc = new OpenAPISpecDocument(spec, registry);
+    this.specDoc = new OpenAPISpecDocument(spec, registry);
     const treeValidator = new TreeValidator({
       resolveRef: (ref) => {
         const result = registry.resolveRef(ref);
@@ -201,7 +193,7 @@ export class MockServer {
         return undefined;
       },
     });
-    this.diagnosticEngine = new DiagnosticEngine(specDoc, treeValidator);
+    this.diagnosticEngine = new DiagnosticEngine(this.specDoc, treeValidator);
     timer?.stop("diagnostics-engine");
 
     // Diagnostic collector for session-level aggregation
@@ -427,7 +419,7 @@ export class MockServer {
   private async handleRequest(req: Request): Promise<Response> {
     const startTime = performance.now();
     const url = new URL(req.url);
-    const method = req.method.toLowerCase() as HttpMethod;
+    const rawMethod = req.method.toLowerCase();
     const path = url.pathname;
 
     // Handle special endpoints (no logging for these)
@@ -439,10 +431,19 @@ export class MockServer {
       return this.handleSpec();
     }
 
-    if (path.startsWith("/_x-steady/sessions/") && method === "get") {
+    if (path.startsWith("/_x-steady/sessions/") && rawMethod === "get") {
       const sessionId = path.slice("/_x-steady/sessions/".length);
       return handleSessionRequest(sessionId, this.sessionStore);
     }
+
+    // Validate HTTP method before any processing
+    if (!isHttpMethod(rawMethod)) {
+      return new Response(`Method ${req.method} is not supported`, {
+        status: 405,
+        headers: { "Content-Type": "text/plain" },
+      });
+    }
+    const method: HttpMethod = rawMethod;
 
     // Check if request should reject on SDK errors
     const rejectOnSdkError = this.getRejectOnSdkError(req);
@@ -584,7 +585,7 @@ export class MockServer {
         pathPattern,
         method,
         status,
-        statusText: response.statusText || this.getStatusText(status),
+        statusText: response.statusText || getStatusText(status),
         timing,
         diagnostics: allDiagnostics,
         requestBody: body,
@@ -741,24 +742,6 @@ export class MockServer {
     this.logger.request(event);
   }
 
-  /**
-   * Get HTTP status text for a status code
-   */
-  private getStatusText(status: number): string {
-    const statusTexts: Record<number, string> = {
-      200: "OK",
-      201: "Created",
-      204: "No Content",
-      400: "Bad Request",
-      401: "Unauthorized",
-      403: "Forbidden",
-      404: "Not Found",
-      405: "Method Not Allowed",
-      500: "Internal Server Error",
-    };
-    return statusTexts[status] || "Unknown";
-  }
-
   private handleHealth(): Response {
     const stats = this.document.getStats();
     return new Response(
@@ -857,9 +840,9 @@ export class MockServer {
         params && this.matchesQueryRequirements(query, compiled.requiredQuery)
       ) {
         // Path matches - check if method exists
-        const operation = compiled.pathItem[method as keyof PathItemObject] as
-          | OperationObject
-          | undefined;
+        const operation = isHttpMethod(method)
+          ? compiled.pathItem[method]
+          : undefined;
 
         if (operation) {
           // Found a matching path AND method
@@ -925,9 +908,7 @@ export class MockServer {
     method: string,
     pathPattern: string,
   ): OperationObject {
-    const operation = pathItem[method as keyof PathItemObject] as
-      | OperationObject
-      | undefined;
+    const operation = isHttpMethod(method) ? pathItem[method] : undefined;
 
     if (!operation) {
       const availableMethods = this.getMethodsForPath(pathItem);
@@ -977,8 +958,12 @@ export class MockServer {
     generatorOptions: GenerateOptions,
     streamingOptions: StreamingOptions,
   ): { response: Response; body?: unknown; minimal?: boolean } {
-    const responseObjOrRef = operation.responses[statusCode];
-    if (!responseObjOrRef) {
+    const responseObj = this.specDoc.getResponseObject(
+      pathPattern,
+      method,
+      statusCode,
+    );
+    if (!responseObj) {
       throw new MatchError("Response not defined", {
         httpPath: path,
         httpMethod: method.toUpperCase(),
@@ -990,35 +975,9 @@ export class MockServer {
       });
     }
 
-    // Handle $ref in response - resolve via document
-    if (isReference(responseObjOrRef)) {
-      const resolved = this.document.resolveRef(responseObjOrRef.$ref);
-      if (!resolved) {
-        throw new MatchError("Unresolved response reference", {
-          httpPath: path,
-          httpMethod: method.toUpperCase(),
-          errorType: "match",
-          reason: `Response reference not found: ${responseObjOrRef.$ref}`,
-          suggestion:
-            "Check that the referenced response exists in components/responses",
-        });
-      }
-      // Use resolved response
-      return this.generateResponseFromObject(
-        requestAcceptHeader,
-        resolved.raw as ResponseObject,
-        statusCode,
-        path,
-        method,
-        pathPattern,
-        generatorOptions,
-        streamingOptions,
-      );
-    }
-
     return this.generateResponseFromObject(
       requestAcceptHeader,
-      responseObjOrRef as ResponseObject,
+      responseObj,
       statusCode,
       path,
       method,
@@ -1116,9 +1075,8 @@ export class MockServer {
         ) {
           const firstExampleOrRef = Object.values(mediaType.examples)[0];
           if (firstExampleOrRef && !isReference(firstExampleOrRef)) {
-            const example = firstExampleOrRef as { value?: unknown };
-            if (example.value !== undefined) {
-              body = example.value;
+            if (firstExampleOrRef.value !== undefined) {
+              body = firstExampleOrRef.value;
             }
           }
         } // Priority 3: Generate from schema using document-centric approach
@@ -1220,9 +1178,9 @@ export class MockServer {
     }
 
     const schemaPointer = `#/paths/${
-      this.escapePointer(pathPattern)
+      escapeSegment(pathPattern)
     }/${method}/responses/${statusCode}/content/${
-      this.escapePointer(contentType)
+      escapeSegment(contentType)
     }/schema`;
 
     const { stream, warnings } = createStreamingResponse(
@@ -1267,8 +1225,11 @@ export class MockServer {
     generatorOptions: GenerateOptions,
   ): unknown {
     // If schema is a reference, use the document to resolve and generate
-    if (typeof schema === "object" && schema !== null && "$ref" in schema) {
-      const ref = (schema as { $ref: string }).$ref;
+    if (
+      typeof schema === "object" && schema !== null && "$ref" in schema &&
+      typeof (schema as Record<string, unknown>)["$ref"] === "string"
+    ) {
+      const ref = (schema as Record<string, unknown>)["$ref"] as string;
       if (isFragmentPointer(ref)) {
         return this.document.generateResponse(ref, generatorOptions);
       }
@@ -1279,19 +1240,18 @@ export class MockServer {
       this.document.schemas,
       generatorOptions,
     );
-    return generator.generateFromSchema(
-      schema as Parameters<RegistryResponseGenerator["generateFromSchema"]>[0],
-      `#/paths/${
-        this.escapePointer(pathPattern)
-      }/${method}/responses/${statusCode}/content/application~1json/schema`,
-    );
-  }
 
-  /**
-   * Escape a path segment for JSON Pointer
-   */
-  private escapePointer(path: string): string {
-    return path.replace(/~/g, "~0").replace(/\//g, "~1");
+    // schema is unknown from the OpenAPI content type's schema field.
+    // If it's a boolean or plain object, generateFromSchema handles it.
+    if (typeof schema === "boolean" || typeof schema === "object") {
+      return generator.generateFromSchema(
+        (schema ?? {}) as Schema | boolean,
+        `#/paths/${
+          escapeSegment(pathPattern)
+        }/${method}/responses/${statusCode}/content/application~1json/schema`,
+      );
+    }
+    return null;
   }
 
   /**

@@ -8,6 +8,23 @@ export { VERSION } from "./version.ts";
 /** Default server port */
 export const DEFAULT_PORT = 3000;
 
+/** HTTP methods supported by OpenAPI */
+export const HTTP_METHODS = [
+  "get",
+  "post",
+  "put",
+  "delete",
+  "patch",
+  "head",
+  "options",
+  "trace",
+] as const;
+export type HttpMethod = typeof HTTP_METHODS[number];
+
+export function isHttpMethod(method: string): method is HttpMethod {
+  return (HTTP_METHODS as readonly string[]).includes(method);
+}
+
 /**
  * X-Steady-* header names used by the mock server.
  * Request headers can be sent by clients to override behavior.

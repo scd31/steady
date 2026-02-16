@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import type { OperationObject, PathsObject } from "@steady/openapi";
 import type { Schema } from "@steady/json-schema";
+import type { FragmentPointer } from "@steady/json-pointer";
 import type { ValidationNode } from "./types.ts";
 import {
   type BodySchemaInfo,
@@ -82,7 +83,7 @@ class StubValidator implements SchemaValidator {
   validate(
     _data: unknown,
     _schema: Schema,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
   ): ValidationNode {
     return (
@@ -291,7 +292,7 @@ Deno.test("DiagnosticEngine", async (t) => {
   await t.step("body validation: tree with failure → diagnostic", () => {
     const bodySchemaPath =
       "#/paths/~1users/post/requestBody/content/application~1json/schema";
-    const leafSchemaPath = bodySchemaPath + "/properties/name";
+    const leafSchemaPath: FragmentPointer = `${bodySchemaPath}/properties/name`;
 
     const bodySchema: Schema = {
       type: "object",
@@ -398,7 +399,8 @@ Deno.test("DiagnosticEngine", async (t) => {
   await t.step("full flow: param missing + body error → both", () => {
     const bodySchemaPath =
       "#/paths/~1users/post/requestBody/content/application~1json/schema";
-    const leafSchemaPath = bodySchemaPath + "/properties/email";
+    const leafSchemaPath: FragmentPointer =
+      `${bodySchemaPath}/properties/email`;
 
     const validator = new StubValidator();
     validator.register(bodySchemaPath, {

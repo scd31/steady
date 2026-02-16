@@ -14,6 +14,7 @@
  * E5001 has category "ambiguous" but keyword "type" which IS structural.
  */
 
+import { isPlainObject } from "@steady/json-pointer";
 import type { Diagnostic } from "../../diagnostic.ts";
 import type { CompositionContext, InterpretResult } from "../types.ts";
 import { getCode } from "../../codes/registry.ts";
@@ -84,8 +85,8 @@ function identifyByPropertyOverlap(
 ): InterpretResult | null {
   if (!isPlainObject(context.data)) return null;
 
-  const oneOfSchemas = context.schema.oneOf;
-  if (!Array.isArray(oneOfSchemas)) return null;
+  const variants = context.schema.oneOf ?? context.schema.anyOf;
+  if (!Array.isArray(variants)) return null;
 
   const requestKeys = Object.keys(context.data);
   if (requestKeys.length === 0) return null;
@@ -93,7 +94,7 @@ function identifyByPropertyOverlap(
   // Calculate overlap score for each variant
   const scores: { detail: VariantDetail; overlap: number }[] = [];
   for (const detail of variantDetails) {
-    const variantSchema = oneOfSchemas[detail.index];
+    const variantSchema = variants[detail.index];
     if (
       variantSchema === undefined ||
       typeof variantSchema === "boolean" ||
@@ -216,8 +217,4 @@ function reportAmbiguous(
     structurallyValid: false,
     structuralFailureCount: 0,
   };
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

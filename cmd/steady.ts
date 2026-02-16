@@ -29,6 +29,33 @@ import { PipelineTimer } from "../src/timing.ts";
 
 type LogFormat = "text" | "json" | "ci";
 
+/** Options shared between startServer and startWithWatch. */
+interface ServerOptions {
+  logLevel: LogLevel;
+  logFormat: LogFormat;
+  logBodies: boolean;
+  quiet: boolean;
+  rejectOnSdkError: boolean;
+  portOverride?: number;
+  host?: string;
+  color: boolean;
+  failOnAmbiguous?: boolean;
+  failOnWarnings?: boolean;
+  validator?: {
+    strictOneOf?: boolean;
+    queryArrayFormat?: QueryArrayFormat;
+    queryObjectFormat?: QueryObjectFormat;
+    formArrayFormat?: QueryArrayFormat;
+    formObjectFormat?: QueryObjectFormat;
+  };
+  generator?: {
+    arrayMin?: number;
+    arrayMax?: number;
+    seed?: number;
+  };
+  streaming?: StreamingConfig;
+}
+
 /** Signals that spec analysis found fatal issues (unresolvable). */
 class FatalSpecError extends Error {
   constructor(public diagnostics: Diagnostic[]) {
@@ -352,31 +379,7 @@ export async function main() {
 
 async function startServer(
   specPath: string,
-  options: {
-    logLevel: LogLevel;
-    logFormat: LogFormat;
-    logBodies: boolean;
-    quiet: boolean;
-    rejectOnSdkError: boolean;
-    portOverride?: number;
-    host?: string;
-    color: boolean;
-    failOnAmbiguous?: boolean;
-    failOnWarnings?: boolean;
-    validator?: {
-      strictOneOf?: boolean;
-      queryArrayFormat?: QueryArrayFormat;
-      queryObjectFormat?: QueryObjectFormat;
-      formArrayFormat?: QueryArrayFormat;
-      formObjectFormat?: QueryObjectFormat;
-    };
-    generator?: {
-      arrayMin?: number;
-      arrayMax?: number;
-      seed?: number;
-    };
-    streaming?: StreamingConfig;
-  },
+  options: ServerOptions,
 ): Promise<{ start: () => void; stop: () => Promise<void> }> {
   // Lazy import to avoid loading server code for validate command
   const { MockServer } = await import("../src/server.ts");
@@ -442,31 +445,7 @@ async function startServer(
 
 async function startWithWatch(
   specPath: string,
-  options: {
-    logLevel: LogLevel;
-    logFormat: LogFormat;
-    logBodies: boolean;
-    quiet: boolean;
-    rejectOnSdkError: boolean;
-    portOverride?: number;
-    host?: string;
-    color: boolean;
-    failOnAmbiguous?: boolean;
-    failOnWarnings?: boolean;
-    validator?: {
-      strictOneOf?: boolean;
-      queryArrayFormat?: QueryArrayFormat;
-      queryObjectFormat?: QueryObjectFormat;
-      formArrayFormat?: QueryArrayFormat;
-      formObjectFormat?: QueryObjectFormat;
-    };
-    generator?: {
-      arrayMin?: number;
-      arrayMax?: number;
-      seed?: number;
-    };
-    streaming?: StreamingConfig;
-  },
+  options: ServerOptions,
 ) {
   const useColor = options.color;
   let server: { start: () => void; stop: () => Promise<void> } | null = null;

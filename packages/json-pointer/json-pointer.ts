@@ -11,6 +11,14 @@ export class JsonPointerError extends Error {
 }
 
 /**
+ * Type guard: narrows `object` (after Array.isArray check) to
+ * Record<string, unknown>. Used throughout to avoid `as Record` casts.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
  * Validate that a string is a valid RFC 6901 array index.
  * Valid indices: "0", "1", "12", "123", etc.
  * Invalid: "01" (leading zero), "1.5" (decimal), "-1" (negative), " 1" (spaces)
@@ -19,6 +27,24 @@ function isValidArrayIndex(segment: string): boolean {
   // Must be either "0" or a number starting with non-zero digit
   // This regex matches: "0" or "[1-9][0-9]*"
   return /^(0|[1-9][0-9]*)$/.test(segment);
+}
+
+/**
+ * Strip fragment prefix and percent-decode if pointer starts with "#".
+ * Returns a bare RFC 6901 pointer suitable for parsePointer().
+ */
+function toBarePointer(pointer: string): string {
+  if (pointer.startsWith("#")) {
+    try {
+      return decodeURIComponent(pointer.slice(1));
+    } catch {
+      throw new JsonPointerError(
+        `Invalid percent encoding in pointer: ${pointer}`,
+        pointer,
+      );
+    }
+  }
+  return pointer;
 }
 
 /**
@@ -84,19 +110,7 @@ export function formatPointer(segments: string[]): string {
  * before JSON Pointer resolution. Bare pointers are used as-is.
  */
 export function resolve(document: unknown, pointer: string): unknown {
-  let bare: string;
-  if (pointer.startsWith("#")) {
-    try {
-      bare = decodeURIComponent(pointer.slice(1));
-    } catch {
-      throw new JsonPointerError(
-        `Invalid percent encoding in pointer: ${pointer}`,
-        pointer,
-      );
-    }
-  } else {
-    bare = pointer;
-  }
+  const bare = toBarePointer(pointer);
   const segments = parsePointer(bare);
   let current = document;
 
@@ -146,16 +160,15 @@ export function resolve(document: unknown, pointer: string): unknown {
       }
 
       current = current[index];
-    } else if (typeof current === "object") {
+    } else if (isRecord(current)) {
       // Object property
-      const obj = current as Record<string, unknown>;
-      if (!(segment in obj)) {
+      if (!(segment in current)) {
         throw new JsonPointerError(
           `Property '${segment}' not found in object`,
           formatPointer(segments.slice(0, i + 1)),
         );
       }
-      current = obj[segment];
+      current = current[segment];
     } else {
       throw new JsonPointerError(
         `Cannot resolve pointer at segment '${segment}': current value is not an object or array`,
@@ -183,14 +196,17 @@ export function exists(document: unknown, pointer: string): boolean {
 }
 
 /**
- * Set a value at a JSON Pointer location (mutates the document)
+ * Set a value at a JSON Pointer location (mutates the document).
+ * Accepts both bare RFC 6901 pointers ("/foo/bar") and
+ * URI fragment pointers ("#/foo/bar").
  */
 export function set(
   document: unknown,
   pointer: string,
   value: unknown,
 ): void {
-  const segments = parsePointer(pointer);
+  const bare = toBarePointer(pointer);
+  const segments = parsePointer(bare);
 
   if (segments.length === 0) {
     throw new JsonPointerError(
@@ -248,15 +264,14 @@ export function set(
         );
       }
       current = current[index];
-    } else if (typeof current === "object") {
-      const obj = current as Record<string, unknown>;
-      if (!(segment in obj)) {
+    } else if (isRecord(current)) {
+      if (!(segment in current)) {
         throw new JsonPointerError(
           `Property '${segment}' not found in object`,
           formatPointer(segments.slice(0, i + 1)),
         );
       }
-      current = obj[segment];
+      current = current[segment];
     } else {
       throw new JsonPointerError(
         `Cannot set value: current value is not an object or array at segment '${segment}'`,
@@ -286,8 +301,8 @@ export function set(
       }
       current[index] = value;
     }
-  } else if (typeof current === "object" && current !== null) {
-    (current as Record<string, unknown>)[lastSegment] = value;
+  } else if (isRecord(current)) {
+    current[lastSegment] = value;
   } else {
     throw new JsonPointerError(
       `Cannot set value: parent is not an object or array`,
@@ -320,16 +335,15 @@ export function listPointers(document: unknown, prefix = ""): string[] {
       obj.forEach((_, index) => {
         traverse(obj[index], [...path, index.toString()]);
       });
-    } else if (typeof obj === "object" && obj !== null) {
+    } else if (isRecord(obj)) {
       // Check for circular reference
       if (visited.has(obj)) {
         return;
       }
       visited.add(obj);
 
-      const record = obj as Record<string, unknown>;
-      Object.keys(record).forEach((key) => {
-        traverse(record[key], [...path, key]);
+      Object.keys(obj).forEach((key) => {
+        traverse(obj[key], [...path, key]);
       });
     }
   }

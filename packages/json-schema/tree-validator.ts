@@ -15,6 +15,12 @@
  * paths (e.g., "body.address.city").
  */
 
+import {
+  escapeSegment,
+  type FragmentPointer,
+  isFragmentPointer,
+  isPlainObject,
+} from "@steady/json-pointer";
 import type { Schema } from "./types.ts";
 
 // ── Output types ───────────────────────────────────────────────────
@@ -22,7 +28,7 @@ import type { Schema } from "./types.ts";
 export interface ValidationNode {
   keyword?: string;
   path: string[];
-  schemaPath: string;
+  schemaPath: FragmentPointer;
   valid: boolean;
 
   // Leaf details
@@ -40,10 +46,6 @@ export interface ValidationNode {
 }
 
 // ── Type guards ──────────────────────────────────────────────────
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * Type guard for Schema. Since all Schema fields are optional,
@@ -87,7 +89,7 @@ export class TreeValidator {
   validate(
     data: unknown,
     schema: Schema | boolean,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
   ): ValidationNode {
     const errors: ValidationNode[] = [];
@@ -113,7 +115,7 @@ export class TreeValidator {
   private validateSchema(
     data: unknown,
     schema: Schema | boolean,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -133,17 +135,34 @@ export class TreeValidator {
       return;
     }
 
-    // $ref: resolve and validate transparently
+    // $ref: resolve and validate. In JSON Schema 2020-12, sibling keywords
+    // alongside $ref are valid and must be applied.
     if (schema.$ref) {
       const resolved = this.resolveRef(schema.$ref, rootSchema);
       if (resolved !== undefined) {
-        const refSchemaPath = schema.$ref.startsWith("#")
+        const refSchemaPath: FragmentPointer = isFragmentPointer(schema.$ref)
           ? schema.$ref
           : schemaPath;
         this.validateSchema(
           data,
           resolved,
           refSchemaPath,
+          dataPath,
+          errors,
+          rootSchema,
+          context,
+        );
+      }
+
+      // Apply sibling keywords from the $ref-bearing schema.
+      // Build a sibling schema with $ref removed, then validate if non-empty.
+      const { $ref: _, ...siblings } = schema;
+      const siblingKeys = Object.keys(siblings);
+      if (siblingKeys.length > 0) {
+        this.validateSchema(
+          data,
+          siblings,
+          schemaPath,
           dataPath,
           errors,
           rootSchema,
@@ -338,7 +357,7 @@ export class TreeValidator {
   private validateType(
     data: unknown,
     schema: Schema,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
     context?: { arrayItem?: boolean },
@@ -376,7 +395,7 @@ export class TreeValidator {
   private validateRequired(
     obj: Record<string, unknown>,
     required: string[],
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
   ): void {
@@ -399,7 +418,7 @@ export class TreeValidator {
   private validateProperties(
     obj: Record<string, unknown>,
     properties: Record<string, Schema>,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -411,7 +430,7 @@ export class TreeValidator {
         this.validateSchema(
           obj[propName],
           propSchema,
-          `${schemaPath}/properties/${escapeJsonPointer(propName)}`,
+          `${schemaPath}/properties/${escapeSegment(propName)}`,
           [...dataPath, propName],
           errors,
           rootSchema,
@@ -425,7 +444,7 @@ export class TreeValidator {
   private validatePatternProperties(
     obj: Record<string, unknown>,
     patternProperties: Record<string, Schema>,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -445,7 +464,7 @@ export class TreeValidator {
           this.validateSchema(
             obj[propName],
             propSchema,
-            `${schemaPath}/patternProperties/${escapeJsonPointer(pattern)}`,
+            `${schemaPath}/patternProperties/${escapeSegment(pattern)}`,
             [...dataPath, propName],
             errors,
             rootSchema,
@@ -460,7 +479,7 @@ export class TreeValidator {
   private validateAdditionalProperties(
     obj: Record<string, unknown>,
     schema: Schema,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -499,7 +518,7 @@ export class TreeValidator {
   private validateEnum(
     data: unknown,
     enumValues: unknown[],
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
   ): void {
@@ -518,7 +537,7 @@ export class TreeValidator {
   private validateConst(
     data: unknown,
     constValue: unknown,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
   ): void {
@@ -539,7 +558,7 @@ export class TreeValidator {
   private validateString(
     data: string,
     schema: Schema,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
   ): void {
@@ -602,7 +621,7 @@ export class TreeValidator {
   private validateNumber(
     data: number,
     schema: Schema,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
   ): void {
@@ -674,7 +693,7 @@ export class TreeValidator {
   private validateArray(
     data: unknown[],
     schema: Schema,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -763,7 +782,7 @@ export class TreeValidator {
   private validateOneOf(
     data: unknown,
     variants: Schema[],
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -815,7 +834,7 @@ export class TreeValidator {
   private validateAnyOf(
     data: unknown,
     variants: Schema[],
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -864,7 +883,7 @@ export class TreeValidator {
   private validateAllOf(
     data: unknown,
     subschemas: Schema[],
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -1003,10 +1022,6 @@ function canonicalJson(value: unknown): string {
     JSON.stringify(k) + ":" + canonicalJson(obj[k])
   );
   return "{" + pairs.join(",") + "}";
-}
-
-function escapeJsonPointer(segment: string): string {
-  return segment.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
 /**

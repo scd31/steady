@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
 import type { Schema } from "@steady/json-schema";
+import type { FragmentPointer } from "@steady/json-pointer";
 import type { SpecResolver, ValidationNode } from "./types.ts";
 import { interpret, resolveDataAtPath } from "./interpreter.ts";
 
@@ -9,7 +10,7 @@ import { interpret, resolveDataAtPath } from "./interpreter.ts";
  */
 function makeResolver(schemas: Record<string, Schema>): SpecResolver {
   return {
-    resolve(schemaPath: string): Schema {
+    resolve(schemaPath: FragmentPointer): Schema {
       const schema = schemas[schemaPath];
       if (!schema) {
         throw new Error(`Test resolver: no schema for "${schemaPath}"`);

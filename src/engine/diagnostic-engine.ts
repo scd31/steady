@@ -16,6 +16,7 @@
  */
 
 import type { Schema } from "@steady/json-schema";
+import { escapeSegment, type FragmentPointer } from "@steady/json-pointer";
 import type { PathsObject } from "@steady/openapi";
 import type { Diagnostic, DiagnosticLocation } from "../diagnostic.ts";
 import type { QueryArrayFormat, QueryObjectFormat } from "../types.ts";
@@ -76,7 +77,7 @@ export interface ResolvedParameter {
   required: boolean;
   schema: Schema | null;
   /** JSON pointer to this parameter's schema. null if no schema. */
-  schemaPath: string | null;
+  schemaPath: FragmentPointer | null;
   /** OpenAPI style (form, spaceDelimited, pipeDelimited, deepObject). */
   style?: string;
   /** OpenAPI explode flag. */
@@ -87,7 +88,7 @@ export interface ResolvedParameter {
 export interface BodySchemaInfo {
   schema: Schema;
   /** JSON pointer to the body schema in the spec. */
-  schemaPath: string;
+  schemaPath: FragmentPointer;
   /** Whether the request body is required (requestBody.required in OpenAPI). */
   required: boolean;
 }
@@ -104,7 +105,7 @@ export interface SchemaValidator {
   validate(
     data: unknown,
     schema: Schema | boolean,
-    schemaPath: string,
+    schemaPath: FragmentPointer,
     dataPath: string[],
   ): ValidationNode;
 }
@@ -136,7 +137,7 @@ export class DiagnosticEngine {
     this.spec = spec;
     this.validator = validator;
     this.specResolver = {
-      resolve: (path: string) => this.spec.resolveSchema(path),
+      resolve: (path) => this.spec.resolveSchema(path),
     };
   }
 
@@ -437,7 +438,7 @@ function createMissingParamDiagnostic(
     severity: codeInfo.severity,
     category: codeInfo.category,
     requestPath: `${param.in}.${param.name}`,
-    specPointer: `#/paths/${escapeJsonPointer(pathPattern)}`,
+    specPointer: `#/paths/${escapeSegment(pathPattern)}`,
     message: `Missing required ${param.in} parameter: ${param.name}`,
     attribution: {
       confidence: 1.0,
@@ -465,9 +466,7 @@ function createMissingBodyDiagnostic(
     severity: e3005.severity,
     category: e3005.category,
     requestPath: "body",
-    specPointer: `#/paths/${
-      escapeJsonPointer(pathPattern)
-    }/${method}/requestBody`,
+    specPointer: `#/paths/${escapeSegment(pathPattern)}/${method}/requestBody`,
     message:
       `Operation ${method.toUpperCase()} ${pathPattern} requires a request body`,
     attribution: {
@@ -497,9 +496,7 @@ function createMissingResponsesDiagnostic(
     severity: e1010.severity,
     category: e1010.category,
     requestPath: `${method.toUpperCase()} ${pathPattern}`,
-    specPointer: `#/paths/${
-      escapeJsonPointer(pathPattern)
-    }/${method}/responses`,
+    specPointer: `#/paths/${escapeSegment(pathPattern)}/${method}/responses`,
     message:
       `Operation ${method.toUpperCase()} ${pathPattern} has no response definitions`,
     attribution: {
@@ -529,7 +526,7 @@ function createWrongContentTypeDiagnostic(
     category: e3006.category,
     requestPath: "header.content-type",
     specPointer: `#/paths/${
-      escapeJsonPointer(pathPattern)
+      escapeSegment(pathPattern)
     }/${method}/requestBody/content`,
     message: `Content-Type "${actualType}" is not accepted. Expected: ${
       acceptedTypes.join(", ")
@@ -589,10 +586,6 @@ function parseCookieHeader(
   }
 
   return cookies;
-}
-
-function escapeJsonPointer(path: string): string {
-  return path.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
 function capitalize(s: string): string {
@@ -664,7 +657,7 @@ function createSerializationMismatchDiagnostic(
     severity: e3014.severity,
     category: e3014.category,
     requestPath: `query.${actualKey}`,
-    specPointer: `#/paths/${escapeJsonPointer(pathPattern)}`,
+    specPointer: `#/paths/${escapeSegment(pathPattern)}`,
     message:
       `Query parameter "${actualKey}" looks like a serialization of "${baseName}" - check the encoding format`,
     expected: baseName,
@@ -695,7 +688,7 @@ function createUndocumentedParamDiagnostic(
     severity: e3015.severity,
     category: e3015.category,
     requestPath: `query.${key}`,
-    specPointer: `#/paths/${escapeJsonPointer(pathPattern)}`,
+    specPointer: `#/paths/${escapeSegment(pathPattern)}`,
     message: `Query parameter "${key}" is not defined in the spec`,
     actual: key,
     attribution: {

@@ -294,13 +294,19 @@ function requiredCodeForLocation(location: DiagnosticLocation): ECode {
 }
 
 function isNullable(schema: Schema): boolean {
-  if (schema.nullable === true) {
-    return true;
+  if (schema.nullable === true) return true;
+  if (Array.isArray(schema.type) && schema.type.includes("null")) return true;
+  if (schema.type === "null") return true;
+  // Check composition for null type
+  for (const variant of schema.anyOf ?? schema.oneOf ?? []) {
+    if (typeof variant === "object" && variant !== null && "type" in variant) {
+      if (variant.type === "null") return true;
+      if (Array.isArray(variant.type) && variant.type.includes("null")) {
+        return true;
+      }
+    }
   }
-  if (Array.isArray(schema.type)) {
-    return schema.type.includes("null");
-  }
-  return schema.type === "null";
+  return false;
 }
 
 // ── Reasoning chain builders ──────────────────────────────────────

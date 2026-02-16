@@ -11,6 +11,11 @@
  * data are resolved on-demand at composition and leaf nodes.
  */
 
+import {
+  type FragmentPointer,
+  isFragmentPointer,
+  isPlainObject,
+} from "@steady/json-pointer";
 import type { DiagnosticLocation } from "../diagnostic.ts";
 import type {
   CompositionContext,
@@ -143,7 +148,7 @@ const PROP_SUFFIX = /\/properties\/([^/]+)$/;
  */
 function checkOptionalParent(
   diagnostic: Diagnostic,
-  schemaPath: string,
+  schemaPath: FragmentPointer,
   spec: SpecResolver,
 ): Diagnostic | undefined {
   // Step 1: Strip the missing field's /properties/<field> to get the object schema path
@@ -157,6 +162,7 @@ function checkOptionalParent(
   const parentPropName = match[1] ?? "";
   if (!parentPropName) return undefined;
   const grandparentPath = objectPath.replace(PROP_SUFFIX, "");
+  if (!isFragmentPointer(grandparentPath)) return undefined;
 
   // Step 3: Resolve grandparent schema and check if parent is required
   let grandparent;
@@ -217,15 +223,18 @@ export function resolveDataAtPath(
   let current: unknown = data;
 
   for (const segment of segments) {
-    if (!isPlainObject(current)) {
+    if (Array.isArray(current)) {
+      const index = parseInt(segment, 10);
+      if (isNaN(index) || index < 0 || index >= current.length) {
+        return undefined;
+      }
+      current = current[index];
+    } else if (isPlainObject(current)) {
+      current = current[segment];
+    } else {
       return undefined;
     }
-    current = current[segment];
   }
 
   return current;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -38,7 +38,7 @@ export class DiagnosticCollector {
   private runtimeEntries: RuntimeEntry[] = [];
   private testedEndpoints = new Set<string>();
   private allEndpoints: string[] = [];
-  private generationWarnings: string[] = [];
+  private generationWarnings = new Set<string>();
   private stats: SessionStats;
 
   constructor() {
@@ -183,7 +183,7 @@ export class DiagnosticCollector {
    * Track an endpoint where the response generator produced a minimal response.
    */
   trackGenerationWarning(method: string, pathPattern: string): void {
-    this.generationWarnings.push(`${method.toUpperCase()} ${pathPattern}`);
+    this.generationWarnings.add(`${method.toUpperCase()} ${pathPattern}`);
   }
 
   /**
@@ -212,7 +212,7 @@ export class DiagnosticCollector {
   resetRuntime(): void {
     this.runtimeEntries = [];
     this.testedEndpoints.clear();
-    this.generationWarnings = [];
+    this.generationWarnings = new Set<string>();
     this.stats = {
       requestCount: 0,
       successCount: 0,

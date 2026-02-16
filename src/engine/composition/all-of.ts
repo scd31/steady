@@ -114,6 +114,8 @@ function detectContradictoryTypes(
     if (typeof member === "boolean") continue;
     if (typeof member.type === "string") {
       types.push(member.type);
+    } else if (Array.isArray(member.type)) {
+      types.push(...member.type);
     }
   }
 

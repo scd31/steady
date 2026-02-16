@@ -12,7 +12,10 @@
 import type { Schema } from "@steady/json-schema";
 import type { SchemaRegistry } from "@steady/json-schema";
 import {
+  escapeSegment,
+  type FragmentPointer,
   isFragmentPointer,
+  isPlainObject,
   resolve as resolvePointer,
 } from "@steady/json-pointer";
 import type {
@@ -23,6 +26,7 @@ import type {
   PathsObject,
   ReferenceObject,
   RequestBodyObject,
+  ResponseObject,
 } from "./openapi.ts";
 
 // ── Local types ────────────────────────────────────────────────────
@@ -36,22 +40,18 @@ interface ResolvedParameter {
   in: "path" | "query" | "header" | "cookie";
   required: boolean;
   schema: Schema | null;
-  schemaPath: string | null;
+  schemaPath: FragmentPointer | null;
   style?: string;
   explode?: boolean;
 }
 
 interface BodySchemaInfo {
   schema: Schema;
-  schemaPath: string;
+  schemaPath: FragmentPointer;
   required: boolean;
 }
 
 // ── Type guards ────────────────────────────────────────────────────
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * Type guard for ParameterObject resolved from a $ref.
@@ -77,6 +77,14 @@ function isRequestBodyLike(value: unknown): value is RequestBodyObject {
  */
 function isSchemaLike(value: unknown): value is Schema {
   return isPlainObject(value);
+}
+
+/**
+ * Type guard for ResponseObject resolved from a $ref.
+ */
+function isResponseLike(value: unknown): value is ResponseObject {
+  if (!isPlainObject(value)) return false;
+  return typeof value["description"] === "string";
 }
 
 function isDefined<T>(value: T | undefined): value is T {
@@ -140,7 +148,7 @@ export class OpenAPISpecDocument {
     // Merge: operation overrides path-level (by name + in)
     const merged = new Map<
       string,
-      { param: ParameterObject; pointer: string }
+      { param: ParameterObject; pointer: FragmentPointer }
     >();
 
     for (const entry of resolvedPathLevel) {
@@ -201,8 +209,8 @@ export class OpenAPISpecDocument {
     if (!isSchemaLike(jsonContent.schema)) return null;
 
     // Build the schema path
-    const escapedPath = escapeJsonPointer(pathPattern);
-    const schemaPath =
+    const escapedPath = escapeSegment(pathPattern);
+    const schemaPath: FragmentPointer =
       `#/paths/${escapedPath}/${method}/requestBody/content/application~1json/schema`;
 
     return {
@@ -256,6 +264,34 @@ export class OpenAPISpecDocument {
   }
 
   /**
+   * Resolved response object for an operation and status code.
+   * Handles $ref resolution. Returns null if not found.
+   */
+  getResponseObject(
+    pathPattern: string,
+    method: string,
+    statusCode: string,
+  ): ResponseObject | null {
+    const pathItem = this.spec.paths[pathPattern];
+    if (!pathItem) return null;
+
+    const operation = this.getOperation(pathItem, method);
+    if (!operation) return null;
+
+    const responseObjOrRef = operation.responses[statusCode];
+    if (!responseObjOrRef) return null;
+
+    // Resolve $ref if needed
+    if ("$ref" in responseObjOrRef) {
+      const resolved = this.resolveRef(responseObjOrRef.$ref);
+      if (!isResponseLike(resolved)) return null;
+      return resolved;
+    }
+
+    return responseObjOrRef;
+  }
+
+  /**
    * Resolve a schema by its JSON pointer in the spec.
    * Uses SchemaRegistry when available, falls back to raw pointer resolution.
    * Returns empty schema {} if the pointer can't be resolved.
@@ -303,18 +339,20 @@ export class OpenAPISpecDocument {
     level: "pathItem" | "operation",
     method: string | undefined,
     index: number,
-  ): { param: ParameterObject; pointer: string } | undefined {
+  ): { param: ParameterObject; pointer: FragmentPointer } | undefined {
     if ("$ref" in paramOrRef) {
       const resolved = this.resolveRef(paramOrRef.$ref);
       if (!isParameterLike(resolved)) return undefined;
-      // Pointer for the $ref target
-      const pointer = paramOrRef.$ref.replace(/^#/, "");
-      return { param: resolved, pointer: `#${pointer}` };
+      // Pointer for the $ref target (already a fragment pointer like #/components/...)
+      const pointer: FragmentPointer = isFragmentPointer(paramOrRef.$ref)
+        ? paramOrRef.$ref
+        : `#${paramOrRef.$ref}`;
+      return { param: resolved, pointer };
     }
 
     // Inline parameter. Compute its pointer
-    const escapedPath = escapeJsonPointer(pathPattern);
-    let pointer: string;
+    const escapedPath = escapeSegment(pathPattern);
+    let pointer: FragmentPointer;
     if (level === "pathItem") {
       pointer = `#/paths/${escapedPath}/parameters/${index}`;
     } else {
@@ -351,10 +389,6 @@ function stripFragment(ref: string): string {
     return ref.slice(1);
   }
   return ref;
-}
-
-function escapeJsonPointer(path: string): string {
-  return path.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
 function isHttpMethod(method: string): method is HttpMethod {

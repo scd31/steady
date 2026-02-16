@@ -16,18 +16,7 @@ import type {
 import type { Diagnostic, DiagnosticDisplay } from "../diagnostic.ts";
 import { getCode } from "../codes/registry.ts";
 import { matchPathPattern } from "../path-matcher.ts";
-
-const HTTP_METHODS = [
-  "get",
-  "post",
-  "put",
-  "delete",
-  "patch",
-  "head",
-  "options",
-  "trace",
-] as const;
-type HttpMethod = (typeof HTTP_METHODS)[number];
+import { HTTP_METHODS, type HttpMethod } from "../types.ts";
 
 /** Input to route matching. */
 export interface RoutingRequest {

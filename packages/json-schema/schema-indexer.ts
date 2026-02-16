@@ -5,6 +5,7 @@
  * and response generation. This is critical for performance with large schemas.
  */
 
+import { escapeSegment, type FragmentPointer } from "@steady/json-pointer";
 import type {
   ComplexityMetrics,
   ProcessedSchema,
@@ -36,7 +37,7 @@ export class SchemaIndexer {
     const features = new Set<string>();
 
     // Walk the schema tree once, building all indexes
-    this.walkSchema(schema, "", (subSchema, pointer) => {
+    this.walkSchema(schema, "#", (subSchema, pointer) => {
       // Add to pointer index
       index.byPointer.set(pointer, subSchema);
 
@@ -58,20 +59,24 @@ export class SchemaIndexer {
           ? subSchema.type
           : [subSchema.type];
         for (const type of types) {
-          if (!index.byType.has(type)) {
-            index.byType.set(type, new Set());
+          let typeSet = index.byType.get(type);
+          if (!typeSet) {
+            typeSet = new Set();
+            index.byType.set(type, typeSet);
           }
-          index.byType.get(type)!.add(pointer);
+          typeSet.add(pointer);
         }
       }
 
       // Format index
       if (subSchema.format) {
         formats.add(subSchema.format);
-        if (!index.byFormat.has(subSchema.format)) {
-          index.byFormat.set(subSchema.format, new Set());
+        let formatSet = index.byFormat.get(subSchema.format);
+        if (!formatSet) {
+          formatSet = new Set();
+          index.byFormat.set(subSchema.format, formatSet);
         }
-        index.byFormat.get(subSchema.format)!.add(pointer);
+        formatSet.add(pointer);
       }
 
       // Keyword index for feature detection
@@ -85,12 +90,13 @@ export class SchemaIndexer {
       }
     });
 
-    // Calculate metadata
+    // Calculate metadata (compute maxDepth once, reuse in complexity)
+    const maxDepth = this.calculateMaxDepth(schema);
     const metadata: SchemaMetadata = {
       totalSchemas: index.byPointer.size,
       totalRefs: refs.resolved.size,
-      maxDepth: this.calculateMaxDepth(schema),
-      complexity: this.calculateComplexity(schema, index, refs),
+      maxDepth,
+      complexity: this.calculateComplexity(schema, index, refs, maxDepth),
       formats,
       features,
     };
@@ -109,8 +115,8 @@ export class SchemaIndexer {
    */
   private walkSchema(
     schema: Schema | boolean,
-    pointer: string,
-    visitor: (schema: Schema | boolean, pointer: string) => void,
+    pointer: FragmentPointer,
+    visitor: (schema: Schema | boolean, pointer: FragmentPointer) => void,
     visited = new Set<string>(),
   ): void {
     // Prevent infinite recursion
@@ -127,7 +133,7 @@ export class SchemaIndexer {
       for (const [key, subSchema] of Object.entries(schema.$defs)) {
         this.walkSchema(
           subSchema,
-          `${pointer}/$defs/${this.escapeJsonPointer(key)}`,
+          `${pointer}/$defs/${escapeSegment(key)}`,
           visitor,
           visited,
         );
@@ -138,7 +144,7 @@ export class SchemaIndexer {
       for (const [key, subSchema] of Object.entries(schema.properties)) {
         this.walkSchema(
           subSchema,
-          `${pointer}/properties/${this.escapeJsonPointer(key)}`,
+          `${pointer}/properties/${escapeSegment(key)}`,
           visitor,
           visited,
         );
@@ -151,7 +157,7 @@ export class SchemaIndexer {
       ) {
         this.walkSchema(
           subSchema,
-          `${pointer}/patternProperties/${this.escapeJsonPointer(pattern)}`,
+          `${pointer}/patternProperties/${escapeSegment(pattern)}`,
           visitor,
           visited,
         );
@@ -295,7 +301,7 @@ export class SchemaIndexer {
       for (const [key, subSchema] of Object.entries(schema.dependentSchemas)) {
         this.walkSchema(
           subSchema,
-          `${pointer}/dependentSchemas/${this.escapeJsonPointer(key)}`,
+          `${pointer}/dependentSchemas/${escapeSegment(key)}`,
           visitor,
           visited,
         );
@@ -332,7 +338,7 @@ export class SchemaIndexer {
    */
   private indexKeywords(
     schema: Schema,
-    pointer: string,
+    pointer: FragmentPointer,
     keywordIndex: Map<string, Set<string>>,
     features: Set<string>,
   ): void {
@@ -341,10 +347,12 @@ export class SchemaIndexer {
     for (const keyword of keywords) {
       features.add(keyword);
 
-      if (!keywordIndex.has(keyword)) {
-        keywordIndex.set(keyword, new Set());
+      let kwSet = keywordIndex.get(keyword);
+      if (!kwSet) {
+        kwSet = new Set();
+        keywordIndex.set(keyword, kwSet);
       }
-      keywordIndex.get(keyword)!.add(pointer);
+      kwSet.add(pointer);
     }
 
     // Track specific features
@@ -426,9 +434,10 @@ export class SchemaIndexer {
    * Calculate complexity metrics
    */
   private calculateComplexity(
-    schema: Schema | boolean,
+    _schema: Schema | boolean,
     index: ProcessedSchema["index"],
     refs: ProcessedSchema["refs"],
+    maxDepth: number,
   ): ComplexityMetrics {
     const score = index.byPointer.size * 5 + // Base complexity per schema
       refs.resolved.size * 10 + // References add complexity
@@ -441,16 +450,9 @@ export class SchemaIndexer {
     return {
       score,
       circularRefs: refs.cyclic.size,
-      maxNesting: this.calculateMaxDepth(schema),
+      maxNesting: maxDepth,
       totalKeywords: Array.from(index.byKeyword.values())
         .reduce((sum, set) => sum + set.size, 0),
     };
-  }
-
-  /**
-   * Escape JSON Pointer tokens according to RFC 6901
-   */
-  private escapeJsonPointer(token: string): string {
-    return token.replace(/~/g, "~0").replace(/\//g, "~1");
   }
 }

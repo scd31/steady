@@ -12,6 +12,7 @@
  * 4. Multiple structural matches → ambiguous (E3012)
  */
 
+import { isPlainObject } from "@steady/json-pointer";
 import type { Diagnostic } from "../../diagnostic.ts";
 import type { CompositionContext, InterpretResult } from "../types.ts";
 import { getCode } from "../../codes/registry.ts";
@@ -275,8 +276,4 @@ function reportMultipleMatches(
     structurallyValid: true,
     structuralFailureCount: 0,
   };
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

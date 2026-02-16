@@ -15,9 +15,6 @@ export interface PointerValidationResult {
   suggestion?: string;
 }
 
-// Backwards compatibility alias
-export type ValidationResult = PointerValidationResult;
-
 /**
  * Validate a JSON Pointer string according to RFC 6901
  *
@@ -51,7 +48,7 @@ export function validatePointer(pointer: string): PointerValidationResult {
     const token = tokens[i];
     if (token === undefined) continue;
 
-    const tokenValidation = validateToken(token, i);
+    const tokenValidation = validateToken(token);
     if (!tokenValidation.valid) {
       return {
         valid: false,
@@ -69,7 +66,6 @@ export function validatePointer(pointer: string): PointerValidationResult {
  */
 function validateToken(
   token: string,
-  _position: number,
 ): PointerValidationResult {
   // Check for invalid escape sequences
   // RFC 6901: Only ~0 (tilde) and ~1 (slash) are valid escape sequences

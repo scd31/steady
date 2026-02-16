@@ -9,6 +9,7 @@
  * any external resolver or preprocessing.
  */
 
+import type { FragmentPointer } from "@steady/json-pointer";
 import type {
   Schema,
   SchemaValidationError,
@@ -20,7 +21,7 @@ import { TreeValidator } from "./tree-validator.ts";
 interface ValidationNode {
   keyword?: string;
   path: string[];
-  schemaPath: string;
+  schemaPath: FragmentPointer;
   valid: boolean;
   message?: string;
   expected?: unknown;
@@ -82,7 +83,7 @@ export class MetaschemaValidator {
         valid: false,
         errors: [{
           instancePath: "",
-          schemaPath: "",
+          schemaPath: "#",
           keyword: "type",
           message: "Schema must be a valid JSON value (not undefined)",
           suggestion: "Ensure the schema is properly loaded and parsed",

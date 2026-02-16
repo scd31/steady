@@ -9,10 +9,11 @@
  */
 
 import type { Diagnostic, IssueCategory, Severity } from "../diagnostic.ts";
+import type { ECode } from "../codes/registry.ts";
 
 /** A diagnostic enriched with the HTTP context it came from. */
 export interface SessionDiagnostic {
-  code: string;
+  code: ECode;
   severity: Severity;
   message: string;
   method: string;

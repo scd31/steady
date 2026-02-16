@@ -3,6 +3,8 @@
  * Based on JSON Schema 2020-12 specification
  */
 
+import type { FragmentPointer } from "@steady/json-pointer";
+
 export interface JsonSchemaDialects {
   "http://json-schema.org/draft-04/schema#": "draft-04";
   "http://json-schema.org/draft-06/schema#": "draft-06";
@@ -129,7 +131,7 @@ export type SchemaType =
 export interface SchemaValidationError {
   // WHAT went wrong
   instancePath: string;
-  schemaPath: string;
+  schemaPath: FragmentPointer;
   keyword: string;
   message: string;
   params?: Record<string, unknown>;
