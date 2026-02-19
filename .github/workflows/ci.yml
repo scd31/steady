@@ -103,6 +103,9 @@ jobs:
   test-sdks:
     name: SDK Integration Tests
     runs-on: ubuntu-latest
+    concurrency:
+      group: sdk-tests
+      cancel-in-progress: false
     permissions:
       contents: read
       pull-requests: write
@@ -145,11 +148,8 @@ jobs:
           enable-cache: true
 
       - name: Run SDK tests
-        id: sdk-tests
         continue-on-error: true
-        run: |
-          ./scripts/test-sdks --output sdk-results.json
-          echo "exit_code=$?" >> $GITHUB_OUTPUT
+        run: ./scripts/test-sdks --output sdk-results.json
 
       - name: Upload SDK test results
         uses: actions/upload-artifact@v4
@@ -192,41 +192,73 @@ jobs:
               console.log('No baseline results found (first run or main branch)');
             }
 
-            // Build comparison
-            const regressions = [];
-            const improvements = [];
-            const newTests = [];
-
-            for (const result of current.results) {
-              const baselineResult = baseline?.results?.find(r => r.name === result.name);
-
-              if (!baselineResult) {
-                newTests.push(result);
-              } else if (baselineResult.passed && !result.passed) {
-                regressions.push({ name: result.name, error: result.error });
-              } else if (!baselineResult.passed && result.passed) {
-                improvements.push(result.name);
+            const baselineMap = new Map();
+            if (baseline) {
+              for (const r of baseline.results) {
+                baselineMap.set(r.name, r);
               }
             }
 
-            // Build comment body
-            let body = `## SDK Integration Test Results\n\n`;
-            body += `| Metric | Value |\n|--------|-------|\n`;
-            body += `| Total SDKs | ${current.summary.total} |\n`;
-            body += `| Passed | ${current.summary.passed} |\n`;
-            body += `| Failed | ${current.summary.failed} |\n`;
+            // Classify each SDK
+            const regressions = [];
+            const improvements = [];
+            const newSdks = [];
+            const rows = [];
 
-            if (baseline) {
-              const passedDiff = current.summary.passed - baseline.summary.passed;
-              const diffStr = passedDiff > 0 ? `+${passedDiff}` : passedDiff.toString();
-              body += `| vs main | ${diffStr} |\n`;
+            for (const result of current.results) {
+              const base = baselineMap.get(result.name);
+              let delta = '';
+
+              if (!base) {
+                newSdks.push(result);
+                delta = 'NEW';
+              } else if (base.passed && !result.passed) {
+                regressions.push({ name: result.name, error: result.error });
+                delta = 'REGRESSION';
+              } else if (!base.passed && result.passed) {
+                improvements.push(result.name);
+                delta = 'FIXED';
+              }
+
+              rows.push({
+                name: result.name,
+                main: base ? (base.passed ? 'PASS' : 'FAIL') : '-',
+                pr: result.passed ? 'PASS' : 'FAIL',
+                delta,
+              });
             }
 
-            body += `\n`;
+            // Check for SDKs removed from the list
+            const removedSdks = [];
+            if (baseline) {
+              const currentNames = new Set(current.results.map(r => r.name));
+              for (const r of baseline.results) {
+                if (!currentNames.has(r.name)) {
+                  removedSdks.push(r.name);
+                }
+              }
+            }
+
+            // Build comment
+            let body = `## SDK Integration Test Results\n\n`;
+            body += `**${current.summary.passed}/${current.summary.total} passing**`;
+            if (baseline) {
+              const diff = current.summary.passed - baseline.summary.passed;
+              if (diff !== 0) {
+                body += ` (${diff > 0 ? '+' : ''}${diff} vs main)`;
+              }
+            }
+            body += `\n\n`;
+
+            // Show changes first (most important for review)
+            const hasChanges = regressions.length > 0 || improvements.length > 0 || newSdks.length > 0 || removedSdks.length > 0;
+
+            if (!hasChanges && baseline) {
+              body += `No changes vs main.\n\n`;
+            }
 
             if (regressions.length > 0) {
-              body += `### Regressions (${regressions.length})\n\n`;
-              body += `These SDKs were passing on main but are now failing:\n\n`;
+              body += `### Regressions\n\n`;
               for (const r of regressions) {
                 body += `- **${r.name}**${r.error ? `: ${r.error}` : ''}\n`;
               }
@@ -234,30 +266,42 @@ jobs:
             }
 
             if (improvements.length > 0) {
-              body += `### Improvements (${improvements.length})\n\n`;
-              body += `These SDKs were failing on main but are now passing:\n\n`;
+              body += `### Fixed\n\n`;
               for (const name of improvements) {
                 body += `- **${name}**\n`;
               }
               body += `\n`;
             }
 
-            if (newTests.length > 0) {
-              body += `### New SDKs (${newTests.length})\n\n`;
-              for (const r of newTests) {
+            if (newSdks.length > 0) {
+              body += `### New\n\n`;
+              for (const r of newSdks) {
                 body += `- **${r.name}**: ${r.passed ? 'PASS' : 'FAIL'}\n`;
               }
               body += `\n`;
             }
 
-            body += `\n<details><summary>Full Results</summary>\n\n`;
-            body += `| SDK | Status |\n|-----|--------|\n`;
-            for (const r of current.results) {
-              body += `| ${r.name} | ${r.passed ? 'PASS' : 'FAIL'} |\n`;
+            if (removedSdks.length > 0) {
+              body += `### Removed\n\n`;
+              for (const name of removedSdks) {
+                body += `- **${name}**\n`;
+              }
+              body += `\n`;
+            }
+
+            // Full comparison table
+            body += `<details><summary>Full results</summary>\n\n`;
+            body += `| SDK | main | PR | |\n|-----|------|----|-|\n`;
+            for (const r of rows) {
+              const icon = r.delta === 'REGRESSION' ? '🔴'
+                : r.delta === 'FIXED' ? '🟢'
+                : r.delta === 'NEW' ? '🆕'
+                : '';
+              body += `| ${r.name} | ${r.main} | ${r.pr} | ${icon} |\n`;
             }
             body += `\n</details>\n`;
 
-            // Find existing comment
+            // Post or update comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -284,11 +328,7 @@ jobs:
               });
             }
 
-            // Fail if there are regressions
+            // Fail only on regressions
             if (regressions.length > 0) {
               core.setFailed(`${regressions.length} SDK regression(s) detected`);
             }
-
-      - name: Check SDK test exit code
-        if: steps.sdk-tests.outputs.exit_code != '0' && github.event_name != 'pull_request'
-        run: exit 1

@@ -240,7 +240,7 @@ async function cloneRepo(sdk: SDK): Promise<string> {
       "clone",
       "--depth",
       "1",
-      `git@github.com:${sdk.repo}.git`,
+      `https://github.com/${sdk.repo}.git`,
       sdkPath,
     ],
     stdout: "null",
