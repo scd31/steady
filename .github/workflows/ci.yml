@@ -134,6 +134,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Configure git auth for private repos
+        if: env.GH_PAT != ''
+        run: git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:

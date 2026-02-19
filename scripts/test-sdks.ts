@@ -708,7 +708,10 @@ Examples:
   }
 
   if (args.list) {
-    const sdks = SDKS.map((sdk) => ({ name: sdk.name, language: sdk.language }));
+    const sdks = SDKS.map((sdk) => ({
+      name: sdk.name,
+      language: sdk.language,
+    }));
     console.log(JSON.stringify(sdks));
     Deno.exit(0);
   }
