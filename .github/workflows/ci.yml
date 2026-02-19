@@ -49,15 +49,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Cache submodules
-        id: cache-submodules
-        uses: actions/cache@v4
-        with:
-          path: test-fixtures/openapi-directory
-          key: submodules-${{ hashFiles('.gitmodules') }}
-
       - name: Checkout submodules
-        if: steps.cache-submodules.outputs.cache-hit != 'true'
         run: git submodule update --init --recursive
 
       - name: Setup Deno
