@@ -66,7 +66,7 @@ jobs:
           cache: true
 
       - name: Run OpenAPI directory tests
-        run: deno task test:specs
+        run: deno task test tests/openapi-directory.test.ts
 
   test-npm-build:
     name: Test npm Build
