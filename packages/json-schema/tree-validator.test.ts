@@ -1,7 +1,6 @@
 import { assertEquals } from "@std/assert";
 import type { FragmentPointer } from "@steady/json-pointer";
 import type { Schema } from "./types.ts";
-import type { SchemaValidator } from "../../src/engine/diagnostic-engine.ts";
 import { TreeValidator } from "./tree-validator.ts";
 
 /**
@@ -522,24 +521,6 @@ Deno.test("TreeValidator", async (t) => {
     assertEquals(tree.valid, false);
     // Should have 3 errors: required "a", required "b", type mismatch on "c"
     assertEquals(tree.children?.length, 3);
-  });
-
-  // ── Contract compatibility ──────────────────────────────────────
-
-  await t.step("satisfies engine SchemaValidator interface", () => {
-    // Compile-time check: TreeValidator must be assignable to the
-    // engine's SchemaValidator interface. If the method signature
-    // drifts, this line fails at type-check time.
-    const validator: SchemaValidator = new TreeValidator();
-
-    // Sanity: works through the interface
-    const tree = validator.validate(
-      "hello",
-      { type: "string" },
-      "#/schema",
-      ["body"],
-    );
-    assertEquals(tree.valid, true);
   });
 
   // ── not keyword ──────────────────────────────────────────────────

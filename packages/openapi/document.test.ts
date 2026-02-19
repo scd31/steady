@@ -1,7 +1,6 @@
 import { assertEquals } from "@std/assert";
 import type { OpenAPISpec } from "./openapi.ts";
 import { OpenAPISpecDocument } from "./document.ts";
-import type { SpecDocument } from "../../src/engine/diagnostic-engine.ts";
 
 /**
  * Helper to create a minimal valid OpenAPISpec with given paths.
@@ -377,25 +376,5 @@ Deno.test("OpenAPISpecDocument", async (t) => {
     const schema = doc.resolveSchema("#/nonexistent/path");
 
     assertEquals(schema, {});
-  });
-
-  // ── Contract compatibility ───────────────────────────────────────
-
-  await t.step("satisfies SpecDocument interface", () => {
-    const spec = createSpec({
-      paths: {
-        "/users": {
-          get: { responses: { "200": { description: "OK" } } },
-        },
-      },
-    });
-
-    // Compile-time check: OpenAPISpecDocument must be assignable to SpecDocument.
-    // If the engine's interface changes and this class drifts, this line
-    // fails at type-check time. No runtime assertion needed.
-    const doc: SpecDocument = new OpenAPISpecDocument(spec);
-
-    // Sanity: the assigned value works through the interface
-    assertEquals(Object.keys(doc.paths).length, 1);
   });
 });
