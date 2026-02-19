@@ -1,0 +1,327 @@
+name: SDK Tests
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  matrix:
+    name: List SDKs
+    runs-on: ubuntu-latest
+
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          cache: true
+
+      - name: List SDKs
+        id: list
+        run: echo "matrix=$(./scripts/test-sdks --list)" >> $GITHUB_OUTPUT
+
+  test:
+    name: "SDK: ${{ matrix.sdk.name }}"
+    needs: matrix
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: ${{ fromJson(needs.matrix.outputs.matrix) }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure git auth for private repos
+        if: env.GH_PAT != ''
+        run: git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          cache: true
+
+      - name: Setup Go
+        if: matrix.sdk.language == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Setup Python
+        if: matrix.sdk.language == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        if: matrix.sdk.language == 'python'
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install rye
+        if: matrix.sdk.language == 'python'
+        uses: eifinger/setup-rye@v4
+        with:
+          enable-cache: true
+
+      - name: Setup Node.js
+        if: matrix.sdk.language == 'typescript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup pnpm
+        if: matrix.sdk.language == 'typescript'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Run SDK test
+        continue-on-error: true
+        run: ./scripts/test-sdks --output sdk-result.json "${{ matrix.sdk.name }}"
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-result-${{ matrix.sdk.name }}
+          path: sdk-result.json
+          retention-days: 90
+
+  report:
+    name: SDK Report
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sdk-test-report
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Download all SDK results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sdk-result-*
+          path: results/
+
+      - name: Merge results
+        id: merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const resultsDir = 'results';
+            const allResults = [];
+
+            for (const dir of fs.readdirSync(resultsDir)) {
+              const filePath = path.join(resultsDir, dir, 'sdk-result.json');
+              if (!fs.existsSync(filePath)) continue;
+              const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+              allResults.push(...data.results);
+            }
+
+            allResults.sort((a, b) => a.name.localeCompare(b.name));
+
+            const passed = allResults.filter(r => r.passed).length;
+            const report = {
+              timestamp: new Date().toISOString(),
+              summary: {
+                total: allResults.length,
+                passed,
+                failed: allResults.length - passed,
+              },
+              results: allResults,
+            };
+
+            fs.writeFileSync('sdk-results.json', JSON.stringify(report, null, 2));
+            console.log(`Merged ${allResults.length} results: ${passed} passed, ${allResults.length - passed} failed`);
+
+      - name: Upload merged results
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-test-results
+          path: sdk-results.json
+          retention-days: 90
+
+      - name: Download baseline results (main branch)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          workflow: sdk-tests.yml
+          branch: main
+          name: sdk-test-results
+          path: baseline/
+
+      - name: Compare results and comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const current = JSON.parse(fs.readFileSync('sdk-results.json', 'utf8'));
+
+            let baseline = null;
+            try {
+              baseline = JSON.parse(fs.readFileSync('baseline/sdk-results.json', 'utf8'));
+            } catch (e) {
+              console.log('No baseline results found (first run or main branch)');
+            }
+
+            const baselineMap = new Map();
+            if (baseline) {
+              for (const r of baseline.results) {
+                baselineMap.set(r.name, r);
+              }
+            }
+
+            // Classify each SDK
+            const regressions = [];
+            const improvements = [];
+            const newSdks = [];
+            const rows = [];
+
+            for (const result of current.results) {
+              const base = baselineMap.get(result.name);
+              let delta = '';
+
+              if (!base) {
+                newSdks.push(result);
+                delta = 'NEW';
+              } else if (base.passed && !result.passed) {
+                regressions.push({ name: result.name, error: result.error });
+                delta = 'REGRESSION';
+              } else if (!base.passed && result.passed) {
+                improvements.push(result.name);
+                delta = 'FIXED';
+              }
+
+              rows.push({
+                name: result.name,
+                main: base ? (base.passed ? 'PASS' : 'FAIL') : '-',
+                pr: result.passed ? 'PASS' : 'FAIL',
+                delta,
+              });
+            }
+
+            // Check for SDKs removed from the list
+            const removedSdks = [];
+            if (baseline) {
+              const currentNames = new Set(current.results.map(r => r.name));
+              for (const r of baseline.results) {
+                if (!currentNames.has(r.name)) {
+                  removedSdks.push(r.name);
+                }
+              }
+            }
+
+            // Build comment
+            let body = `## SDK Integration Test Results\n\n`;
+            body += `**${current.summary.passed}/${current.summary.total} passing**`;
+            if (baseline) {
+              const diff = current.summary.passed - baseline.summary.passed;
+              if (diff !== 0) {
+                body += ` (${diff > 0 ? '+' : ''}${diff} vs main)`;
+              }
+            }
+            body += `\n\n`;
+
+            const hasChanges = regressions.length > 0 || improvements.length > 0 || newSdks.length > 0 || removedSdks.length > 0;
+
+            if (!hasChanges && baseline) {
+              body += `No changes vs main.\n\n`;
+            }
+
+            if (regressions.length > 0) {
+              body += `### Regressions\n\n`;
+              for (const r of regressions) {
+                body += `- **${r.name}**${r.error ? `: ${r.error}` : ''}\n`;
+              }
+              body += `\n`;
+            }
+
+            if (improvements.length > 0) {
+              body += `### Fixed\n\n`;
+              for (const name of improvements) {
+                body += `- **${name}**\n`;
+              }
+              body += `\n`;
+            }
+
+            if (newSdks.length > 0) {
+              body += `### New\n\n`;
+              for (const r of newSdks) {
+                body += `- **${r.name}**: ${r.passed ? 'PASS' : 'FAIL'}\n`;
+              }
+              body += `\n`;
+            }
+
+            if (removedSdks.length > 0) {
+              body += `### Removed\n\n`;
+              for (const name of removedSdks) {
+                body += `- **${name}**\n`;
+              }
+              body += `\n`;
+            }
+
+            // Full comparison table
+            body += `<details><summary>Full results</summary>\n\n`;
+            body += `| SDK | main | PR | |\n|-----|------|----|-|\n`;
+            for (const r of rows) {
+              const icon = r.delta === 'REGRESSION' ? '🔴'
+                : r.delta === 'FIXED' ? '🟢'
+                : r.delta === 'NEW' ? '🆕'
+                : '';
+              body += `| ${r.name} | ${r.main} | ${r.pr} | ${icon} |\n`;
+            }
+            body += `\n</details>\n`;
+
+            // Post or update comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('## SDK Integration Test Results')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+            // Fail only on regressions
+            if (regressions.length > 0) {
+              core.setFailed(`${regressions.length} SDK regression(s) detected`);
+            }
