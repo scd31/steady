@@ -31,6 +31,8 @@ interface SDK {
   language: "go" | "python" | "typescript";
   /** Additional CLI flags for the validator */
   validatorFlags?: string[];
+  /** Skip in CI (too slow, etc.) */
+  ciSkip?: boolean;
 }
 
 // List of SDKs to test
@@ -106,6 +108,7 @@ const SDKS: SDK[] = [
     repo: "cloudflare/cloudflare-python",
     name: "cloudflare-python",
     language: "python",
+    ciSkip: true, // ~20min, too slow for CI
   },
   {
     repo: "browserbase/sdk-python",
@@ -708,7 +711,7 @@ Examples:
   }
 
   if (args.list) {
-    const sdks = SDKS.map((sdk) => ({
+    const sdks = SDKS.filter((sdk) => !sdk.ciSkip).map((sdk) => ({
       name: sdk.name,
       language: sdk.language,
     }));
