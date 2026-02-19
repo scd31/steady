@@ -672,7 +672,7 @@ async function getGitInfo(): Promise<{ sha?: string; branch?: string }> {
 
 async function main() {
   const args = parseArgs(Deno.args, {
-    boolean: ["go", "python", "typescript", "help", "json"],
+    boolean: ["go", "python", "typescript", "help", "json", "list"],
     string: ["_", "output"],
     alias: { h: "help", o: "output" },
   });
@@ -688,6 +688,7 @@ Options:
   --go           Test only Go SDKs
   --python       Test only Python SDKs
   --typescript   Test only TypeScript SDKs
+  --list         Output SDK list as JSON (for CI matrix)
   --json         Output results as JSON (to stdout or file with --output)
   -o, --output   Write JSON results to file (implies --json)
   -h, --help     Show this help
@@ -703,6 +704,12 @@ Examples:
   deno run -A scripts/test-sdks.ts --json             # Output JSON to stdout
   deno run -A scripts/test-sdks.ts -o results.json    # Save JSON to file
 `);
+    Deno.exit(0);
+  }
+
+  if (args.list) {
+    const sdks = SDKS.map((sdk) => ({ name: sdk.name, language: sdk.language }));
+    console.log(JSON.stringify(sdks));
     Deno.exit(0);
   }
 

@@ -100,15 +100,12 @@ jobs:
       - name: Package tests
         run: ./tests/process-cleanup.sh
 
-  test-sdks:
-    name: SDK Integration Tests
+  test-sdks-matrix:
+    name: List SDKs
     runs-on: ubuntu-latest
-    concurrency:
-      group: sdk-tests
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      pull-requests: write
+
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
 
     steps:
       - name: Checkout code
@@ -119,39 +116,129 @@ jobs:
         with:
           cache: true
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+      - name: List SDKs
+        id: list
+        run: echo "matrix=$(./scripts/test-sdks --list)" >> $GITHUB_OUTPUT
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+  test-sdk:
+    name: "SDK: ${{ matrix.sdk.name }}"
+    needs: test-sdks-matrix
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: ${{ fromJson(needs.test-sdks-matrix.outputs.matrix) }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
         with:
-          version: 10
+          cache: true
 
       - name: Setup Go
+        if: matrix.sdk.language == 'go'
         uses: actions/setup-go@v5
         with:
           go-version: "1.22"
 
       - name: Setup Python
+        if: matrix.sdk.language == 'python'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install uv
+        if: matrix.sdk.language == 'python'
         uses: astral-sh/setup-uv@v5
 
       - name: Install rye
+        if: matrix.sdk.language == 'python'
         uses: eifinger/setup-rye@v4
         with:
           enable-cache: true
 
-      - name: Run SDK tests
-        continue-on-error: true
-        run: ./scripts/test-sdks --output sdk-results.json
+      - name: Setup Node.js
+        if: matrix.sdk.language == 'typescript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-      - name: Upload SDK test results
+      - name: Setup pnpm
+        if: matrix.sdk.language == 'typescript'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Run SDK test
+        continue-on-error: true
+        run: ./scripts/test-sdks --output sdk-result.json "${{ matrix.sdk.name }}"
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-result-${{ matrix.sdk.name }}
+          path: sdk-result.json
+          retention-days: 90
+
+  test-sdks-report:
+    name: SDK Report
+    needs: test-sdk
+    if: always()
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sdk-test-report
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Download all SDK results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: sdk-result-*
+          path: results/
+
+      - name: Merge results
+        id: merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const resultsDir = 'results';
+            const allResults = [];
+
+            for (const dir of fs.readdirSync(resultsDir)) {
+              const filePath = path.join(resultsDir, dir, 'sdk-result.json');
+              if (!fs.existsSync(filePath)) continue;
+              const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+              allResults.push(...data.results);
+            }
+
+            allResults.sort((a, b) => a.name.localeCompare(b.name));
+
+            const passed = allResults.filter(r => r.passed).length;
+            const report = {
+              timestamp: new Date().toISOString(),
+              summary: {
+                total: allResults.length,
+                passed,
+                failed: allResults.length - passed,
+              },
+              results: allResults,
+            };
+
+            fs.writeFileSync('sdk-results.json', JSON.stringify(report, null, 2));
+            console.log(`Merged ${allResults.length} results: ${passed} passed, ${allResults.length - passed} failed`);
+
+      - name: Upload merged results
         uses: actions/upload-artifact@v4
         with:
           name: sdk-test-results
@@ -175,16 +262,8 @@ jobs:
           script: |
             const fs = require('fs');
 
-            // Load current results
-            let current;
-            try {
-              current = JSON.parse(fs.readFileSync('sdk-results.json', 'utf8'));
-            } catch (e) {
-              console.log('No current results found');
-              return;
-            }
+            const current = JSON.parse(fs.readFileSync('sdk-results.json', 'utf8'));
 
-            // Load baseline results (may not exist)
             let baseline = null;
             try {
               baseline = JSON.parse(fs.readFileSync('baseline/sdk-results.json', 'utf8'));
@@ -250,7 +329,6 @@ jobs:
             }
             body += `\n\n`;
 
-            // Show changes first (most important for review)
             const hasChanges = regressions.length > 0 || improvements.length > 0 || newSdks.length > 0 || removedSdks.length > 0;
 
             if (!hasChanges && baseline) {
