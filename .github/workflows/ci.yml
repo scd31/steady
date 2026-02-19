@@ -33,22 +33,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
-        with:
-          cache: true
-
-      - name: Run tests
-        run: ./scripts/test
-
-  test-openapi-directory:
-    name: OpenAPI Directory Tests
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Checkout submodules
         run: git submodule update --init --recursive
 
@@ -57,8 +41,8 @@ jobs:
         with:
           cache: true
 
-      - name: Run OpenAPI directory tests
-        run: deno task test tests/openapi-directory.test.ts
+      - name: Run tests
+        run: ./scripts/test
 
   test-npm-build:
     name: Test npm Build
