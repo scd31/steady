@@ -12,14 +12,20 @@ import {
   isStreamingContentType,
   parseNDJSONExample,
   parseStreamingOptions,
-  STREAMING_CONTENT_TYPES,
 } from "./streaming.ts";
 import { SchemaRegistry } from "@steady/json-schema";
 
 Deno.test("isStreamingContentType: recognizes NDJSON content types", () => {
   assertEquals(isStreamingContentType("application/x-ndjson"), true);
+  assertEquals(isStreamingContentType("application/ndjson"), true);
   assertEquals(isStreamingContentType("application/jsonl"), true);
+  assertEquals(isStreamingContentType("application/x-jsonl"), true);
+  assertEquals(isStreamingContentType("application/jsonlines"), true);
+  assertEquals(isStreamingContentType("application/x-jsonlines"), true);
+  assertEquals(isStreamingContentType("application/json-lines"), true);
+  assertEquals(isStreamingContentType("application/x-ldjson"), true);
   assertEquals(isStreamingContentType("application/json-seq"), true);
+  assertEquals(isStreamingContentType("text/x-ndjson"), true);
 });
 
 Deno.test("isStreamingContentType: recognizes SSE content type", () => {
@@ -50,8 +56,15 @@ Deno.test("isStreamingContentType: is case insensitive", () => {
 
 Deno.test("getStreamFormat: returns ndjson for NDJSON types", () => {
   assertEquals(getStreamFormat("application/x-ndjson"), "ndjson");
+  assertEquals(getStreamFormat("application/ndjson"), "ndjson");
   assertEquals(getStreamFormat("application/jsonl"), "ndjson");
+  assertEquals(getStreamFormat("application/x-jsonl"), "ndjson");
+  assertEquals(getStreamFormat("application/jsonlines"), "ndjson");
+  assertEquals(getStreamFormat("application/x-jsonlines"), "ndjson");
+  assertEquals(getStreamFormat("application/json-lines"), "ndjson");
+  assertEquals(getStreamFormat("application/x-ldjson"), "ndjson");
   assertEquals(getStreamFormat("application/json-seq"), "ndjson");
+  assertEquals(getStreamFormat("text/x-ndjson"), "ndjson");
 });
 
 Deno.test("getStreamFormat: returns sse for SSE type", () => {
@@ -275,13 +288,6 @@ Deno.test("createStreamingResponse: handles $ref schemas", async () => {
   assertEquals(lines.length, 1);
   const parsed = JSON.parse(lines[0]!);
   assertEquals(typeof parsed._stream, "object");
-});
-
-Deno.test("STREAMING_CONTENT_TYPES: contains all expected types", () => {
-  assertEquals(STREAMING_CONTENT_TYPES.includes("application/x-ndjson"), true);
-  assertEquals(STREAMING_CONTENT_TYPES.includes("application/jsonl"), true);
-  assertEquals(STREAMING_CONTENT_TYPES.includes("application/json-seq"), true);
-  assertEquals(STREAMING_CONTENT_TYPES.includes("text/event-stream"), true);
 });
 
 // SSE Example Sequence Tests

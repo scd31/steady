@@ -23,8 +23,15 @@ import type { ReferenceObject } from "@steady/openapi";
 /** Streaming content types that trigger streaming behavior */
 export const STREAMING_CONTENT_TYPES = [
   "application/x-ndjson",
+  "application/ndjson",
   "application/jsonl",
+  "application/x-jsonl",
+  "application/jsonlines",
+  "application/x-jsonlines",
+  "application/json-lines",
+  "application/x-ldjson",
   "application/json-seq",
+  "text/x-ndjson",
   "text/event-stream",
 ] as const;
 
@@ -60,8 +67,15 @@ export function getStreamFormat(
   const normalized = contentType.toLowerCase().split(";")[0]?.trim() ?? "";
   if (
     normalized === "application/x-ndjson" ||
+    normalized === "application/ndjson" ||
     normalized === "application/jsonl" ||
-    normalized === "application/json-seq"
+    normalized === "application/x-jsonl" ||
+    normalized === "application/jsonlines" ||
+    normalized === "application/x-jsonlines" ||
+    normalized === "application/json-lines" ||
+    normalized === "application/x-ldjson" ||
+    normalized === "application/json-seq" ||
+    normalized === "text/x-ndjson"
   ) {
     return "ndjson";
   }
