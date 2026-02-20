@@ -355,7 +355,7 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
       "        '303':\n" +
       "          description: See Other\n" +
       "          # Missing: headers.Location",
-    fix: "Add a Location header to the response definition:\n" +
+    fix: "Add a Location header with an example value:\n" +
       "  responses:\n" +
       "    '303':\n" +
       "      description: See Other\n" +
@@ -363,7 +363,11 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
       "        Location:\n" +
       "          schema:\n" +
       "            type: string\n" +
-      "            format: uri",
+      "            format: uri\n" +
+      "          example: /cards/abc-123\n" +
+      "\n" +
+      "Steady uses the example, then schema default, then falls\n" +
+      "back to /_x-steady/redirected if neither is provided.",
     seeAlso: ["E1010"],
   },
 

@@ -292,7 +292,7 @@ Deno.test({
 const REDIRECT_SPEC = "./tests/specs/test-redirect.yaml";
 
 Deno.test({
-  name: "303 response includes synthetic Location header",
+  name: "303 response redirects to /_x-steady/redirected",
   sanitizeOps: false,
   sanitizeResources: false,
   fn: async () => {
@@ -305,7 +305,60 @@ Deno.test({
       });
       assertEquals(response.status, 303);
       const location = response.headers.get("Location");
-      assertExists(location, "303 response must include Location header");
+      assertEquals(location, "/_x-steady/redirected");
+    });
+  },
+});
+
+Deno.test({
+  name: "/_x-steady/redirected returns 200",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(REDIRECT_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/_x-steady/redirected");
+      assertEquals(response.status, 200);
+      const body = await response.json();
+      assertEquals(body.status, "redirected");
+    });
+  },
+});
+
+Deno.test({
+  name: "303 response uses Location example from spec",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(REDIRECT_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/cards-with-example", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "test" }),
+        redirect: "manual",
+      });
+      assertEquals(response.status, 303);
+      assertEquals(response.headers.get("Location"), "/cards/abc-123");
+    });
+  },
+});
+
+Deno.test({
+  name: "303 response uses Location default from schema",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(REDIRECT_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/cards-with-default", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "test" }),
+        redirect: "manual",
+      });
+      assertEquals(response.status, 303);
+      assertEquals(
+        response.headers.get("Location"),
+        "/cards/default-location",
+      );
     });
   },
 });

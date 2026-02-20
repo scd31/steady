@@ -6,7 +6,7 @@ info:
 paths:
   /cards:
     post:
-      summary: Create a card (redirects)
+      summary: Create a card (redirects, no Location defined)
       operationId: createCard
       requestBody:
         content:
@@ -19,3 +19,47 @@ paths:
       responses:
         "303":
           description: See Other
+
+  /cards-with-example:
+    post:
+      summary: Create a card (redirects, Location example)
+      operationId: createCardWithExample
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        "303":
+          description: See Other
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              example: /cards/abc-123
+
+  /cards-with-default:
+    post:
+      summary: Create a card (redirects, Location default)
+      operationId: createCardWithDefault
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        "303":
+          description: See Other
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+                default: /cards/default-location

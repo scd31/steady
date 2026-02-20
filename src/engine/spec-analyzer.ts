@@ -572,7 +572,7 @@ function checkRedirectsWithoutLocation(spec: OpenAPISpec): Diagnostic[] {
               `${statusCode} response on ${method.toUpperCase()} ${path} has no Location header. HTTP redirects require Location per RFC 9110`,
               {
                 suggestion:
-                  "Add a Location header to the response definition. Steady will inject a synthetic Location header at runtime, but the spec should be fixed.",
+                  "Add a Location header with an example value, e.g. headers: { Location: { schema: { type: string }, example: '/resource/123' } }. Without one, Steady redirects to /_x-steady/redirected.",
               },
             ),
           );

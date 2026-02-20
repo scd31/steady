@@ -424,6 +424,13 @@ export class MockServer {
       return this.handleSpec();
     }
 
+    if (path === "/_x-steady/redirected") {
+      return new Response(
+        JSON.stringify({ status: "redirected" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     if (path.startsWith("/_x-steady/sessions/") && rawMethod === "get") {
       const sessionId = path.slice("/_x-steady/sessions/".length);
       return handleSessionRequest(sessionId, this.sessionStore);
@@ -1112,10 +1119,11 @@ export class MockServer {
     }
 
     // 3xx redirects require a Location header per RFC 9110.
-    // If the spec omitted it, inject a synthetic one pointing at the request path.
+    // Priority: 1) header example, 2) schema default, 3) synthetic fallback.
     const numericStatus = parseInt(statusCode, 10);
     if (numericStatus >= 300 && numericStatus < 400) {
-      headers.set("Location", path);
+      const location = this.resolveLocationHeader(responseObj);
+      headers.set("Location", location);
     }
 
     // Safely stringify body - handle circular references and non-serializable values
@@ -1245,6 +1253,37 @@ export class MockServer {
         escapeSegment(pathPattern)
       }/${method}/responses/${statusCode}/content/application~1json/schema`,
     );
+  }
+
+  /**
+   * Resolve a Location header value for 3xx responses.
+   * Priority: 1) header example, 2) schema default, 3) /_x-steady/redirected.
+   */
+  private resolveLocationHeader(responseObj: ResponseObject): string {
+    if (responseObj.headers) {
+      // Find Location header (case-insensitive)
+      const locationKey = Object.keys(responseObj.headers).find(
+        (h) => h.toLowerCase() === "location",
+      );
+      if (locationKey) {
+        const headerDef = responseObj.headers[locationKey];
+        if (headerDef && !isReference(headerDef)) {
+          // 1) Explicit example on the header
+          if (headerDef.example !== undefined) {
+            return String(headerDef.example);
+          }
+          // 2) Default from the schema
+          if (
+            headerDef.schema && !isReference(headerDef.schema) &&
+            headerDef.schema.default !== undefined
+          ) {
+            return String(headerDef.schema.default);
+          }
+        }
+      }
+    }
+    // 3) Synthetic fallback
+    return "/_x-steady/redirected";
   }
 
   /**
