@@ -337,6 +337,36 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
     seeAlso: ["E1012"],
   },
 
+  E1017: {
+    description:
+      "A 3xx redirect response is defined without a Location header.\n" +
+      "HTTP redirects require a Location header per RFC 9110. Without\n" +
+      "it, HTTP clients and SDKs will fail when they receive the\n" +
+      "redirect because they don't know where to redirect to.",
+    reasoning:
+      "This is a spec issue. The OpenAPI spec defines a redirect status\n" +
+      "code (301, 302, 303, 307, 308, etc.) but doesn't declare the\n" +
+      "Location header that the HTTP spec requires. Steady injects a\n" +
+      "synthetic Location header at runtime so SDKs don't crash, but\n" +
+      "the spec should be fixed.",
+    example: "  /cards:\n" +
+      "    post:\n" +
+      "      responses:\n" +
+      "        '303':\n" +
+      "          description: See Other\n" +
+      "          # Missing: headers.Location",
+    fix: "Add a Location header to the response definition:\n" +
+      "  responses:\n" +
+      "    '303':\n" +
+      "      description: See Other\n" +
+      "      headers:\n" +
+      "        Location:\n" +
+      "          schema:\n" +
+      "            type: string\n" +
+      "            format: uri",
+    seeAlso: ["E1010"],
+  },
+
   // ── E2xxx: Routing ──────────────────────────────────────────────────
 
   E2001: {

@@ -67,6 +67,7 @@ export function analyzeSpec(
   diagnostics.push(...checkDuplicatePathParamNames(spec));
   diagnostics.push(...checkMissingResponses(spec));
   diagnostics.push(...checkInvalidComponentNames(spec));
+  diagnostics.push(...checkRedirectsWithoutLocation(spec));
   timer?.stop("structural");
 
   // Single tree walk collects $ref info and schema pointers
@@ -519,6 +520,63 @@ function checkMissingResponses(spec: OpenAPISpec): Diagnostic[] {
             },
           ),
         );
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
+// ── E1017: Redirect without Location header ─────────────────────────
+
+function checkRedirectsWithoutLocation(spec: OpenAPISpec): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  for (const [path, pathItem] of Object.entries(spec.paths)) {
+    if (!pathItem) continue;
+
+    for (const method of HTTP_METHODS) {
+      const operation = pathItem[method];
+      if (!operation?.responses) continue;
+
+      for (
+        const [statusCode, responseOrRef] of Object.entries(
+          operation.responses,
+        )
+      ) {
+        // Only check 3xx status codes
+        const code = parseInt(statusCode, 10);
+        if (isNaN(code) || code < 300 || code >= 400) continue;
+
+        // Resolve $ref if needed
+        const responseObj = "$ref" in responseOrRef
+          ? resolve(spec, (responseOrRef as { $ref: string }).$ref)
+          : responseOrRef;
+        if (!responseObj || typeof responseObj !== "object") continue;
+
+        // Check if Location header is defined (case-insensitive)
+        const headers = (responseObj as Record<string, unknown>).headers;
+        const hasLocation = headers &&
+          typeof headers === "object" &&
+          Object.keys(headers as Record<string, unknown>).some(
+            (h) => h.toLowerCase() === "location",
+          );
+
+        if (!hasLocation) {
+          diagnostics.push(
+            specDiagnostic(
+              "E1017",
+              `#/paths/${
+                escapeSegment(path)
+              }/${method}/responses/${statusCode}`,
+              `${statusCode} response on ${method.toUpperCase()} ${path} has no Location header. HTTP redirects require Location per RFC 9110`,
+              {
+                suggestion:
+                  "Add a Location header to the response definition. Steady will inject a synthetic Location header at runtime, but the spec should be fixed.",
+              },
+            ),
+          );
+        }
       }
     }
   }

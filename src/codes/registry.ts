@@ -128,6 +128,12 @@ const CODES = {
     category: "spec-issue",
     context: "startup",
   },
+  E1017: {
+    title: "Redirect without Location header",
+    severity: "warning",
+    category: "spec-issue",
+    context: "startup",
+  },
 
   // ── E2xxx: Routing ──────────────────────────────────────────────────
   E2001: {

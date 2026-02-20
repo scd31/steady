@@ -1,0 +1,21 @@
+openapi: 3.0.3
+info:
+  title: Test API for redirect responses
+  version: 1.0.0
+
+paths:
+  /cards:
+    post:
+      summary: Create a card (redirects)
+      operationId: createCard
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        "303":
+          description: See Other

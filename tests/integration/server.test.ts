@@ -287,6 +287,29 @@ Deno.test({
   },
 });
 
+// ── HTTP server: redirect responses ────────────────────────────────
+
+const REDIRECT_SPEC = "./tests/specs/test-redirect.yaml";
+
+Deno.test({
+  name: "303 response includes synthetic Location header",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(REDIRECT_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/cards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "test" }),
+        redirect: "manual",
+      });
+      assertEquals(response.status, 303);
+      const location = response.headers.get("Location");
+      assertExists(location, "303 response must include Location header");
+    });
+  },
+});
+
 // ── HTTP server: query params ───────────────────────────────────────
 
 Deno.test({

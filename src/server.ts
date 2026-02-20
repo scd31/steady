@@ -1111,6 +1111,13 @@ export class MockServer {
       headers.set("Content-Type", contentType);
     }
 
+    // 3xx redirects require a Location header per RFC 9110.
+    // If the spec omitted it, inject a synthetic one pointing at the request path.
+    const numericStatus = parseInt(statusCode, 10);
+    if (numericStatus >= 300 && numericStatus < 400) {
+      headers.set("Location", path);
+    }
+
     // Safely stringify body - handle circular references and non-serializable values
     let bodyString: string | null = null;
     if (body !== null) {

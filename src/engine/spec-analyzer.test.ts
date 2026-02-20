@@ -1335,6 +1335,70 @@ Deno.test("E1016 - skips schemas with required but no properties", () => {
   filterCode(result.diagnostics, "E1016", 0);
 });
 
+// ── E1017: Redirect without Location header ─────────────────────────
+
+Deno.test("E1017 - 303 response without Location header", () => {
+  const spec = minimalSpec({
+    paths: {
+      "/cards": {
+        post: {
+          responses: {
+            "303": { description: "See Other" },
+          },
+        },
+      },
+    },
+  });
+
+  const result = analyzeSpec(spec);
+  const d = singleDiag(result.diagnostics, "E1017");
+  assertEquals(d.severity, "warning");
+  assertEquals(d.category, "spec-issue");
+  assertEquals(d.message.includes("Location"), true);
+  assertEquals(d.message.includes("303"), true);
+});
+
+Deno.test("E1017 - no warning when 303 response defines Location header", () => {
+  const spec = minimalSpec({
+    paths: {
+      "/cards": {
+        post: {
+          responses: {
+            "303": {
+              description: "See Other",
+              headers: {
+                Location: {
+                  schema: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const result = analyzeSpec(spec);
+  filterCode(result.diagnostics, "E1017", 0);
+});
+
+Deno.test("E1017 - no warning for non-redirect status codes", () => {
+  const spec = minimalSpec({
+    paths: {
+      "/users": {
+        get: {
+          responses: {
+            "200": { description: "OK" },
+          },
+        },
+      },
+    },
+  });
+
+  const result = analyzeSpec(spec);
+  filterCode(result.diagnostics, "E1017", 0);
+});
+
 // ── E1003: Missing metadata (defaulted fields) ──────────────────────
 
 Deno.test("E1003 - reports diagnostics for defaulted fields", () => {
