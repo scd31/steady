@@ -249,6 +249,44 @@ Deno.test({
   },
 });
 
+// ── HTTP server: QUERY method ──────────────────────────────────────
+
+const QUERY_METHOD_SPEC = "./tests/specs/test-query-method.yaml";
+
+Deno.test({
+  name: "QUERY method with body → 200 with mock response",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(QUERY_METHOD_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/search", {
+        method: "QUERY",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ q: "test", limit: 10 }),
+      });
+      assertEquals(response.status, 200);
+      const body = await response.json();
+      assertEquals(typeof body, "object");
+    });
+  },
+});
+
+Deno.test({
+  name: "QUERY method without body → diagnostics",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(QUERY_METHOD_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/search", {
+        method: "QUERY",
+      });
+      // Should still get a response (mock server is lenient by default)
+      assertExists(response);
+      await response.text();
+    });
+  },
+});
+
 // ── HTTP server: query params ───────────────────────────────────────
 
 Deno.test({

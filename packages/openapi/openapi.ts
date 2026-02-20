@@ -70,6 +70,7 @@ export interface PathItemObject {
   head?: OperationObject;
   options?: OperationObject;
   trace?: OperationObject;
+  query?: OperationObject;
   servers?: ServerObject[];
   parameters?: (ParameterObject | ReferenceObject)[];
 }

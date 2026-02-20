@@ -44,7 +44,7 @@ export async function parseRequestBody(
   req: Request,
   _acceptedContentTypes: string[] | null,
 ): Promise<ParseResult> {
-  // No body expected for GET/HEAD/DELETE/OPTIONS
+  // No body expected for GET/HEAD/DELETE/OPTIONS (POST, PUT, PATCH, QUERY carry bodies)
   const method = req.method.toUpperCase();
   if (
     method === "GET" || method === "HEAD" || method === "DELETE" ||

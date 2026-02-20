@@ -1246,6 +1246,35 @@ Deno.test("E1015 - numeric exclusiveMinimum in 3.1.x is fine (standard)", () => 
   filterCode(result.diagnostics, "E1015", 0);
 });
 
+Deno.test("QUERY method in 3.1 spec passes metaschema validation", () => {
+  const spec: OpenAPISpec = {
+    openapi: "3.1.0",
+    info: { title: "Test", version: "1.0.0" },
+    paths: {
+      "/search": {
+        query: {
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: { type: "object" },
+              },
+            },
+          },
+          responses: { "200": { description: "Results" } },
+        },
+      },
+    },
+  };
+
+  const result = analyzeSpec(spec);
+  // No metaschema errors or warnings for the query operation
+  filterCode(result.diagnostics, "E1006", 0);
+  const e1015s = result.diagnostics.filter((d) =>
+    d.code === "E1015" && d.specPointer.includes("/search")
+  );
+  assertEquals(e1015s.length, 0, `Unexpected E1015: ${JSON.stringify(e1015s)}`);
+});
+
 // ── E1016: Required property not in properties ──────────────────────
 
 Deno.test("E1016 - detects required field missing from properties", () => {

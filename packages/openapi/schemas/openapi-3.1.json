@@ -342,6 +342,9 @@
         },
         "trace": {
           "$ref": "#/$defs/operation"
+        },
+        "query": {
+          "$ref": "#/$defs/operation"
         }
       },
       "$ref": "#/$defs/specification-extensions",

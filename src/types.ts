@@ -9,7 +9,7 @@ export { VERSION } from "./version.ts";
 /** Default server port */
 export const DEFAULT_PORT = 3000;
 
-/** HTTP methods supported by OpenAPI */
+/** HTTP methods supported by OpenAPI (plus draft QUERY method) */
 export const HTTP_METHODS = [
   "get",
   "post",
@@ -19,6 +19,7 @@ export const HTTP_METHODS = [
   "head",
   "options",
   "trace",
+  "query",
 ] as const;
 export type HttpMethod = typeof HTTP_METHODS[number];
 

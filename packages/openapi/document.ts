@@ -95,6 +95,7 @@ const HTTP_METHODS = [
   "head",
   "options",
   "trace",
+  "query",
 ] as const;
 type HttpMethod = (typeof HTTP_METHODS)[number];
 

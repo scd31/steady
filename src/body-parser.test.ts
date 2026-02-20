@@ -116,6 +116,21 @@ Deno.test("parseRequestBody - no body on GET request", async () => {
   }
 });
 
+Deno.test("parseRequestBody - QUERY request body is parsed", async () => {
+  const req = new Request("http://localhost/search", {
+    method: "QUERY",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ q: "test" }),
+  });
+  const result = await parseRequestBody(req, ["application/json"]);
+
+  assertEquals(isParseError(result), false);
+  if (!isParseError(result)) {
+    assertEquals(result.body, { q: "test" });
+    assertEquals(result.contentType, "application/json");
+  }
+});
+
 Deno.test("parseRequestBody - null acceptedContentTypes allows any", async () => {
   const req = jsonRequest('{"ok":true}');
   const result = await parseRequestBody(req, null);

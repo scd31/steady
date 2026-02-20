@@ -40,6 +40,25 @@ Deno.test("matchRoute", async (t) => {
     }
   });
 
+  await t.step("QUERY method → match", () => {
+    const QUERY_OP: OperationObject = {
+      requestBody: {
+        content: {
+          "application/json": { schema: { type: "object" } },
+        },
+      },
+      responses: { "200": { description: "Results" } },
+    };
+    const paths: PathsObject = { "/search": { query: QUERY_OP } };
+    const result = matchRoute(paths, { path: "/search", method: "query" });
+
+    assertEquals(result.matched, true);
+    if (result.matched) {
+      assertEquals(result.pathPattern, "/search");
+      assertEquals(result.operation, QUERY_OP);
+    }
+  });
+
   await t.step("case-insensitive method → match", () => {
     const paths: PathsObject = { "/users": { post: POST_OP } };
     const result = matchRoute(paths, { path: "/users", method: "POST" });

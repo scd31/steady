@@ -293,6 +293,30 @@ Deno.test("OpenAPISpecDocument", async (t) => {
     assertEquals(body!.schema.type, "object");
   });
 
+  await t.step("returns body schema for QUERY method", () => {
+    const spec = createSpec({
+      paths: {
+        "/search": {
+          query: {
+            requestBody: {
+              content: {
+                "application/json": {
+                  schema: { type: "object", required: ["q"] },
+                },
+              },
+            },
+            responses: { "200": { description: "Results" } },
+          },
+        },
+      },
+    });
+    const doc = new OpenAPISpecDocument(spec);
+    const body = doc.getBodySchema("/search", "query");
+
+    assertEquals(body !== null, true);
+    assertEquals(body!.schema.type, "object");
+  });
+
   // ── hasResponses ─────────────────────────────────────────────────
 
   await t.step("returns true when responses exist", () => {
