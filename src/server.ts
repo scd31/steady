@@ -45,8 +45,8 @@ import { JsonLogger } from "./logging/json-logger.ts";
 import { CILogger } from "./logging/ci-logger.ts";
 import { getStatusText } from "./logging/colors.ts";
 import { isParseError, parseRequestBody } from "./body-parser.ts";
-import { OpenAPISpecDocument } from "../packages/openapi/document.ts";
-import { TreeValidator } from "../packages/json-schema/tree-validator.ts";
+import { OpenAPISpecDocument } from "@steady/openapi";
+import { TreeValidator } from "@steady/json-schema";
 import {
   type AnalyzeRequest,
   DiagnosticEngine,

@@ -26,7 +26,62 @@ export interface ECodeDefinition {
   context?: "startup" | "runtime" | "both";
 }
 
-const CODES = {
+/** Union of all known E-code strings. */
+export type ECode =
+  // E1xxx: Spec issues
+  | "E1001"
+  | "E1002"
+  | "E1003"
+  | "E1004"
+  | "E1005"
+  | "E1006"
+  | "E1007"
+  | "E1008"
+  | "E1009"
+  | "E1010"
+  | "E1011"
+  | "E1012"
+  | "E1013"
+  | "E1014"
+  | "E1015"
+  | "E1016"
+  | "E1017"
+  // E2xxx: Routing
+  | "E2001"
+  | "E2002"
+  // E3xxx: Transport / Structural
+  | "E3001"
+  | "E3002"
+  | "E3003"
+  | "E3004"
+  | "E3005"
+  | "E3006"
+  | "E3007"
+  | "E3008"
+  | "E3009"
+  | "E3010"
+  | "E3011"
+  | "E3012"
+  | "E3013"
+  | "E3014"
+  | "E3015"
+  | "E3016"
+  | "E3017"
+  | "E3018"
+  | "E3019"
+  | "E3021"
+  // E4xxx: Content
+  | "E4001"
+  | "E4002"
+  | "E4003"
+  | "E4004"
+  | "E4005"
+  | "E4007"
+  // E5xxx: Ambiguous
+  | "E5001"
+  | "E5003";
+
+const CODES: Record<ECode, ECodeDefinition> = {
   // ── E1xxx: Spec Issues ──────────────────────────────────────────────
   E1001: {
     title: "Invalid syntax",
@@ -299,10 +354,7 @@ const CODES = {
     severity: "warning",
     category: "ambiguous",
   },
-} satisfies Record<string, ECodeDefinition>;
-
-/** Union of all known E-code strings. */
-export type ECode = keyof typeof CODES;
+};
 
 /**
  * Look up an E-code definition. Only accepts known codes, enforced at compile time.

@@ -16,6 +16,10 @@ export type {
 // Re-export FragmentPointer from json-pointer for convenience
 export type { FragmentPointer } from "@steady/json-pointer";
 
+// Tree validation
+export { TreeValidator } from "./tree-validator.ts";
+export type { ValidationNode } from "./tree-validator.ts";
+
 // Types
 export type {
   ComplexityMetrics,

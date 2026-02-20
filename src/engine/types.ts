@@ -11,9 +11,7 @@ import type { Diagnostic } from "../diagnostic.ts";
 
 // ValidationNode is the canonical type from TreeValidator.
 // Re-exported here so engine consumers import from one place.
-export type {
-  ValidationNode,
-} from "../../packages/json-schema/tree-validator.ts";
+export type { ValidationNode } from "@steady/json-schema";
 
 /** Result of interpreting a node. Contains diagnostics plus structural validity. */
 export interface InterpretResult {
