@@ -361,6 +361,7 @@ async function findSpecs(dir: string): Promise<string[]> {
 
 Deno.test({
   name: "fuzz session: openapi-directory has no false positives",
+  ignore: !Deno.env.get("STEADY_FUZZ"),
   sanitizeOps: false,
   sanitizeResources: false,
   fn: async (t) => {

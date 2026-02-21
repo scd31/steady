@@ -44,6 +44,27 @@ jobs:
       - name: Run tests
         run: ./scripts/test
 
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          cache: true
+
+      - name: Run fuzz tests
+        env:
+          STEADY_FUZZ: "1"
+        run: ./scripts/test tests/integration/fuzz.test.ts
+
   test-npm-build:
     name: Test npm Build
     runs-on: ubuntu-latest
