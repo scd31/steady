@@ -363,6 +363,48 @@ Deno.test({
   },
 });
 
+Deno.test({
+  name: "303 response resolves Location from header $ref",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(REDIRECT_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/cards-with-header-ref", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "test" }),
+        redirect: "manual",
+      });
+      assertEquals(response.status, 303);
+      assertEquals(
+        response.headers.get("Location"),
+        "/cards/from-header-ref",
+      );
+    });
+  },
+});
+
+Deno.test({
+  name: "303 response resolves Location from schema $ref",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(REDIRECT_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/cards-with-schema-ref", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "test" }),
+        redirect: "manual",
+      });
+      assertEquals(response.status, 303);
+      assertEquals(
+        response.headers.get("Location"),
+        "/cards/from-schema-ref",
+      );
+    });
+  },
+});
+
 // ── Response generation: $ref examples ──────────────────────────────
 
 const REF_EXAMPLE_SPEC = "./tests/specs/ref-example-spec.yaml";

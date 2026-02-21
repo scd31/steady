@@ -1286,18 +1286,50 @@ export class MockServer {
         (h) => h.toLowerCase() === "location",
       );
       if (locationKey) {
-        const headerDef = responseObj.headers[locationKey];
+        let headerDef = responseObj.headers[locationKey];
+
+        // Resolve header-level $ref (e.g. $ref: "#/components/headers/LocationHeader")
+        if (headerDef && isReference(headerDef)) {
+          if (isFragmentPointer(headerDef.$ref)) {
+            const pointer = headerDef.$ref.slice(1);
+            try {
+              const resolved = resolvePointer(this.spec, pointer);
+              if (isPlainObject(resolved)) {
+                headerDef = resolved;
+              }
+            } catch {
+              // Unresolvable ref; fall through to synthetic fallback
+            }
+          }
+        }
+
         if (headerDef && !isReference(headerDef)) {
           // 1) Explicit example on the header
           if (headerDef.example !== undefined) {
             return String(headerDef.example);
           }
           // 2) Default from the schema
-          if (
-            headerDef.schema && !isReference(headerDef.schema) &&
-            headerDef.schema.default !== undefined
-          ) {
-            return String(headerDef.schema.default);
+          if (headerDef.schema) {
+            let schemaDef = headerDef.schema;
+
+            // Resolve schema-level $ref (e.g. $ref: "#/components/schemas/LocationUrl")
+            if (isReference(schemaDef)) {
+              if (isFragmentPointer(schemaDef.$ref)) {
+                const pointer = schemaDef.$ref.slice(1);
+                try {
+                  const resolved = resolvePointer(this.spec, pointer);
+                  if (isPlainObject(resolved)) {
+                    schemaDef = resolved;
+                  }
+                } catch {
+                  // Unresolvable ref; fall through
+                }
+              }
+            }
+
+            if (!isReference(schemaDef) && schemaDef.default !== undefined) {
+              return String(schemaDef.default);
+            }
           }
         }
       }
