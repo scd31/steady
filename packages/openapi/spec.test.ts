@@ -402,4 +402,77 @@ Deno.test("OpenAPISpec", async (t) => {
 
     assertEquals(schema, {});
   });
+
+  // ── getResponseObject ───────────────────────────────────────────
+
+  await t.step("returns response for exact status code", () => {
+    const spec = createSpec({
+      paths: {
+        "/users": {
+          get: {
+            responses: { "200": { description: "OK" } },
+          },
+        },
+      },
+    });
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+    const resp = doc.getResponseObject("/users", "get", "200");
+
+    assertEquals(resp !== null, true);
+    assertEquals(resp!.description, "OK");
+  });
+
+  await t.step("falls back to wildcard 2XX when exact code missing", () => {
+    const spec = createSpec({
+      paths: {
+        "/push": {
+          post: {
+            responses: { "2XX": { description: "Success" } },
+          },
+        },
+      },
+    });
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+    const resp = doc.getResponseObject("/push", "post", "200");
+
+    assertEquals(resp !== null, true);
+    assertEquals(resp!.description, "Success");
+  });
+
+  await t.step("falls back to default when exact and wildcard missing", () => {
+    const spec = createSpec({
+      paths: {
+        "/items": {
+          get: {
+            responses: { "default": { description: "Fallback" } },
+          },
+        },
+      },
+    });
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+    const resp = doc.getResponseObject("/items", "get", "200");
+
+    assertEquals(resp !== null, true);
+    assertEquals(resp!.description, "Fallback");
+  });
+
+  await t.step("prefers exact code over wildcard", () => {
+    const spec = createSpec({
+      paths: {
+        "/items": {
+          post: {
+            responses: {
+              "2XX": { description: "Success" },
+              "201": { description: "Created" },
+            },
+          },
+        },
+      },
+    });
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+    const resp = doc.getResponseObject("/items", "post", "201");
+
+    assertEquals(resp !== null, true);
+    assertEquals(resp!.description, "Created");
+  });
 });

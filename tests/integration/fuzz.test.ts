@@ -331,3 +331,104 @@ Deno.test({
     });
   },
 });
+
+// ── OpenAPI Directory fuzz tests ────────────────────────────────────
+
+const OPENAPI_DIR = new URL(
+  "../../test-fixtures/openapi-directory/APIs",
+  import.meta.url,
+).pathname;
+
+async function findSpecs(dir: string): Promise<string[]> {
+  const specs: string[] = [];
+
+  async function walk(path: string): Promise<void> {
+    for await (const entry of Deno.readDir(path)) {
+      const fullPath = `${path}/${entry.name}`;
+      if (entry.isDirectory) {
+        await walk(fullPath);
+      } else if (
+        entry.name === "openapi.yaml" || entry.name === "openapi.json"
+      ) {
+        specs.push(fullPath);
+      }
+    }
+  }
+
+  await walk(dir);
+  return specs.sort();
+}
+
+Deno.test({
+  name: "fuzz session: openapi-directory has no false positives",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async (t) => {
+    const specs = await findSpecs(OPENAPI_DIR);
+
+    for (const specPath of specs) {
+      const name = specPath.replace(OPENAPI_DIR + "/", "");
+
+      await t.step(name, async (t2) => {
+        await withServer(specPath, async (ctx) => {
+          const { spec } = await parseSpecFromFile(specPath);
+          const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+
+          const session = new FuzzSession(doc, { seed: 42 });
+
+          for (const fuzzCase of session) {
+            await t2.step(
+              `${fuzzCase.operation}: ${fuzzCase.mutation}`,
+              async () => {
+                const url = buildUrl(fuzzCase.request);
+                const init = toRequestInit(fuzzCase.request);
+                const response = await ctx.fetch(url, init);
+                await response.body?.cancel();
+
+                const valid = response.headers.get("x-steady-valid");
+                const codes = getDiagnosticCodes(response);
+                const status = response.status;
+
+                const serverError = status >= 500;
+
+                session.record(fuzzCase, {
+                  accepted: valid === "true" || serverError,
+                  reportedCodes: codes,
+                });
+
+                assertEquals(
+                  serverError,
+                  false,
+                  `SERVER ERROR (${status}): ${fuzzCase.operation} / ${fuzzCase.mutation}`,
+                );
+                assertEquals(
+                  valid,
+                  "false",
+                  `FALSE POSITIVE: ${fuzzCase.operation} / ${fuzzCase.mutation}`,
+                );
+              },
+            );
+          }
+
+          const report = session.report();
+
+          await t2.step("report summary", () => {
+            assertNotEquals(
+              report.totalCases,
+              0,
+              "Should have tested some cases",
+            );
+            assertEquals(
+              report.falsePositives,
+              0,
+              `Found ${report.falsePositives} false positive(s):\n` +
+                report.falsePositiveDetails
+                  .map((fp) => `  - ${fp.operation}: ${fp.mutation}`)
+                  .join("\n"),
+            );
+          });
+        });
+      });
+    }
+  },
+});

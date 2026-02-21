@@ -291,7 +291,11 @@ export class OpenAPISpec {
     const operation = this.getOperation(pathItem, method);
     if (!operation) return null;
 
-    const responseObjOrRef = operation.responses[statusCode];
+    // Try exact code, then wildcard (e.g. "2XX"), then "default"
+    const wildcard = statusCode.slice(0, 1) + "XX";
+    const responseObjOrRef = operation.responses[statusCode] ??
+      operation.responses[wildcard] ??
+      operation.responses["default"];
     if (!responseObjOrRef) return null;
 
     // Resolve $ref if needed
