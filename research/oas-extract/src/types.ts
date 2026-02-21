@@ -10,7 +10,7 @@ import type {
   InfoObject,
   LinkObject,
   MediaTypeObject,
-  OpenAPISpec,
+  OpenAPIRaw,
   OperationObject,
   ParameterObject,
   PathItemObject,
@@ -37,7 +37,7 @@ export type {
   InfoObject,
   LinkObject,
   MediaTypeObject,
-  OpenAPISpec,
+  OpenAPIRaw,
   ParameterObject,
   ReferenceObject,
   RequestBodyObject,
@@ -94,7 +94,7 @@ export interface ExtractionOptions {
 }
 
 export interface ExtractionResult {
-  spec: OpenAPISpec;
+  spec: OpenAPIRaw;
   extracted: ExtractedSchema[];
   report: ExtractionReport;
 }

@@ -1,26 +1,26 @@
 /**
- * SpecDocument implementation. Structured access to an OpenAPI spec.
+ * Spec implementation. Structured access to an OpenAPI spec.
  *
- * Wraps a parsed OpenAPISpec and provides the interface the diagnostics
- * engine needs: parameters, body schemas, response checking, and schema
- * resolution. Handles $ref resolution and parameter merging.
+ * The single facade for all OpenAPI resolution. Wraps a SchemaRegistry
+ * and provides:
+ * - Typed accessors: parameters, body schemas, responses
+ * - Universal $ref resolution via resolveRef() (schemas, parameters,
+ *   responses, headers, examples, anything)
+ * - Schema registry access for schema-specific operations
  *
- * This module bridges packages/openapi/ and src/engine/. The engine
- * works against the SpecDocument interface, not raw OpenAPI types.
+ * The engine works against the Spec interface, not raw OpenAPI types.
  */
 
-import { isSchema } from "@steady/json-schema";
+import { isSchema, SchemaRegistry } from "@steady/json-schema";
 import type { Schema } from "@steady/json-schema";
-import type { SchemaRegistry } from "@steady/json-schema";
 import {
   escapeSegment,
   type FragmentPointer,
   isFragmentPointer,
   isPlainObject,
-  resolve as resolvePointer,
 } from "@steady/json-pointer";
 import type {
-  OpenAPISpec,
+  OpenAPIRaw,
   OperationObject,
   ParameterObject,
   PathItemObject,
@@ -32,9 +32,9 @@ import type {
 
 // ── Local types ────────────────────────────────────────────────────
 // These describe the shape of this module's output. The canonical
-// contract types (SpecDocument, ResolvedParameter, BodySchemaInfo)
+// contract types (Spec, ResolvedParameter, BodySchemaInfo)
 // live in src/engine/diagnostic-engine.ts. A compile-time test
-// verifies that OpenAPISpecDocument satisfies SpecDocument.
+// verifies that OpenAPISpec satisfies Spec.
 
 interface ResolvedParameter {
   name: string;
@@ -80,6 +80,17 @@ function isResponseLike(value: unknown): value is ResponseObject {
   return typeof value["description"] === "string";
 }
 
+/**
+ * Type guard for OpenAPIRaw shape. Used to narrow SchemaRegistry.spec
+ * (which is `unknown`) to `OpenAPIRaw` without an `as` cast.
+ */
+function isOpenAPISpecLike(value: unknown): value is OpenAPIRaw {
+  if (!isPlainObject(value)) return false;
+  return typeof value["openapi"] === "string" &&
+    isPlainObject(value["info"]) &&
+    isPlainObject(value["paths"]);
+}
+
 function isDefined<T>(value: T | undefined): value is T {
   return value !== undefined;
 }
@@ -99,12 +110,15 @@ const HTTP_METHODS = [
 ] as const;
 type HttpMethod = (typeof HTTP_METHODS)[number];
 
-export class OpenAPISpecDocument {
-  private readonly spec: OpenAPISpec;
-  private readonly registry?: SchemaRegistry;
+export class OpenAPISpec {
+  private readonly spec: OpenAPIRaw;
+  readonly registry: SchemaRegistry;
 
-  constructor(spec: OpenAPISpec, registry?: SchemaRegistry) {
-    this.spec = spec;
+  constructor(registry: SchemaRegistry) {
+    if (!isOpenAPISpecLike(registry.spec)) {
+      throw new Error("Registry spec is not a valid OpenAPI spec");
+    }
+    this.spec = registry.spec;
     this.registry = registry;
   }
 
@@ -113,7 +127,7 @@ export class OpenAPISpecDocument {
   }
 
   /** The underlying raw spec object. */
-  get rawSpec(): OpenAPISpec {
+  get rawSpec(): OpenAPIRaw {
     return this.spec;
   }
 
@@ -291,29 +305,26 @@ export class OpenAPISpecDocument {
   }
 
   /**
-   * Resolve a schema by its JSON pointer in the spec.
-   * Uses SchemaRegistry when available, falls back to raw pointer resolution.
+   * Resolve a schema by its fragment pointer in the spec.
    * Returns empty schema {} if the pointer can't be resolved.
    */
   resolveSchema(schemaPath: string): Schema {
-    if (this.registry && isFragmentPointer(schemaPath)) {
-      const result = this.registry.get(schemaPath);
-      if (result && typeof result.raw === "object" && result.raw !== null) {
-        return result.raw;
-      }
-      return {};
+    if (!isFragmentPointer(schemaPath)) return {};
+    const result = this.registry.get(schemaPath);
+    if (result && typeof result.raw === "object" && result.raw !== null) {
+      return result.raw;
     }
+    return {};
+  }
 
-    const pointer = stripFragment(schemaPath);
-    try {
-      const resolved = resolvePointer(this.spec, pointer);
-      if (isSchema(resolved)) {
-        return resolved;
-      }
-      return {};
-    } catch {
-      return {};
-    }
+  /**
+   * Resolve any $ref in the spec. Works for schemas, parameters,
+   * responses, headers, examples, or any other referenceable object.
+   */
+  resolveRef(ref: string): unknown {
+    const result = this.registry.resolveRef(ref);
+    if (result) return result.raw;
+    return undefined;
   }
 
   // ── Private helpers ──────────────────────────────────────────────
@@ -360,35 +371,9 @@ export class OpenAPISpecDocument {
 
     return { param: paramOrRef, pointer };
   }
-
-  /**
-   * Resolve a $ref string against the spec document.
-   * Uses SchemaRegistry when available, falls back to raw pointer resolution.
-   */
-  private resolveRef(ref: string): unknown {
-    if (this.registry) {
-      const result = this.registry.resolveRef(ref);
-      if (result) return result.raw;
-      // Fall through to raw resolution for non-schema refs (parameters, etc.)
-    }
-
-    const pointer = stripFragment(ref);
-    try {
-      return resolvePointer(this.spec, pointer);
-    } catch {
-      return undefined;
-    }
-  }
 }
 
 // ── Utility functions ──────────────────────────────────────────────
-
-function stripFragment(ref: string): string {
-  if (ref.startsWith("#")) {
-    return ref.slice(1);
-  }
-  return ref;
-}
 
 function isHttpMethod(method: string): method is HttpMethod {
   return (HTTP_METHODS as readonly string[]).includes(method);

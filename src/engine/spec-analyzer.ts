@@ -6,7 +6,7 @@
  * like unresolved $refs, circular references, duplicate paths, etc.
  */
 
-import type { ComponentsObject, OpenAPISpec } from "@steady/openapi";
+import type { ComponentsObject, OpenAPIRaw } from "@steady/openapi";
 import { openapi31Metaschema } from "@steady/openapi";
 import { escapeSegment, resolve } from "@steady/json-pointer";
 import { JsonSchemaProcessor } from "@steady/json-schema";
@@ -42,7 +42,7 @@ export interface AnalyzeSpecOptions {
  * Returns diagnostics and whether any are fatal (spec cannot be served).
  */
 export function analyzeSpec(
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
   options?: AnalyzeSpecOptions,
 ): SpecAnalysisResult {
   const diagnostics: Diagnostic[] = [];
@@ -213,7 +213,7 @@ function metaschemaMessage(keyword: string): string {
  * Deduplicated by instancePath + keyword.
  */
 function checkMetaschema(
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
   baseUri?: string,
 ): Diagnostic[] {
   if (!spec.openapi.startsWith("3.1.")) return [];
@@ -276,7 +276,7 @@ function checkMetaschema(
 
 // ── E1013: Multiple question marks in path ──────────────────────────
 
-function checkMultipleQuestionMarks(spec: OpenAPISpec): Diagnostic[] {
+function checkMultipleQuestionMarks(spec: OpenAPIRaw): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
   for (const path of Object.keys(spec.paths)) {
@@ -315,7 +315,7 @@ function isResolvedParamInfo(v: unknown): v is ResolvedParamInfo {
 /**
  * Resolve a local $ref against the spec. Returns null on failure.
  */
-function resolveLocalRef(spec: OpenAPISpec, ref: string): unknown {
+function resolveLocalRef(spec: OpenAPIRaw, ref: string): unknown {
   if (!ref.startsWith("#")) return null;
   try {
     return resolve(spec, ref);
@@ -325,7 +325,7 @@ function resolveLocalRef(spec: OpenAPISpec, ref: string): unknown {
 }
 
 function resolveParam(
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
   param: unknown,
 ): ResolvedParamInfo | null {
   if (!isObject(param)) return null;
@@ -338,7 +338,7 @@ function resolveParam(
   return null;
 }
 
-function checkQuestionMarkInParams(spec: OpenAPISpec): Diagnostic[] {
+function checkQuestionMarkInParams(spec: OpenAPIRaw): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
   for (const [path, pathItem] of Object.entries(spec.paths)) {
@@ -422,7 +422,7 @@ function checkParamForQuestionMark(
 
 // ── E1008: Duplicate path patterns ──────────────────────────────────
 
-function checkDuplicatePathPatterns(spec: OpenAPISpec): Diagnostic[] {
+function checkDuplicatePathPatterns(spec: OpenAPIRaw): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const normalized = new Map<string, string[]>();
 
@@ -460,7 +460,7 @@ function checkDuplicatePathPatterns(spec: OpenAPISpec): Diagnostic[] {
 
 // ── E1009: Duplicate path parameter names in template ───────────────
 
-function checkDuplicatePathParamNames(spec: OpenAPISpec): Diagnostic[] {
+function checkDuplicatePathParamNames(spec: OpenAPIRaw): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
   for (const path of Object.keys(spec.paths)) {
@@ -495,7 +495,7 @@ function checkDuplicatePathParamNames(spec: OpenAPISpec): Diagnostic[] {
 
 // ── E1010: Missing responses object ─────────────────────────────────
 
-function checkMissingResponses(spec: OpenAPISpec): Diagnostic[] {
+function checkMissingResponses(spec: OpenAPIRaw): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
   for (const [path, pathItem] of Object.entries(spec.paths)) {
@@ -529,7 +529,7 @@ function checkMissingResponses(spec: OpenAPISpec): Diagnostic[] {
 
 // ── E1017: Redirect without Location header ─────────────────────────
 
-function checkRedirectsWithoutLocation(spec: OpenAPISpec): Diagnostic[] {
+function checkRedirectsWithoutLocation(spec: OpenAPIRaw): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
   for (const [path, pathItem] of Object.entries(spec.paths)) {
@@ -601,7 +601,7 @@ const COMPONENT_SECTIONS: (keyof ComponentsObject)[] = [
   "pathItems",
 ];
 
-function checkInvalidComponentNames(spec: OpenAPISpec): Diagnostic[] {
+function checkInvalidComponentNames(spec: OpenAPIRaw): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
   if (!spec.components) return diagnostics;
@@ -660,7 +660,7 @@ interface WalkResult {
   pointerCount: number;
 }
 
-function walkSpec(spec: OpenAPISpec): WalkResult {
+function walkSpec(spec: OpenAPIRaw): WalkResult {
   const refs: RefInfo[] = [];
   const schemas: WalkResult["schemas"] = [];
   const anchors = new Map<string, FragmentPointer>();
@@ -1039,7 +1039,7 @@ function walkSpec(spec: OpenAPISpec): WalkResult {
 // ── E1007: Keywords alongside $ref (3.0.x only) ────────────────────
 
 function checkRefSiblings(
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
   refs: RefInfo[],
 ): Diagnostic[] {
   // In OpenAPI 3.1.x, siblings alongside $ref are valid (JSON Schema 2020-12).
@@ -1087,7 +1087,7 @@ function checkRefSiblings(
 // ── E1004: Unresolved $ref ──────────────────────────────────────────
 
 function checkUnresolvedRefs(
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
   refs: RefInfo[],
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
@@ -1148,7 +1148,7 @@ function unresolvedRefDiagnostic(info: RefInfo): Diagnostic {
 
 function checkCircularRefs(
   refs: RefInfo[],
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
@@ -1283,7 +1283,7 @@ function checkCircularRefs(
 function isCycleForced(
   cyclePath: string[],
   edgeRefs: Map<string, Map<string, RefInfo[]>>,
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
 ): boolean {
   for (let i = 0; i < cyclePath.length; i++) {
     const from = cyclePath[i];
@@ -1304,7 +1304,7 @@ function isCycleForced(
  * you never HAVE to follow this edge.)
  */
 function isEdgeForced(
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
   container: string,
   refInfos: RefInfo[],
 ): boolean {
@@ -1317,7 +1317,7 @@ function isEdgeForced(
 }
 
 /** Get the `required` array from a schema at the given pointer, or empty. */
-function getRequiredAt(spec: OpenAPISpec, pointer: string): string[] {
+function getRequiredAt(spec: OpenAPIRaw, pointer: string): string[] {
   const schema = resolve(spec, pointer);
   if (typeof schema !== "object" || schema === null) return [];
   if (!("required" in schema)) return [];
@@ -1335,7 +1335,7 @@ function getRequiredAt(spec: OpenAPISpec, pointer: string): string[] {
  * - `additionalProperties` (optional by nature)
  */
 function refPathHasEscapeHatch(
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
   containerPointer: string,
   refPointer: string,
 ): boolean {

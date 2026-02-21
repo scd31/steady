@@ -6,7 +6,7 @@ import {
   FastAnalyzer,
   FastExtractor,
   GeminiClient,
-  type OpenAPISpec,
+  type OpenAPIRaw,
   parseStrategy,
   SemanticDeduplicator,
   SpecTransformer,
@@ -78,13 +78,13 @@ Examples:
 `);
 }
 
-async function loadSpec(path: string): Promise<OpenAPISpec> {
+async function loadSpec(path: string): Promise<OpenAPIRaw> {
   // Use the parser from packages/openapi which handles both JSON and YAML
   const { spec } = await parseSpec(path);
   return spec;
 }
 
-async function saveSpec(spec: OpenAPISpec, path: string): Promise<void> {
+async function saveSpec(spec: OpenAPIRaw, path: string): Promise<void> {
   let content: string;
 
   if (path.endsWith(".yaml") || path.endsWith(".yml")) {

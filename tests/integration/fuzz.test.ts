@@ -7,7 +7,8 @@
 
 import { assertEquals, assertNotEquals } from "@std/assert";
 import { parseSpecFromFile } from "../../packages/openapi/mod.ts";
-import { OpenAPISpecDocument } from "../../packages/openapi/document.ts";
+import { OpenAPISpec } from "../../packages/openapi/spec.ts";
+import { SchemaRegistry } from "@steady/json-schema";
 import { MockServer } from "../../src/server/mod.ts";
 import { FuzzSession } from "@steady/fuzz";
 import type { FuzzRequest } from "@steady/fuzz";
@@ -92,7 +93,7 @@ Deno.test({
   fn: async (t) => {
     await withServer(FUZZ_SPEC, async (ctx) => {
       const { spec } = await parseSpecFromFile(FUZZ_SPEC);
-      const doc = new OpenAPISpecDocument(spec);
+      const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
 
       const session = new FuzzSession(doc, { seed: 42 });
 
@@ -157,7 +158,7 @@ Deno.test({
   fn: async (t) => {
     await withServer(CLOUDFLARE_SPEC, async (ctx) => {
       const { spec } = await parseSpecFromFile(CLOUDFLARE_SPEC);
-      const doc = new OpenAPISpecDocument(spec);
+      const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
 
       const session = new FuzzSession(doc, { seed: 42 });
 
@@ -220,7 +221,7 @@ Deno.test({
   fn: async () => {
     await withServer(FUZZ_SPEC, async (ctx) => {
       const { spec } = await parseSpecFromFile(FUZZ_SPEC);
-      const doc = new OpenAPISpecDocument(spec);
+      const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
 
       const session = new FuzzSession(doc, { maxCases: 3 });
 

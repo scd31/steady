@@ -1,4 +1,4 @@
-import type { ExtractedSchema, OpenAPISpec } from "./types.ts";
+import type { ExtractedSchema, OpenAPIRaw } from "./types.ts";
 
 /**
  * SpecTransformer - Transforms OpenAPI specs by extracting inline schemas
@@ -25,11 +25,11 @@ import type { ExtractedSchema, OpenAPISpec } from "./types.ts";
  */
 export class SpecTransformer {
   transform(
-    spec: OpenAPISpec,
+    spec: OpenAPIRaw,
     extractedSchemas: ExtractedSchema[],
-  ): OpenAPISpec {
+  ): OpenAPIRaw {
     // Deep clone the spec to avoid mutations
-    const newSpec = JSON.parse(JSON.stringify(spec)) as OpenAPISpec;
+    const newSpec = JSON.parse(JSON.stringify(spec)) as OpenAPIRaw;
 
     // Phase 1: Ensure components.schemas exists and add all extracted schemas
     if (!newSpec.components) {
@@ -132,7 +132,7 @@ export class SpecTransformer {
   }
 
   private validateTransformation(
-    spec: OpenAPISpec,
+    spec: OpenAPIRaw,
     _extractedSchemas: ExtractedSchema[],
     replacementCount: number,
   ): void {
@@ -191,7 +191,7 @@ export class SpecTransformer {
   }
 
   generateReport(
-    _spec: OpenAPISpec,
+    _spec: OpenAPIRaw,
     extractedSchemas: ExtractedSchema[],
   ): string {
     const report: string[] = [];

@@ -40,7 +40,7 @@ Deno.test({
     );
 
     // Should generate response without infinite loop (with timeout protection)
-    const registry = SchemaRegistry.fromDocument(schema);
+    const registry = SchemaRegistry.fromSpec(schema);
     const generator = new RegistryResponseGenerator(registry);
     const response = generator.generateFromSchema(schema, "#");
 
@@ -153,7 +153,7 @@ Deno.test({
     );
 
     // Response generation should not loop infinitely
-    const registry = SchemaRegistry.fromDocument(schema);
+    const registry = SchemaRegistry.fromSpec(schema);
     const generator = new RegistryResponseGenerator(registry);
     const response = generator.generateFromSchema(schema, "#");
     const responseStr = JSON.stringify(response);
@@ -404,7 +404,7 @@ Deno.test({
     assertExists(result.schema, "Should return processed schema");
 
     // Generate response 10 times - should never hang
-    const registry = SchemaRegistry.fromDocument(schema);
+    const registry = SchemaRegistry.fromSpec(schema);
     const generator = new RegistryResponseGenerator(registry);
 
     for (let i = 0; i < 10; i++) {

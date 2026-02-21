@@ -3,7 +3,7 @@
  * fingerprints, and orders cases.
  */
 
-import type { OpenAPISpecDocument } from "@steady/openapi";
+import type { OpenAPISpec } from "@steady/openapi";
 import { walkSpec } from "./spec-walker.ts";
 import { buildBaseline } from "./request-builder.ts";
 import { computeFingerprint } from "./fingerprint.ts";
@@ -36,7 +36,7 @@ export interface CasePlan {
  * 5. Seed-based shuffle within fresh/stale groups for deterministic ordering.
  */
 export function planCases(
-  doc: OpenAPISpecDocument,
+  doc: OpenAPISpec,
   options: PlanOptions,
 ): CasePlan {
   const operations = walkSpec(doc);

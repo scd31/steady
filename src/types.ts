@@ -268,7 +268,7 @@ export type {
   ContentObject,
   ExampleObject,
   MediaTypeObject,
-  OpenAPISpec,
+  OpenAPIRaw,
   OperationObject,
   ParameterObject,
   PathItemObject,

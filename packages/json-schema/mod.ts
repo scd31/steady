@@ -1,7 +1,3 @@
-// Main entry point
-export { OpenAPIDocument } from "./openapi-document.ts";
-export type { OpenAPIDocumentOptions } from "./openapi-document.ts";
-
 // Core components
 export {
   RegistryResponseGenerator,

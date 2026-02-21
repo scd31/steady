@@ -2,7 +2,7 @@
  * Top-level diagnostic engine. Coordinates route matching, parameter
  * presence checking, body validation, and spec issue detection.
  *
- * The engine works against a SpecDocument abstraction, not raw OpenAPI
+ * The engine works against a Spec abstraction, not raw OpenAPI
  * types. It asks structured questions ("what are the required parameters?")
  * rather than parsing spec objects directly.
  *
@@ -34,7 +34,7 @@ import {
 // ── Interfaces ─────────────────────────────────────────────────────
 
 /** Structured access to an OpenAPI spec document. */
-export interface SpecDocument {
+export interface Spec {
   /** All path templates, for routing. */
   readonly paths: PathsObject;
 
@@ -129,11 +129,11 @@ export interface AnalyzeRequest {
 // ── Engine ──────────────────────────────────────────────────────────
 
 export class DiagnosticEngine {
-  private readonly spec: SpecDocument;
+  private readonly spec: Spec;
   private readonly validator: SchemaValidator;
   private readonly specResolver: SpecResolver;
 
-  constructor(spec: SpecDocument, validator: SchemaValidator) {
+  constructor(spec: Spec, validator: SchemaValidator) {
     this.spec = spec;
     this.validator = validator;
     this.specResolver = {

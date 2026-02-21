@@ -1,4 +1,4 @@
-import type { ExtractedSchema, OpenAPISpec } from "./types.ts";
+import type { ExtractedSchema, OpenAPIRaw } from "./types.ts";
 import type { NamingStrategy } from "./naming-strategies.ts";
 import { FastExtractor } from "./fast-extractor.ts";
 
@@ -20,7 +20,7 @@ export interface NameVariation {
 
 // Evaluate naming stability across multiple runs
 export async function evaluateStability(
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
   strategy: NamingStrategy,
   runs: number = 5,
   verbose = false,
@@ -162,7 +162,7 @@ function findVariations(results: ExtractedSchema[][]): NameVariation[] {
 
 // Compare multiple strategies
 export async function compareStrategies(
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
   strategies: Array<{ name: string; strategy: NamingStrategy }>,
   runs: number = 5,
   verbose = false,

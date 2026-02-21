@@ -9,7 +9,7 @@ import type {
   ExtractionReport,
   ExtractionResult,
   LLMResponse,
-  OpenAPISpec,
+  OpenAPIRaw,
 } from "./types.ts";
 
 export class FastExtractor {
@@ -39,7 +39,7 @@ export class FastExtractor {
     );
   }
 
-  async extract(spec: OpenAPISpec): Promise<ExtractionResult> {
+  async extract(spec: OpenAPIRaw): Promise<ExtractionResult> {
     const startTime = performance.now();
 
     // Initialize LLM client
@@ -157,7 +157,7 @@ export class FastExtractor {
     };
   }
 
-  private emptyResult(spec: OpenAPISpec): ExtractionResult {
+  private emptyResult(spec: OpenAPIRaw): ExtractionResult {
     return {
       spec,
       extracted: [],

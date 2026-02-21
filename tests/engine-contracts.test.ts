@@ -4,15 +4,13 @@
  * at type-check time.
  */
 import { assertEquals } from "@std/assert";
-import type {
-  SchemaValidator,
-  SpecDocument,
-} from "../src/engine/diagnostic-engine.ts";
-import { OpenAPISpecDocument } from "../packages/openapi/document.ts";
+import type { SchemaValidator, Spec } from "../src/engine/diagnostic-engine.ts";
+import { OpenAPISpec } from "../packages/openapi/spec.ts";
+import { SchemaRegistry } from "../packages/json-schema/schema-registry.ts";
 import { TreeValidator } from "../packages/json-schema/tree-validator.ts";
 
 Deno.test("Engine contracts", async (t) => {
-  await t.step("OpenAPISpecDocument satisfies SpecDocument", () => {
+  await t.step("OpenAPISpec satisfies Spec", () => {
     const spec = {
       openapi: "3.1.0",
       info: { title: "Test", version: "1.0" },
@@ -23,7 +21,9 @@ Deno.test("Engine contracts", async (t) => {
       },
     };
 
-    const doc: SpecDocument = new OpenAPISpecDocument(spec);
+    const doc: Spec = new OpenAPISpec(
+      SchemaRegistry.fromSpec(spec),
+    );
     assertEquals(Object.keys(doc.paths).length, 1);
   });
 

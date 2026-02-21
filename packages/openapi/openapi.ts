@@ -3,7 +3,7 @@
 
 import type { Schema } from "@steady/json-schema";
 
-export interface OpenAPISpec {
+export interface OpenAPIRaw {
   openapi: string;
   info: InfoObject;
   servers?: ServerObject[];

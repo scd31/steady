@@ -1,5 +1,5 @@
 import type {
-  OpenAPISpec,
+  OpenAPIRaw,
   OperationObject,
   PathItemObject,
 } from "@steady/openapi";
@@ -26,7 +26,7 @@ export interface CompiledPath {
  * Pre-compile all routes for efficient matching.
  * Returns exact routes (Map for O(1) lookup) and pattern routes (sorted by specificity).
  */
-export function compileRoutes(spec: OpenAPISpec): {
+export function compileRoutes(spec: OpenAPIRaw): {
   exactRoutes: Map<string, CompiledPath[]>;
   patternRoutes: CompiledPath[];
 } {
@@ -111,7 +111,7 @@ export function findOperation(
   query: URLSearchParams,
   exactRoutes: Map<string, CompiledPath[]>,
   patternRoutes: CompiledPath[],
-  spec: OpenAPISpec,
+  spec: OpenAPIRaw,
 ): {
   operation: OperationObject;
   statusCode: string;

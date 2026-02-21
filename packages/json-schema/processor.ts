@@ -58,7 +58,7 @@ export class JsonSchemaProcessor {
     }
 
     // 2. Resolve all references via SchemaRegistry (accepts unknown)
-    const registry = SchemaRegistry.fromDocument(schemaObject, {
+    const registry = SchemaRegistry.fromSpec(schemaObject, {
       baseUri: source?.baseUri,
     });
 

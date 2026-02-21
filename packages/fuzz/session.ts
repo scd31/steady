@@ -7,7 +7,7 @@
  * results.
  */
 
-import type { OpenAPISpecDocument } from "@steady/openapi";
+import type { OpenAPISpec } from "@steady/openapi";
 import { ALL_MUTATORS } from "./mutators.ts";
 import { Budget, type StopReason } from "./budget.ts";
 import { computeSpecHash, createEmptyCache } from "./cache.ts";
@@ -60,7 +60,7 @@ export class FuzzSession implements Iterable<FuzzCase> {
   private readonly results = new Map<string, FuzzResult>();
   private stopReason: StopReason = "exhausted";
 
-  constructor(doc: OpenAPISpecDocument, options?: FuzzSessionOptions) {
+  constructor(doc: OpenAPISpec, options?: FuzzSessionOptions) {
     this.seed = options?.seed ?? 0;
     this.specHash = computeSpecHash(JSON.stringify(doc.rawSpec));
 

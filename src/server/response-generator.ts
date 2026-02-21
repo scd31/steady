@@ -1,16 +1,17 @@
 import type { ResponseObject } from "../types.ts";
 import { HEADERS, isReference } from "../types.ts";
-import type { OpenAPISpec, ReferenceObject } from "@steady/openapi";
-import {
-  OpenAPIDocument,
-  RegistryResponseGenerator,
+import type { ReferenceObject } from "@steady/openapi";
+import { OpenAPISpec } from "@steady/openapi";
+import { RegistryResponseGenerator } from "@steady/json-schema";
+import type {
+  GenerateOptions,
+  Schema,
+  SchemaRegistry,
 } from "@steady/json-schema";
-import type { GenerateOptions, Schema } from "@steady/json-schema";
 import {
   escapeSegment,
   isFragmentPointer,
   isPlainObject,
-  resolve as resolvePointer,
 } from "@steady/json-pointer";
 import type { Logger } from "../logging/logger.ts";
 import type { Diagnostic } from "../diagnostic.ts";
@@ -72,9 +73,8 @@ export function acceptsJson(acceptTypes: string[]): boolean {
  * Generate response from a resolved ResponseObject
  */
 export function generateResponseFromObject(
-  spec: OpenAPISpec,
+  specDoc: OpenAPISpec,
   logger: Logger,
-  document: OpenAPIDocument,
   collector: DiagnosticCollector,
   requestAcceptHeader: string | null,
   responseObj: ResponseObject,
@@ -85,6 +85,7 @@ export function generateResponseFromObject(
   generatorOptions: GenerateOptions,
   streamingOptions: StreamingOptions,
 ): { response: Response; body?: unknown; minimal?: boolean } {
+  const registry = specDoc.registry;
   let body: unknown = null;
   let contentType: string | null = null;
   let minimal = false;
@@ -131,7 +132,7 @@ export function generateResponseFromObject(
         if (mediaType.schema) {
           return {
             response: generateStreamingResponse(
-              document,
+              registry,
               logger,
               mediaType.schema,
               pathPattern,
@@ -166,19 +167,9 @@ export function generateResponseFromObject(
         if (firstExampleOrRef) {
           if (isReference(firstExampleOrRef)) {
             // Resolve $ref to ExampleObject and extract .value
-            if (isFragmentPointer(firstExampleOrRef.$ref)) {
-              const pointer = firstExampleOrRef.$ref.slice(1);
-              try {
-                const resolved = resolvePointer(spec, pointer);
-                if (
-                  isPlainObject(resolved) &&
-                  "value" in resolved
-                ) {
-                  body = resolved.value;
-                }
-              } catch {
-                // Unresolvable; fall through to schema generation
-              }
+            const resolved = specDoc.resolveRef(firstExampleOrRef.$ref);
+            if (isPlainObject(resolved) && "value" in resolved) {
+              body = resolved.value;
             }
           } else if (firstExampleOrRef.value !== undefined) {
             body = firstExampleOrRef.value;
@@ -190,7 +181,7 @@ export function generateResponseFromObject(
       // examples were all unresolvable $refs)
       if (body === null && mediaType.schema) {
         body = generateFromSchemaObject(
-          document,
+          registry,
           mediaType.schema,
           pathPattern,
           method,
@@ -225,7 +216,7 @@ export function generateResponseFromObject(
   // Priority: 1) header example, 2) schema default, 3) synthetic fallback.
   const numericStatus = parseInt(statusCode, 10);
   if (numericStatus >= 300 && numericStatus < 400) {
-    const location = resolveLocationHeader(spec, responseObj);
+    const location = resolveLocationHeader(specDoc, responseObj);
     headers.set("Location", location);
   }
 
@@ -276,8 +267,8 @@ export function generateResponseFromObject(
 /**
  * Generate a streaming response (NDJSON or SSE)
  */
-export function generateStreamingResponse(
-  document: OpenAPIDocument,
+function generateStreamingResponse(
+  registry: SchemaRegistry,
   logger: Logger,
   schema: Schema | ReferenceObject,
   pathPattern: string,
@@ -299,7 +290,7 @@ export function generateStreamingResponse(
   }/schema`;
 
   const { stream, warnings } = createStreamingResponse(
-    document.schemas,
+    registry,
     schema,
     schemaPointer,
     format,
@@ -330,29 +321,27 @@ export function generateStreamingResponse(
 }
 
 /**
- * Generate data from a schema object using the document-centric approach
+ * Generate data from a schema object using the registry
  */
-export function generateFromSchemaObject(
-  document: OpenAPIDocument,
+function generateFromSchemaObject(
+  registry: SchemaRegistry,
   schema: Schema | ReferenceObject,
   pathPattern: string,
   method: string,
   statusCode: string,
   generatorOptions: GenerateOptions,
 ): unknown {
-  // If schema is a $ref, use the document to resolve and generate
-  if ("$ref" in schema && typeof schema.$ref === "string") {
-    if (isFragmentPointer(schema.$ref)) {
-      return document.generateResponse(schema.$ref, generatorOptions);
-    }
-    return null;
+  const generator = new RegistryResponseGenerator(registry, generatorOptions);
+
+  // If schema is a $ref, resolve and generate via the registry
+  if (
+    "$ref" in schema && typeof schema.$ref === "string" &&
+    isFragmentPointer(schema.$ref)
+  ) {
+    return generator.generate(schema.$ref);
   }
 
   // Inline schema: generate directly
-  const generator = new RegistryResponseGenerator(
-    document.schemas,
-    generatorOptions,
-  );
   return generator.generateFromSchema(
     schema,
     `#/paths/${
@@ -365,8 +354,8 @@ export function generateFromSchemaObject(
  * Resolve a Location header value for 3xx responses.
  * Priority: 1) header example, 2) schema default, 3) /_x-steady/redirected.
  */
-export function resolveLocationHeader(
-  spec: OpenAPISpec,
+function resolveLocationHeader(
+  specDoc: OpenAPISpec,
   responseObj: ResponseObject,
 ): string {
   if (responseObj.headers) {
@@ -377,18 +366,11 @@ export function resolveLocationHeader(
     if (locationKey) {
       let headerDef = responseObj.headers[locationKey];
 
-      // Resolve header-level $ref (e.g. $ref: "#/components/headers/LocationHeader")
+      // Resolve header-level $ref
       if (headerDef && isReference(headerDef)) {
-        if (isFragmentPointer(headerDef.$ref)) {
-          const pointer = headerDef.$ref.slice(1);
-          try {
-            const resolved = resolvePointer(spec, pointer);
-            if (isPlainObject(resolved)) {
-              headerDef = resolved;
-            }
-          } catch {
-            // Unresolvable ref; fall through to synthetic fallback
-          }
+        const resolved = specDoc.resolveRef(headerDef.$ref);
+        if (isPlainObject(resolved)) {
+          headerDef = resolved;
         }
       }
 
@@ -401,18 +383,11 @@ export function resolveLocationHeader(
         if (headerDef.schema) {
           let schemaDef = headerDef.schema;
 
-          // Resolve schema-level $ref (e.g. $ref: "#/components/schemas/LocationUrl")
+          // Resolve schema-level $ref
           if (isReference(schemaDef)) {
-            if (isFragmentPointer(schemaDef.$ref)) {
-              const pointer = schemaDef.$ref.slice(1);
-              try {
-                const resolved = resolvePointer(spec, pointer);
-                if (isPlainObject(resolved)) {
-                  schemaDef = resolved;
-                }
-              } catch {
-                // Unresolvable ref; fall through
-              }
+            const resolved = specDoc.resolveRef(schemaDef.$ref);
+            if (isPlainObject(resolved)) {
+              schemaDef = resolved;
             }
           }
 

@@ -1,6 +1,6 @@
 import { parse as parseYAML } from "@std/yaml";
 import { isPlainObject } from "@steady/json-pointer";
-import { OpenAPISpec } from "./openapi.ts";
+import { OpenAPIRaw } from "./openapi.ts";
 import { ErrorContext, ParseError, SpecValidationError } from "./errors.ts";
 
 /** Minimal timer interface for startup instrumentation. */
@@ -21,7 +21,7 @@ export interface ParseOptions {
  * Result of parsing an OpenAPI spec.
  */
 export interface ParseResult {
-  spec: OpenAPISpec;
+  spec: OpenAPIRaw;
   /** Fields where the parser applied defaults (e.g., "openapi", "info.title"). */
   defaultedFields: string[];
 }
@@ -77,7 +77,7 @@ export function parseSpec(
 
   // Validate and return (wrapped in Promise for backwards compatibility)
   timer?.start("validate");
-  const result = validateOpenAPISpec(spec);
+  const result = validateOpenAPIRaw(spec);
   timer?.stop("validate");
   return Promise.resolve(result);
 }
@@ -176,7 +176,7 @@ export async function parseSpecFromFile(
  * - Non-object spec (array/primitive). Structural invalidity
  * - Unsupported OpenAPI version (E1002 territory). Can't serve Swagger 2.0
  */
-function validateOpenAPISpec(
+function validateOpenAPIRaw(
   spec: unknown,
 ): ParseResult {
   // Basic structural validation - must be an object
@@ -327,26 +327,26 @@ function validateOpenAPISpec(
     );
   }
 
-  // The function validated and defaulted all required OpenAPISpec fields
+  // The function validated and defaulted all required OpenAPIRaw fields
   // (openapi, info.title, info.version, paths). This type guard bridges
   // the validated Record to the typed interface.
-  if (!isOpenAPISpec(s)) {
+  if (!isOpenAPIRaw(s)) {
     throw new SpecValidationError(
       "Spec validation produced invalid structure",
       {
         errorType: "validate",
         reason:
-          "Internal error: validated spec does not match OpenAPISpec shape",
+          "Internal error: validated spec does not match OpenAPIRaw shape",
       },
     );
   }
   return { spec: s, defaultedFields };
 }
 
-/** Type guard for the validation boundary: checks the 3 required OpenAPISpec fields. */
-function isOpenAPISpec(
+/** Type guard for the validation boundary: checks the 3 required OpenAPIRaw fields. */
+function isOpenAPIRaw(
   value: Record<string, unknown>,
-): value is Record<string, unknown> & OpenAPISpec {
+): value is Record<string, unknown> & OpenAPIRaw {
   return (
     typeof value.openapi === "string" &&
     isPlainObject(value.info) &&

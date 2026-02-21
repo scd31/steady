@@ -1,13 +1,13 @@
 /**
- * SchemaRegistry - Document-centric schema resolution and caching
+ * SchemaRegistry - Schema resolution and caching
  *
- * The registry holds a reference to the full document and resolves
+ * The registry holds a reference to the full spec and resolves
  * all JSON Pointers against it. This is THE source of truth for
- * schema resolution in the document-centric architecture.
+ * schema resolution.
  *
  * Key principles:
- * - The document is the root. All $refs resolve against it.
- * - Lazy processing with caching - only process what's needed
+ * - The spec is the root. All $refs resolve against it.
+ * - Lazy processing with caching: only process what's needed
  * - Validators and generators receive registry access for ref following
  */
 
@@ -21,13 +21,13 @@ import {
 import { isSchema } from "./types.ts";
 import type { GenerateOptions, Schema, SchemaType } from "./types.ts";
 
-/** Document index built from a single walk. All consumers share this. */
+/** Index built from a single walk of the spec. All consumers share this. */
 export interface DocIndex {
   /** Map of $anchor value to fragment pointer. */
   anchors: Map<string, FragmentPointer>;
   /** Map of $id value to fragment pointer. */
   ids: Map<string, FragmentPointer>;
-  /** All unique $ref values found in the document. */
+  /** All unique $ref values found in the spec. */
   refs: Set<string>;
   /** Fragment pointer -> set of $ref targets. */
   edges: Map<FragmentPointer, Set<string>>;
@@ -36,7 +36,7 @@ export interface DocIndex {
 }
 
 export interface SchemaRegistryOptions {
-  /** Base URI for the document */
+  /** Base URI for resolution */
   baseUri?: string;
 }
 
@@ -46,49 +46,49 @@ export interface SchemaRegistryOptions {
 export interface RegistrySchema {
   /** The raw schema object */
   raw: Schema | boolean;
-  /** Fragment pointer to this schema in the document */
+  /** Fragment pointer to this schema in the spec */
   pointer: FragmentPointer;
 }
 
 export class SchemaRegistry {
-  /** The full document - ALL refs resolve against this */
-  readonly document: unknown;
-  /** Document index from a single walk */
+  /** The full spec. All $refs resolve against this. */
+  readonly spec: unknown;
+  /** Pre-computed index from a single walk */
   readonly docIndex: DocIndex;
   /** Cached processed schemas by pointer */
   private cache = new Map<FragmentPointer, RegistrySchema>();
-  /** Base URI for the document */
+  /** Base URI for resolution */
   readonly baseUri: string;
 
   constructor(
-    document: unknown,
+    spec: unknown,
     docIndex: DocIndex,
     options: SchemaRegistryOptions = {},
   ) {
-    this.document = document;
+    this.spec = spec;
     this.docIndex = docIndex;
     this.baseUri = options.baseUri ?? "";
   }
 
   /**
-   * Build a SchemaRegistry from a document by walking it to extract ref data.
+   * Build a SchemaRegistry by walking the spec to extract ref data.
    * For tests and standalone usage where a pre-computed DocIndex is not available.
    */
-  static fromDocument(
-    document: unknown,
+  static fromSpec(
+    spec: unknown,
     options: SchemaRegistryOptions = {},
   ): SchemaRegistry {
-    const docIndex = SchemaRegistry.extractDocIndex(document);
-    return new SchemaRegistry(document, docIndex, options);
+    const docIndex = SchemaRegistry.extractDocIndex(spec);
+    return new SchemaRegistry(spec, docIndex, options);
   }
 
   /**
-   * Walk a document to build a DocIndex. Collects anchors, ids, refs,
+   * Walk a spec to build a DocIndex. Collects anchors, ids, refs,
    * and edges in a single pass. No cycle detection; that is a consumer
    * concern (processor.ts uses computeCyclicRefs, spec-analyzer uses
    * its own semantic DFS).
    */
-  private static extractDocIndex(document: unknown): DocIndex {
+  private static extractDocIndex(spec: unknown): DocIndex {
     const anchors = new Map<string, FragmentPointer>();
     const ids = new Map<string, FragmentPointer>();
     const refs = new Set<string>();
@@ -138,22 +138,22 @@ export class SchemaRegistry {
       }
     }
 
-    walk(document, "#");
+    walk(spec, "#");
 
     return { anchors, ids, refs, edges, pointerCount };
   }
 
   /**
-   * Resolve a JSON Pointer against the document.
+   * Resolve a JSON Pointer against the spec.
    * Delegates percent-decoding and "#" handling to resolvePointer().
    */
   resolve(pointer: FragmentPointer | string): unknown {
     if (pointer === "#" || pointer === "") {
-      return this.document;
+      return this.spec;
     }
 
     try {
-      return resolvePointer(this.document, pointer);
+      return resolvePointer(this.spec, pointer);
     } catch {
       return undefined;
     }
@@ -169,7 +169,7 @@ export class SchemaRegistry {
       return cached;
     }
 
-    // Resolve from document
+    // Resolve from spec
     const raw = this.resolve(pointer);
     if (raw === undefined) {
       return undefined;

@@ -8,7 +8,7 @@ import {
   DiagnosticEngine,
   type ResolvedParameter,
   type SchemaValidator,
-  type SpecDocument,
+  type Spec,
 } from "./diagnostic-engine.ts";
 
 // ── Test stubs ──────────────────────────────────────────────────────
@@ -19,12 +19,12 @@ const OP: OperationObject = {
 };
 
 /**
- * Stub implementation of SpecDocument for testing.
+ * Stub implementation of Spec for testing.
  *
  * Returns pre-configured data regardless of pathPattern/method.
  * Tests configure the stub with the data the engine should see.
  */
-class StubSpec implements SpecDocument {
+class StubSpec implements Spec {
   paths: PathsObject;
   parameters: ResolvedParameter[] = [];
   bodySchema: BodySchemaInfo | null = null;

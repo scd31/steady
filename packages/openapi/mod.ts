@@ -1,4 +1,4 @@
-export { OpenAPISpecDocument } from "./document.ts";
+export { OpenAPISpec } from "./spec.ts";
 export { parseSpec, parseSpecFromFile } from "./parser.ts";
 export type { ParseOptions, ParseResult } from "./parser.ts";
 export { ParseError, SpecValidationError, SteadyError } from "./errors.ts";

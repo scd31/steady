@@ -18,9 +18,9 @@ import {
   isValidObjectFormat,
   VERSION,
 } from "../types.ts";
-import type { OpenAPISpec } from "@steady/openapi";
+import type { OpenAPIRaw } from "@steady/openapi";
 import { MatchError } from "../errors.ts";
-import { OpenAPIDocument } from "@steady/json-schema";
+import { SchemaRegistry } from "@steady/json-schema";
 import type { DocIndex } from "@steady/json-schema";
 import type { Logger } from "../logging/logger.ts";
 import { TextLogger } from "../logging/text-logger.ts";
@@ -28,7 +28,7 @@ import { JsonLogger } from "../logging/json-logger.ts";
 import { CILogger } from "../logging/ci-logger.ts";
 import { getStatusText } from "../logging/colors.ts";
 import { isParseError, parseRequestBody } from "../body-parser.ts";
-import { OpenAPISpecDocument } from "@steady/openapi";
+import { OpenAPISpec } from "@steady/openapi";
 import { TreeValidator } from "@steady/json-schema";
 import {
   type AnalyzeRequest,
@@ -62,10 +62,8 @@ import {
 } from "./lifecycle.ts";
 
 export class MockServer {
-  /** Document-centric OpenAPI processing */
-  private document: OpenAPIDocument;
-  /** Structured spec access with $ref resolution */
-  private specDoc: OpenAPISpecDocument;
+  /** Structured spec access with universal $ref resolution */
+  private specDoc: OpenAPISpec;
   private abortController: AbortController;
   private logger: Logger;
   private diagnosticEngine: DiagnosticEngine;
@@ -81,19 +79,24 @@ export class MockServer {
   private patternRoutes: CompiledPath[];
 
   constructor(
-    private spec: OpenAPISpec,
+    spec: OpenAPIRaw,
     private config: ServerConfig,
     docIndex?: DocIndex,
     private timer?: PipelineTimer,
   ) {
-    // Create document-centric processor - all $refs will resolve correctly
+    // Build schema registry (indexes all schemas for O(1) $ref resolution)
     timer?.start("document");
-    if (docIndex) {
-      this.document = new OpenAPIDocument(spec, docIndex);
-    } else {
-      this.document = OpenAPIDocument.fromSpec(spec);
-    }
+    const registry = docIndex
+      ? new SchemaRegistry(spec, docIndex)
+      : SchemaRegistry.fromSpec(spec);
     timer?.stop("document");
+
+    // Single document facade: all $ref resolution flows through here
+    timer?.start("diagnostics-engine");
+    this.specDoc = new OpenAPISpec(registry);
+    const treeValidator = new TreeValidator({ registry });
+    this.diagnosticEngine = new DiagnosticEngine(this.specDoc, treeValidator);
+    timer?.stop("diagnostics-engine");
 
     this.abortController = new AbortController();
     this.sessionStore = new SessionStore();
@@ -117,14 +120,6 @@ export class MockServer {
       });
     }
 
-    // Diagnostics engine: all ref resolution flows through SchemaRegistry
-    timer?.start("diagnostics-engine");
-    const registry = this.document.schemas;
-    this.specDoc = new OpenAPISpecDocument(spec, registry);
-    const treeValidator = new TreeValidator({ registry });
-    this.diagnosticEngine = new DiagnosticEngine(this.specDoc, treeValidator);
-    timer?.stop("diagnostics-engine");
-
     // Diagnostic collector for session-level aggregation
     this.collector = new DiagnosticCollector();
     this.collector.setStaticDiagnostics(config.startupDiagnostics ?? []);
@@ -146,7 +141,7 @@ export class MockServer {
       signal: this.abortController.signal,
       onListen: () => {
         logStartup(
-          this.spec,
+          this.specDoc.rawSpec,
           this.config,
           this.logger,
           this.collector,
@@ -246,7 +241,7 @@ export class MockServer {
         url.searchParams,
         this.exactRoutes,
         this.patternRoutes,
-        this.spec,
+        this.specDoc.rawSpec,
       );
 
       // Parse request body
@@ -366,9 +361,8 @@ export class MockServer {
 
       const { response, body: responseBody, minimal } =
         generateResponseFromObject(
-          this.spec,
+          this.specDoc,
           this.logger,
-          this.document,
           this.collector,
           req.headers.get("Accept"),
           responseObj,
@@ -508,14 +502,14 @@ export class MockServer {
   }
 
   private handleHealth(): Response {
-    const stats = this.document.getStats();
+    const stats = this.specDoc.registry.getStats();
     return new Response(
       JSON.stringify({
         status: "healthy",
         version: VERSION,
         spec: {
-          title: this.spec.info.title,
-          version: this.spec.info.version,
+          title: this.specDoc.rawSpec.info.title,
+          version: this.specDoc.rawSpec.info.version,
         },
         schemas: {
           totalRefs: stats.totalRefs,
@@ -531,7 +525,7 @@ export class MockServer {
 
   private handleSpec(): Response {
     return new Response(
-      JSON.stringify(this.spec, null, 2),
+      JSON.stringify(this.specDoc.rawSpec, null, 2),
       {
         status: 200,
         headers: { "Content-Type": "application/json" },

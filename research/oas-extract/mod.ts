@@ -22,6 +22,6 @@ export type {
   ExtractionResult,
   LLMBatch,
   LLMResponse,
-  OpenAPISpec,
+  OpenAPIRaw,
   SchemaContext,
 } from "./src/types.ts";

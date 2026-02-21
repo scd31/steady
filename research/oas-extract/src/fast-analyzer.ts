@@ -1,5 +1,5 @@
 import type {
-  OpenAPISpec,
+  OpenAPIRaw,
   Operation,
   PathItem,
   SchemaContext,
@@ -21,7 +21,7 @@ export class FastAnalyzer {
     this.minProperties = minProperties;
   }
 
-  analyze(spec: OpenAPISpec): SchemaContext[] {
+  analyze(spec: OpenAPIRaw): SchemaContext[] {
     this.contexts = [];
 
     // Fast path iteration - avoid Object.entries overhead

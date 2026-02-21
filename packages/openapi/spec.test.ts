@@ -1,13 +1,14 @@
 import { assertEquals } from "@std/assert";
-import type { OpenAPISpec } from "./openapi.ts";
-import { OpenAPISpecDocument } from "./document.ts";
+import type { OpenAPIRaw } from "./openapi.ts";
+import { OpenAPISpec } from "./spec.ts";
+import { SchemaRegistry } from "@steady/json-schema";
 
 /**
- * Helper to create a minimal valid OpenAPISpec with given paths.
+ * Helper to create a minimal valid OpenAPIRaw with given paths.
  */
 function createSpec(
-  overrides: Partial<OpenAPISpec> = {},
-): OpenAPISpec {
+  overrides: Partial<OpenAPIRaw> = {},
+): OpenAPIRaw {
   return {
     openapi: "3.1.0",
     info: { title: "Test", version: "1.0.0" },
@@ -16,7 +17,7 @@ function createSpec(
   };
 }
 
-Deno.test("OpenAPISpecDocument", async (t) => {
+Deno.test("OpenAPISpec", async (t) => {
   // ── paths ────────────────────────────────────────────────────────
 
   await t.step("paths returns spec.paths", () => {
@@ -27,7 +28,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
 
     assertEquals(Object.keys(doc.paths), ["/users"]);
   });
@@ -52,7 +53,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const params = doc.getParameters("/users", "get");
 
     assertEquals(params.length, 1);
@@ -77,7 +78,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const params = doc.getParameters("/users/{id}", "get");
 
     assertEquals(params.length, 2);
@@ -107,7 +108,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const params = doc.getParameters("/users", "get");
 
     assertEquals(params.length, 1);
@@ -128,7 +129,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const params = doc.getParameters("/users/{id}", "get");
 
     assertEquals(params[0]!.required, true);
@@ -157,7 +158,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const params = doc.getParameters("/users", "get");
 
     assertEquals(params.length, 1);
@@ -179,7 +180,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const params = doc.getParameters("/users", "get");
 
     assertEquals(params[0]!.schemaPath !== null, true);
@@ -199,7 +200,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const params = doc.getParameters("/users", "get");
 
     assertEquals(params[0]!.schema, null);
@@ -216,7 +217,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const params = doc.getParameters("/users", "get");
 
     assertEquals(params, []);
@@ -241,7 +242,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const body = doc.getBodySchema("/users", "post");
 
     assertEquals(body !== null, true);
@@ -259,7 +260,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
 
     assertEquals(doc.getBodySchema("/users", "get"), null);
   });
@@ -286,7 +287,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const body = doc.getBodySchema("/users", "post");
 
     assertEquals(body !== null, true);
@@ -310,7 +311,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const body = doc.getBodySchema("/search", "query");
 
     assertEquals(body !== null, true);
@@ -329,7 +330,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
 
     assertEquals(doc.hasResponses("/users", "get"), true);
   });
@@ -344,7 +345,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
 
     assertEquals(doc.hasResponses("/users", "get"), false);
   });
@@ -359,7 +360,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const schema = doc.resolveSchema("#/components/schemas/User");
 
     assertEquals(schema.type, "object");
@@ -385,7 +386,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
         },
       },
     });
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const schema = doc.resolveSchema(
       "#/paths/~1users/post/requestBody/content/application~1json/schema/properties/name",
     );
@@ -396,7 +397,7 @@ Deno.test("OpenAPISpecDocument", async (t) => {
 
   await t.step("unresolvable path returns empty schema", () => {
     const spec = createSpec({});
-    const doc = new OpenAPISpecDocument(spec);
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
     const schema = doc.resolveSchema("#/nonexistent/path");
 
     assertEquals(schema, {});

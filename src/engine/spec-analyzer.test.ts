@@ -1,12 +1,12 @@
 import { assertEquals } from "@std/assert";
-import type { OpenAPISpec } from "@steady/openapi";
+import type { OpenAPIRaw } from "@steady/openapi";
 import type { Diagnostic } from "../diagnostic.ts";
 import { analyzeSpec } from "./spec-analyzer.ts";
 
 // ── Test helpers ────────────────────────────────────────────────────
 
 /** Minimal valid OpenAPI 3.0 spec. No diagnostics expected. */
-function minimalSpec(overrides?: Partial<OpenAPISpec>): OpenAPISpec {
+function minimalSpec(overrides?: Partial<OpenAPIRaw>): OpenAPIRaw {
   return {
     openapi: "3.0.3",
     info: { title: "Test", version: "1.0.0" },
@@ -381,14 +381,14 @@ Deno.test("E1007 - no warning for webhook schemas", () => {
         Event: { type: "object" },
       },
     },
-  } as Partial<OpenAPISpec>);
+  } as Partial<OpenAPIRaw>);
 
   const result = analyzeSpec(spec);
   filterCode(result.diagnostics, "E1007", 0);
 });
 
 Deno.test("E1007 - no warning for 3.1.x specs", () => {
-  const spec: OpenAPISpec = {
+  const spec: OpenAPIRaw = {
     openapi: "3.1.0",
     info: { title: "Test", version: "1.0.0" },
     paths: {
@@ -1186,7 +1186,7 @@ Deno.test("E1015 - numeric exclusiveMaximum in 3.0.x spec", () => {
 });
 
 Deno.test("E1015 - boolean exclusiveMinimum in 3.1.x spec", () => {
-  const spec: OpenAPISpec = {
+  const spec: OpenAPIRaw = {
     openapi: "3.1.0",
     info: { title: "Test", version: "1.0.0" },
     paths: {
@@ -1229,7 +1229,7 @@ Deno.test("E1015 - boolean exclusiveMinimum in 3.0.x is fine (standard)", () => 
 });
 
 Deno.test("E1015 - numeric exclusiveMinimum in 3.1.x is fine (standard)", () => {
-  const spec: OpenAPISpec = {
+  const spec: OpenAPIRaw = {
     openapi: "3.1.0",
     info: { title: "Test", version: "1.0.0" },
     paths: {
@@ -1247,7 +1247,7 @@ Deno.test("E1015 - numeric exclusiveMinimum in 3.1.x is fine (standard)", () => 
 });
 
 Deno.test("QUERY method in 3.1 spec passes metaschema validation", () => {
-  const spec: OpenAPISpec = {
+  const spec: OpenAPIRaw = {
     openapi: "3.1.0",
     info: { title: "Test", version: "1.0.0" },
     paths: {

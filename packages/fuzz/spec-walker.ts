@@ -1,10 +1,10 @@
 /**
  * Walk an OpenAPI spec and extract testable operations.
  *
- * Uses OpenAPISpecDocument for $ref resolution and parameter merging.
+ * Uses OpenAPISpec for $ref resolution and parameter merging.
  */
 
-import type { OpenAPISpecDocument } from "@steady/openapi";
+import type { OpenAPISpec } from "@steady/openapi";
 import type { OperationInfo, ParameterInfo } from "./types.ts";
 
 const HTTP_METHODS = [
@@ -21,10 +21,10 @@ const HTTP_METHODS = [
 /**
  * Walk all operations in a spec and extract structured info for fuzzing.
  *
- * @param doc - A parsed OpenAPISpecDocument (handles $ref resolution)
+ * @param doc - A parsed OpenAPISpec (handles $ref resolution)
  * @returns One OperationInfo per operation in the spec
  */
-export function walkSpec(doc: OpenAPISpecDocument): OperationInfo[] {
+export function walkSpec(doc: OpenAPISpec): OperationInfo[] {
   const operations: OperationInfo[] = [];
   const paths = doc.paths;
 
