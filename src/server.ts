@@ -27,13 +27,18 @@ import type {
   PathItemObject,
   ReferenceObject,
 } from "@steady/openapi";
-import { MatchError, missingExampleError } from "./errors.ts";
+import { MatchError } from "./errors.ts";
 import {
   OpenAPIDocument,
   RegistryResponseGenerator,
 } from "@steady/json-schema";
 import type { DocIndex, GenerateOptions, Schema } from "@steady/json-schema";
-import { escapeSegment, isFragmentPointer } from "@steady/json-pointer";
+import {
+  escapeSegment,
+  isFragmentPointer,
+  isPlainObject,
+  resolve as resolvePointer,
+} from "@steady/json-pointer";
 import type { Logger } from "./logging/logger.ts";
 import type {
   RequestEvent,
@@ -1076,13 +1081,28 @@ export class MockServer {
           mediaType.examples && Object.keys(mediaType.examples).length > 0
         ) {
           const firstExampleOrRef = Object.values(mediaType.examples)[0];
-          if (firstExampleOrRef && !isReference(firstExampleOrRef)) {
-            if (firstExampleOrRef.value !== undefined) {
-              body = firstExampleOrRef.value;
+          if (firstExampleOrRef) {
+            let exampleObj = firstExampleOrRef;
+            if (isReference(exampleObj) && exampleObj.$ref.startsWith("#")) {
+              const pointer = exampleObj.$ref.slice(1);
+              try {
+                const resolved = resolvePointer(this.spec, pointer);
+                if (isPlainObject(resolved)) {
+                  exampleObj = resolved as typeof firstExampleOrRef;
+                }
+              } catch {
+                // Unresolvable; fall through to schema generation
+              }
+            }
+            if (!isReference(exampleObj) && exampleObj.value !== undefined) {
+              body = exampleObj.value;
             }
           }
-        } // Priority 3: Generate from schema using document-centric approach
-        else if (mediaType.schema) {
+        }
+
+        // Priority 3: Generate from schema (also serves as fallback when
+        // examples were all unresolvable $refs)
+        if (body === null && mediaType.schema) {
           body = this.generateFromSchemaObject(
             mediaType.schema,
             pathPattern,
@@ -1095,10 +1115,6 @@ export class MockServer {
             this.collector.trackGenerationWarning(method, pathPattern);
             minimal = true;
           }
-        }
-
-        if (body === null && mediaType.schema) {
-          throw missingExampleError(path, method, statusCode);
         }
       }
     } else if (

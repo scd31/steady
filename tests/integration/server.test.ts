@@ -363,6 +363,61 @@ Deno.test({
   },
 });
 
+// ── Response generation: $ref examples ──────────────────────────────
+
+const REF_EXAMPLE_SPEC = "./tests/specs/ref-example-spec.yaml";
+
+Deno.test({
+  name: "response with $ref examples does not 500",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(REF_EXAMPLE_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/settings/cache_reserve", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ value: "on" }),
+      });
+
+      // Should not crash. 200 is fine, anything below 500 is acceptable.
+      assertEquals(response.status < 500, true, `Got ${response.status}`);
+      await response.body?.cancel();
+    });
+  },
+});
+
+Deno.test({
+  name: "diagnostics preserved when response generation fails",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(REF_EXAMPLE_SPEC, async (ctx) => {
+      // Send wrong content-type. Even if response generation fails,
+      // the E3006 diagnostic should still be reported.
+      const response = await ctx.fetch("/settings/cache_reserve", {
+        method: "PATCH",
+        headers: { "content-type": "text/plain" },
+        body: JSON.stringify({ value: "on" }),
+      });
+
+      const valid = response.headers.get("x-steady-valid");
+      assertEquals(valid, "false", "Should detect wrong content-type");
+
+      const errorCount = parseInt(
+        response.headers.get("x-steady-error-count") ?? "0",
+        10,
+      );
+      assertEquals(
+        errorCount > 0,
+        true,
+        "Should report at least one diagnostic",
+      );
+
+      await response.body?.cancel();
+    });
+  },
+});
+
 // ── HTTP server: query params ───────────────────────────────────────
 
 Deno.test({
