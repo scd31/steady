@@ -214,6 +214,93 @@ Deno.test({
   },
 });
 
+// ── SDK spec fuzz tests ─────────────────────────────────────────────
+
+const SDK_SPECS = [
+  "anthropic-sdk-python",
+  "arcade-py",
+  "cerebras-cloud-sdk-python",
+  "groq-python",
+  "lithic-python",
+  "llama-stack-client-python",
+  "openai-python",
+  "perplexity-py",
+  "sink-python",
+  "test-api-go",
+];
+
+for (const sdk of SDK_SPECS) {
+  const specPath = `./sdk-tests/${sdk}/openapi-spec.yml`;
+
+  Deno.test({
+    name: `fuzz session: ${sdk} has no false positives`,
+    sanitizeOps: false,
+    sanitizeResources: false,
+    fn: async (t) => {
+      await withServer(specPath, async (ctx) => {
+        const { spec } = await parseSpecFromFile(specPath);
+        const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+
+        const session = new FuzzSession(doc, { seed: 42 });
+
+        for (const fuzzCase of session) {
+          await t.step(
+            `${fuzzCase.operation}: ${fuzzCase.mutation}`,
+            async () => {
+              const url = buildUrl(fuzzCase.request);
+              const init = toRequestInit(fuzzCase.request);
+              const response = await ctx.fetch(url, init);
+              await response.body?.cancel();
+
+              const valid = response.headers.get("x-steady-valid");
+              const codes = getDiagnosticCodes(response);
+              const status = response.status;
+
+              const serverError = status >= 500;
+
+              session.record(fuzzCase, {
+                accepted: valid === "true" || serverError,
+                reportedCodes: codes,
+              });
+
+              assertEquals(
+                serverError,
+                false,
+                `SERVER ERROR (${status}): ${fuzzCase.operation} / ${fuzzCase.mutation}`,
+              );
+              assertEquals(
+                valid,
+                "false",
+                `FALSE POSITIVE: ${fuzzCase.operation} / ${fuzzCase.mutation}`,
+              );
+            },
+          );
+        }
+
+        const report = session.report();
+
+        await t.step("report summary", () => {
+          assertNotEquals(
+            report.totalCases,
+            0,
+            "Should have tested some cases",
+          );
+          assertEquals(
+            report.falsePositives,
+            0,
+            `Found ${report.falsePositives} false positive(s):\n` +
+              report.falsePositiveDetails
+                .map((fp) => `  - ${fp.operation}: ${fp.mutation}`)
+                .join("\n"),
+          );
+        });
+      });
+    },
+  });
+}
+
+// ── Misc ────────────────────────────────────────────────────────────
+
 Deno.test({
   name: "fuzz session: maxCases budget is respected",
   sanitizeOps: false,

@@ -42,12 +42,22 @@ export const removeRequiredQueryParam: Mutator = {
   },
 };
 
+// Headers that the fetch() API manages automatically. Removing these from
+// the headers object has no effect on the wire, so mutations targeting
+// them would always be false positives.
+const FETCH_MANAGED_HEADERS = new Set([
+  "content-length",
+  "host",
+  "transfer-encoding",
+]);
+
 export const removeRequiredHeaderParam: Mutator = {
   id: "removeRequiredHeaderParam",
   apply(op, baseline) {
     const cases: MutatedCase[] = [];
     for (const param of op.headerParams) {
       if (!param.required) continue;
+      if (FETCH_MANAGED_HEADERS.has(param.name.toLowerCase())) continue;
       const req = cloneRequest(baseline);
       const lowerName = param.name.toLowerCase();
       for (const key of Object.keys(req.headers)) {
