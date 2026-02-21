@@ -8,7 +8,7 @@
 import { assertEquals, assertNotEquals } from "@std/assert";
 import { parseSpecFromFile } from "../../packages/openapi/mod.ts";
 import { OpenAPISpecDocument } from "../../packages/openapi/document.ts";
-import { MockServer } from "../../src/server.ts";
+import { MockServer } from "../../src/server/mod.ts";
 import { FuzzSession } from "@steady/fuzz";
 import type { FuzzRequest } from "@steady/fuzz";
 

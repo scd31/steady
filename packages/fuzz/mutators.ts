@@ -182,8 +182,7 @@ export const extraProperty: Mutator = {
 
     const req = cloneRequest(baseline);
     if (isPlainObject(req.body)) {
-      req.body["__fuzz_extra_field__"] =
-        "should-not-be-allowed";
+      req.body["__fuzz_extra_field__"] = "should-not-be-allowed";
     }
 
     return [{

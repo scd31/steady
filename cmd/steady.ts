@@ -395,7 +395,7 @@ async function startServer(
   options: ServerOptions,
 ): Promise<{ start: () => void; stop: () => Promise<void> }> {
   // Lazy import to avoid loading server code for validate command
-  const { MockServer } = await import("../src/server.ts");
+  const { MockServer } = await import("../src/server/mod.ts");
 
   const timer = new PipelineTimer();
 

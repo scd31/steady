@@ -11,7 +11,7 @@
 import { assertEquals } from "@std/assert";
 import { assertSnapshot } from "@std/testing/snapshot";
 import { parseSpecFromFile } from "../../packages/openapi/mod.ts";
-import { MockServer } from "../../src/server.ts";
+import { MockServer } from "../../src/server/mod.ts";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 

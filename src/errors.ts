@@ -40,4 +40,3 @@ export class MatchError extends SteadyError {
     this.source = source;
   }
 }
-

@@ -10,7 +10,7 @@
  */
 
 import { assertEquals, assertExists } from "@std/assert";
-import { MockServer } from "./server.ts";
+import { MockServer } from "./server/mod.ts";
 import { parseSpecFromFile } from "../packages/openapi/mod.ts";
 
 const TEST_SPEC_PATH = "./tests/specs/test-api.yaml";

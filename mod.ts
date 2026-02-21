@@ -5,7 +5,7 @@
  */
 
 // Re-export key types and utilities for library usage
-export { MockServer } from "./src/server.ts";
+export { MockServer } from "./src/server/mod.ts";
 export type { ServerConfig } from "./src/types.ts";
 export { parseSpecFromFile, SteadyError } from "@steady/openapi";
 
