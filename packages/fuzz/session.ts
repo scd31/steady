@@ -62,7 +62,7 @@ export class FuzzSession implements Iterable<FuzzCase> {
 
   constructor(doc: OpenAPISpecDocument, options?: FuzzSessionOptions) {
     this.seed = options?.seed ?? 0;
-    this.specHash = computeSpecHash(JSON.stringify(doc.paths));
+    this.specHash = computeSpecHash(JSON.stringify(doc.rawSpec));
 
     this.budget = new Budget({
       maxCases: options?.maxCases,

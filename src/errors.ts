@@ -41,34 +41,3 @@ export class MatchError extends SteadyError {
   }
 }
 
-/**
- * Create a missing example error with helpful guidance
- */
-export function missingExampleError(
-  path: string,
-  method: string,
-  statusCode: string,
-  specFile?: string,
-): GenerationError {
-  return new GenerationError("Missing example for response", {
-    specFile,
-    httpPath: path,
-    httpMethod: method.toUpperCase(),
-    errorType: "generate",
-    reason:
-      `Your OpenAPI spec defines a ${statusCode} response but doesn't include an example or schema.`,
-    suggestion: "Add an example or schema to your spec:",
-    examples: [
-      "responses:",
-      `  ${statusCode}:`,
-      "    content:",
-      "      application/json:",
-      "        example:",
-      "          id: 123",
-      '          name: "John Doe"',
-      "        # Or use a schema reference:",
-      "        # schema:",
-      "        #   $ref: '#/components/schemas/User'",
-    ],
-  });
-}

@@ -1082,20 +1082,24 @@ export class MockServer {
         ) {
           const firstExampleOrRef = Object.values(mediaType.examples)[0];
           if (firstExampleOrRef) {
-            let exampleObj = firstExampleOrRef;
-            if (isReference(exampleObj) && exampleObj.$ref.startsWith("#")) {
-              const pointer = exampleObj.$ref.slice(1);
-              try {
-                const resolved = resolvePointer(this.spec, pointer);
-                if (isPlainObject(resolved)) {
-                  exampleObj = resolved as typeof firstExampleOrRef;
+            if (isReference(firstExampleOrRef)) {
+              // Resolve $ref to ExampleObject and extract .value
+              if (isFragmentPointer(firstExampleOrRef.$ref)) {
+                const pointer = firstExampleOrRef.$ref.slice(1);
+                try {
+                  const resolved = resolvePointer(this.spec, pointer);
+                  if (
+                    isPlainObject(resolved) &&
+                    "value" in resolved
+                  ) {
+                    body = resolved.value;
+                  }
+                } catch {
+                  // Unresolvable; fall through to schema generation
                 }
-              } catch {
-                // Unresolvable; fall through to schema generation
               }
-            }
-            if (!isReference(exampleObj) && exampleObj.value !== undefined) {
-              body = exampleObj.value;
+            } else if (firstExampleOrRef.value !== undefined) {
+              body = firstExampleOrRef.value;
             }
           }
         }

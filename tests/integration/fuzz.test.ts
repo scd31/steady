@@ -172,12 +172,21 @@ Deno.test({
 
             const valid = response.headers.get("x-steady-valid");
             const codes = getDiagnosticCodes(response);
+            const status = response.status;
+
+            // 5xx = Steady crashed, which is worse than a false positive
+            const serverError = status >= 500;
 
             session.record(fuzzCase, {
-              accepted: valid === "true",
+              accepted: valid === "true" || serverError,
               reportedCodes: codes,
             });
 
+            assertEquals(
+              serverError,
+              false,
+              `SERVER ERROR (${status}): ${fuzzCase.operation} / ${fuzzCase.mutation}`,
+            );
             assertEquals(
               valid,
               "false",

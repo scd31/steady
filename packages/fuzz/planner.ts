@@ -33,7 +33,7 @@ export interface CasePlan {
  * 2. For each operation, build a baseline and apply all mutators.
  * 3. Compute fingerprints.
  * 4. Apply cache filtering (deprioritize previously-passed fingerprints).
- * 5. Order by mutator priority, then alphabetical by operation.
+ * 5. Seed-based shuffle within fresh/stale groups for deterministic ordering.
  */
 export function planCases(
   doc: OpenAPISpecDocument,
@@ -77,16 +77,22 @@ export function planCases(
 
   let planned = allCases;
 
-  // Deprioritize cached fingerprints (put them at the end)
+  // Deprioritize cached fingerprints (put them at the end).
+  // When a seed is set, shuffle within each group so fresh cases
+  // stay first but still get deterministic ordering.
   if (options.cache) {
     const cached = new Set(Object.keys(options.cache.passed));
     const fresh = planned.filter((c) => !cached.has(c.fingerprint));
     const stale = planned.filter((c) => cached.has(c.fingerprint));
-    planned = [...fresh, ...stale];
-  }
 
-  // Apply seed-based shuffling (if seed != 0)
-  if (options.seed !== 0) {
+    if (options.seed !== 0) {
+      const rng = new SeededRng(options.seed);
+      rng.shuffle(fresh);
+      rng.shuffle(stale);
+    }
+
+    planned = [...fresh, ...stale];
+  } else if (options.seed !== 0) {
     const rng = new SeededRng(options.seed);
     rng.shuffle(planned);
   }

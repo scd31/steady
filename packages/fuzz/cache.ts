@@ -5,6 +5,7 @@
  * the cache file and passes the data in.
  */
 
+import { isPlainObject } from "@steady/json-pointer";
 import type { FuzzCache } from "./types.ts";
 
 /**
@@ -45,12 +46,11 @@ export function createEmptyCache(specHash: string): FuzzCache {
 }
 
 function isValidCacheShape(value: unknown): value is FuzzCache {
-  if (typeof value !== "object" || value === null) return false;
-  const obj = value as Record<string, unknown>;
+  if (!isPlainObject(value)) return false;
   return (
-    obj["version"] === 1 &&
-    typeof obj["specHash"] === "string" &&
-    typeof obj["passed"] === "object" &&
-    obj["passed"] !== null
+    value["version"] === 1 &&
+    typeof value["specHash"] === "string" &&
+    typeof value["passed"] === "object" &&
+    value["passed"] !== null
   );
 }

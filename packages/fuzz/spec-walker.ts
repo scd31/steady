@@ -60,7 +60,9 @@ export function walkSpec(doc: OpenAPISpecDocument): OperationInfo[] {
           case "header":
             headerParams.push(info);
             break;
-            // cookie params are rarely used in practice; skip for now
+          case "cookie":
+            // rarely used in practice; skip for now
+            break;
         }
       }
 

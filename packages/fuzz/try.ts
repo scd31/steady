@@ -3,8 +3,7 @@
  * Run: deno run --allow-read --allow-net packages/fuzz/try.ts <spec-path>
  */
 
-import { parseSpecFromFile } from "@steady/openapi";
-import { OpenAPISpecDocument } from "../../packages/openapi/document.ts";
+import { OpenAPISpecDocument, parseSpecFromFile } from "@steady/openapi";
 import { MockServer } from "../../src/server.ts";
 import { FuzzSession } from "./session.ts";
 import type { FuzzRequest } from "./types.ts";

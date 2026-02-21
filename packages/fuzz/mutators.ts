@@ -7,7 +7,7 @@
  * If the mutator doesn't apply, it returns [].
  */
 
-import type { Schema } from "@steady/json-schema";
+import { isSchema } from "@steady/json-schema";
 import { isPlainObject } from "@steady/json-pointer";
 import type { FuzzRequest, MutatedCase, Mutator } from "./types.ts";
 
@@ -124,7 +124,7 @@ export const omitRequiredBodyField: Mutator = {
     for (const field of requiredFields) {
       const req = cloneRequest(baseline);
       if (isPlainObject(req.body)) {
-        delete (req.body as Record<string, unknown>)[field];
+        delete req.body[field];
       }
       cases.push({
         mutation: `omit required body field '${field}'`,
@@ -147,11 +147,10 @@ export const wrongBodyFieldType: Mutator = {
 
     const cases: MutatedCase[] = [];
     for (const [field, propSchemaRaw] of Object.entries(properties)) {
-      if (!isPlainObject(propSchemaRaw)) continue;
-      const propSchema = propSchemaRaw as Schema;
-      const type = Array.isArray(propSchema.type)
-        ? propSchema.type[0]
-        : propSchema.type;
+      if (!isSchema(propSchemaRaw)) continue;
+      const type = Array.isArray(propSchemaRaw.type)
+        ? propSchemaRaw.type[0]
+        : propSchemaRaw.type;
       if (!type) continue;
 
       const wrongValue = getWrongTypeValue(type);
@@ -159,7 +158,7 @@ export const wrongBodyFieldType: Mutator = {
 
       const req = cloneRequest(baseline);
       if (isPlainObject(req.body)) {
-        (req.body as Record<string, unknown>)[field] = wrongValue;
+        req.body[field] = wrongValue;
       }
 
       cases.push({
@@ -183,7 +182,7 @@ export const extraProperty: Mutator = {
 
     const req = cloneRequest(baseline);
     if (isPlainObject(req.body)) {
-      (req.body as Record<string, unknown>)["__fuzz_extra_field__"] =
+      req.body["__fuzz_extra_field__"] =
         "should-not-be-allowed";
     }
 
@@ -206,13 +205,12 @@ export const wrongEnumValue: Mutator = {
 
     const cases: MutatedCase[] = [];
     for (const [field, propSchemaRaw] of Object.entries(properties)) {
-      if (!isPlainObject(propSchemaRaw)) continue;
-      const propSchema = propSchemaRaw as Schema;
-      if (!propSchema.enum || propSchema.enum.length === 0) continue;
+      if (!isSchema(propSchemaRaw)) continue;
+      if (!propSchemaRaw.enum || propSchemaRaw.enum.length === 0) continue;
 
       const req = cloneRequest(baseline);
       if (isPlainObject(req.body)) {
-        (req.body as Record<string, unknown>)[field] = "__FUZZ_NOT_IN_ENUM__";
+        req.body[field] = "__FUZZ_NOT_IN_ENUM__";
       }
 
       cases.push({

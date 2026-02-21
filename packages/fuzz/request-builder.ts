@@ -6,8 +6,8 @@
  * invalid variants.
  */
 
+import { isSchema } from "@steady/json-schema";
 import type { Schema } from "@steady/json-schema";
-import { isPlainObject } from "@steady/json-pointer";
 import type { FuzzRequest, OperationInfo, ParameterInfo } from "./types.ts";
 
 /**
@@ -146,10 +146,8 @@ function generateObject(schema: Schema): Record<string, unknown> {
     // Only populate required fields (keeps baseline minimal)
     if (!required.has(name)) continue;
 
-    if (isPlainObject(propSchemaRaw)) {
-      const propSchema = propSchemaRaw as Record<string, unknown>;
-      // Rough check: if it has "type" or "properties", treat as schema
-      result[name] = generateFromSchema(propSchema as Schema);
+    if (isSchema(propSchemaRaw)) {
+      result[name] = generateFromSchema(propSchemaRaw);
     } else if (typeof propSchemaRaw === "boolean") {
       // boolean schema: true = any value, false = impossible
       if (propSchemaRaw) {
@@ -163,8 +161,8 @@ function generateObject(schema: Schema): Record<string, unknown> {
 
 function generateArray(schema: Schema): unknown[] {
   const itemSchema = schema.items;
-  if (itemSchema && isPlainObject(itemSchema)) {
-    return [generateFromSchema(itemSchema as Schema)];
+  if (isSchema(itemSchema)) {
+    return [generateFromSchema(itemSchema)];
   }
   return ["test-value"];
 }

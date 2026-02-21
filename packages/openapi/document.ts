@@ -112,6 +112,11 @@ export class OpenAPISpecDocument {
     return this.spec.paths;
   }
 
+  /** The underlying raw spec object. */
+  get rawSpec(): OpenAPISpec {
+    return this.spec;
+  }
+
   /**
    * Resolved parameters for an operation.
    *
