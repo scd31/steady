@@ -6,6 +6,7 @@
  */
 
 import { assertEquals, assertNotEquals } from "@std/assert";
+import { request as httpRequest } from "node:http";
 import { parseSpecFromFile } from "../../packages/openapi/mod.ts";
 import { OpenAPISpec } from "../../packages/openapi/spec.ts";
 import { SchemaRegistry } from "@steady/json-schema";
@@ -21,6 +22,61 @@ interface ServerContext {
   server: MockServer;
   port: number;
   fetch: (path: string, init?: RequestInit) => Promise<Response>;
+}
+
+const NO_FETCH_BODY_METHODS = new Set(["GET", "HEAD"]);
+
+/** fetch() throws on GET/HEAD with body, so fall back to node:http. */
+function sendRequest(url: string, init?: RequestInit): Promise<Response> {
+  const method = init?.method ?? "GET";
+  const hasBody = init?.body !== undefined && init.body !== null;
+
+  if (!hasBody || !NO_FETCH_BODY_METHODS.has(method)) {
+    return fetch(url, init);
+  }
+
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = httpRequest(
+      {
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname + u.search,
+        method,
+        headers: init?.headers as Record<string, string>,
+      },
+      (res) => {
+        const chunks: Uint8Array[] = [];
+        res.on("data", (chunk: Uint8Array) => chunks.push(chunk));
+        res.on("end", () => {
+          const body = new Uint8Array(
+            chunks.reduce((acc, c) => acc + c.length, 0),
+          );
+          let offset = 0;
+          for (const chunk of chunks) {
+            body.set(chunk, offset);
+            offset += chunk.length;
+          }
+          const headers = new Headers();
+          for (const [key, value] of Object.entries(res.headers)) {
+            if (value) {
+              const v = Array.isArray(value) ? value[0] : value;
+              if (v) headers.set(key, v);
+            }
+          }
+          resolve(
+            new Response(body.length > 0 ? body : null, {
+              status: res.statusCode ?? 200,
+              headers,
+            }),
+          );
+        });
+      },
+    );
+    req.on("error", reject);
+    req.write(init!.body as string);
+    req.end();
+  });
 }
 
 async function withServer(
@@ -42,7 +98,8 @@ async function withServer(
     await fn({
       server,
       port,
-      fetch: (path, init) => fetch(`http://localhost:${port}${path}`, init),
+      fetch: (path, init) =>
+        sendRequest(`http://localhost:${port}${path}`, init),
     });
   } finally {
     server.stop();
