@@ -70,6 +70,7 @@ export function analyzeSpec(
   diagnostics.push(...checkRedirectsWithoutLocation(spec));
   diagnostics.push(...checkNullBodyWithContent(spec));
   diagnostics.push(...checkNoSuccessResponse(spec));
+  diagnostics.push(...checkUnconventionalRequestBody(spec));
   timer?.stop("structural");
 
   // Single tree walk collects $ref info and schema pointers
@@ -673,6 +674,43 @@ function checkNoSuccessResponse(spec: OpenAPIRaw): Diagnostic[] {
           ),
         );
       }
+    }
+  }
+
+  return diagnostics;
+}
+
+// ── E1020: Request body on unconventional methods ───────────────────
+
+const UNCONVENTIONAL_BODY_METHODS = new Set([
+  "get",
+  "head",
+  "delete",
+  "options",
+]);
+
+function checkUnconventionalRequestBody(spec: OpenAPIRaw): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  for (const [path, pathItem] of Object.entries(spec.paths)) {
+    if (!pathItem) continue;
+
+    for (const method of HTTP_METHODS) {
+      if (!UNCONVENTIONAL_BODY_METHODS.has(method)) continue;
+      const operation = pathItem[method];
+      if (!operation?.requestBody) continue;
+
+      diagnostics.push(
+        specDiagnostic(
+          "E1020",
+          `#/paths/${escapeSegment(path)}/${method}/requestBody`,
+          `${method.toUpperCase()} ${path} defines a request body. HTTP ${method.toUpperCase()} requests conventionally do not carry a body`,
+          {
+            suggestion:
+              "Steady will validate the body if present. No action needed unless this is unintentional",
+          },
+        ),
+      );
     }
   }
 

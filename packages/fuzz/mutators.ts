@@ -46,9 +46,12 @@ export const removeRequiredQueryParam: Mutator = {
 // the headers object has no effect on the wire, so mutations targeting
 // them would always be false positives.
 const FETCH_MANAGED_HEADERS = new Set([
+  "accept",
+  "accept-language",
   "content-length",
   "host",
   "transfer-encoding",
+  "user-agent",
 ]);
 
 export const removeRequiredHeaderParam: Mutator = {

@@ -140,3 +140,27 @@ Deno.test("parseRequestBody - null acceptedContentTypes allows any", async () =>
     assertEquals(result.body, { ok: true });
   }
 });
+
+Deno.test("parseRequestBody - DELETE with JSON body is parsed", async () => {
+  const req = new Request("http://localhost/test", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: '{"ids":["a","b"]}',
+  });
+  const result = await parseRequestBody(req, null);
+
+  assertEquals(isParseError(result), false);
+  if (!isParseError(result)) {
+    assertEquals(result.body, { ids: ["a", "b"] });
+  }
+});
+
+Deno.test("parseRequestBody - DELETE without body returns undefined", async () => {
+  const req = new Request("http://localhost/test", { method: "DELETE" });
+  const result = await parseRequestBody(req, null);
+
+  assertEquals(isParseError(result), false);
+  if (!isParseError(result)) {
+    assertEquals(result.body, undefined);
+  }
+});

@@ -421,6 +421,32 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
     seeAlso: ["E1010"],
   },
 
+  E1020: {
+    description:
+      "An operation uses GET, HEAD, DELETE, or OPTIONS with a request body.\n" +
+      "RFC 9110 says clients SHOULD NOT send content in these requests.\n" +
+      "OpenAPI allows requestBody on any method, so the spec is valid,\n" +
+      "but some HTTP clients, proxies, or CDNs may strip or reject the body.",
+    reasoning:
+      "The spec is valid per OpenAPI but unconventional per HTTP semantics.\n" +
+      "Steady will parse and validate the request body if one is present.\n" +
+      "Some tooling may not handle this correctly, which could cause\n" +
+      "confusing behavior during testing.",
+    example: "  /resources:\n" +
+      "    delete:\n" +
+      "      requestBody:           # Unconventional but valid\n" +
+      "        content:\n" +
+      "          application/json:\n" +
+      "            schema:\n" +
+      "              type: object\n" +
+      "              properties:\n" +
+      "                ids:\n" +
+      "                  type: array",
+    fix: "No action needed if this is intentional. Be aware that some\n" +
+      "HTTP tooling may not forward the body for this method.",
+    seeAlso: [],
+  },
+
   // ── E2xxx: Routing ──────────────────────────────────────────────────
 
   E2001: {

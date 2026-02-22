@@ -129,6 +129,51 @@ Deno.test("mutators", async (t) => {
       const cases = removeRequiredHeaderParam.apply(LIST_ITEMS, baseline);
       assertEquals(cases.length, 0);
     });
+
+    await t.step(
+      "skips fetch-managed headers like Accept and User-Agent",
+      () => {
+        const op: OperationInfo = {
+          path: "/downloads",
+          method: "get",
+          pathParams: [],
+          queryParams: [],
+          headerParams: [
+            {
+              name: "Accept",
+              in: "header",
+              required: true,
+              schema: { type: "string" },
+            },
+            {
+              name: "User-Agent",
+              in: "header",
+              required: true,
+              schema: { type: "string" },
+            },
+            {
+              name: "Accept-Language",
+              in: "header",
+              required: true,
+              schema: { type: "string" },
+            },
+            {
+              name: "X-Custom",
+              in: "header",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          bodyInfo: null,
+        };
+        const baseline = buildBaseline(op);
+        const cases = removeRequiredHeaderParam.apply(op, baseline);
+        // Only X-Custom should produce a case; Accept, User-Agent, Accept-Language
+        // are managed by fetch() and cannot be reliably removed
+        assertEquals(cases.length, 1);
+        assertEquals(cases[0]!.mutation, "remove required header 'X-Custom'");
+      },
+    );
   });
 
   await t.step("wrongContentType", async (t) => {

@@ -62,6 +62,7 @@ function toRequestInit(req: FuzzRequest): RequestInit {
   const init: RequestInit = {
     method: req.method.toUpperCase(),
     headers: { ...req.headers },
+    redirect: "manual",
   };
   if (req.body !== undefined) {
     init.body = JSON.stringify(req.body);
