@@ -442,7 +442,7 @@ Deno.test({
         body: JSON.stringify({ value: "on" }),
       });
 
-      const valid = response.headers.get("x-steady-valid");
+      const valid = response.headers.get("x-steady-request-valid");
       assertEquals(valid, "false", "Should detect wrong content-type");
 
       const errorCount = parseInt(

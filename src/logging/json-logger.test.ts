@@ -250,7 +250,7 @@ Deno.test("JsonLogger", async (t) => {
     });
     event.response.headers = new Headers({
       "content-type": "application/json",
-      "x-steady-valid": "true",
+      "x-steady-request-valid": "true",
     });
     const lines = captureLog(() => logger.request(event));
     const output = parseJsonLine(lines);
@@ -262,7 +262,7 @@ Deno.test("JsonLogger", async (t) => {
     });
     assertEquals(res.headers, {
       "content-type": "application/json",
-      "x-steady-valid": "true",
+      "x-steady-request-valid": "true",
     });
   });
 

@@ -84,11 +84,17 @@ export function generateResponseFromObject(
   pathPattern: string,
   generatorOptions: GenerateOptions,
   streamingOptions: StreamingOptions,
-): { response: Response; body?: unknown; minimal?: boolean } {
+): {
+  response: Response;
+  body?: unknown;
+  minimal?: boolean;
+  nullBodyStripped?: boolean;
+} {
   const registry = specDoc.registry;
   let body: unknown = null;
   let contentType: string | null = null;
   let minimal = false;
+  let nullBodyStripped = false;
 
   const acceptTypes = parseAcceptHeader(requestAcceptHeader);
 
@@ -220,6 +226,16 @@ export function generateResponseFromObject(
     headers.set("Location", location);
   }
 
+  // Null-body status codes (204, 304) must not have a body per HTTP semantics.
+  // Some specs incorrectly define content for these. Strip it to avoid crashes.
+  const isNullBodyStatus = numericStatus === 204 || numericStatus === 304;
+  if (isNullBodyStatus && body !== null) {
+    body = null;
+    contentType = null;
+    headers.delete("Content-Type");
+    nullBodyStripped = true;
+  }
+
   // Safely stringify body - handle circular references and non-serializable values
   let bodyString: string | null = null;
   if (body !== null) {
@@ -261,6 +277,7 @@ export function generateResponseFromObject(
     ),
     body,
     minimal,
+    nullBodyStripped,
   };
 }
 
@@ -404,7 +421,7 @@ function resolveLocationHeader(
 
 /**
  * Add X-Steady-* diagnostic headers to a response.
- * X-Steady-Valid is false when any sdk-issue diagnostic is present.
+ * X-Steady-Request-Valid is false when any sdk-issue diagnostic is present.
  */
 export function addDiagnosticHeaders(
   response: Response,
@@ -413,7 +430,7 @@ export function addDiagnosticHeaders(
   const newHeaders = new Headers(response.headers);
   const hasSdkIssues = diagnostics.some((d) => d.category === "sdk-issue");
 
-  newHeaders.set("X-Steady-Valid", hasSdkIssues ? "false" : "true");
+  newHeaders.set("X-Steady-Request-Valid", hasSdkIssues ? "false" : "true");
   newHeaders.set("X-Steady-Error-Count", String(diagnostics.length));
 
   diagnostics.forEach((d, i) => {

@@ -106,7 +106,7 @@ Deno.test({
             const response = await ctx.fetch(url, init);
             await response.body?.cancel();
 
-            const valid = response.headers.get("x-steady-valid");
+            const valid = response.headers.get("x-steady-request-valid");
             const codes = getDiagnosticCodes(response);
             const status = response.status;
 
@@ -171,7 +171,7 @@ Deno.test({
             const response = await ctx.fetch(url, init);
             await response.body?.cancel();
 
-            const valid = response.headers.get("x-steady-valid");
+            const valid = response.headers.get("x-steady-request-valid");
             const codes = getDiagnosticCodes(response);
             const status = response.status;
 
@@ -252,7 +252,7 @@ for (const sdk of SDK_SPECS) {
               const response = await ctx.fetch(url, init);
               await response.body?.cancel();
 
-              const valid = response.headers.get("x-steady-valid");
+              const valid = response.headers.get("x-steady-request-valid");
               const codes = getDiagnosticCodes(response);
               const status = response.status;
 
@@ -319,7 +319,7 @@ Deno.test({
         const response = await ctx.fetch(url, init);
         await response.body?.cancel();
 
-        const valid = response.headers.get("x-steady-valid");
+        const valid = response.headers.get("x-steady-request-valid");
         session.record(fuzzCase, { accepted: valid === "true" });
         count++;
       }
@@ -386,7 +386,7 @@ Deno.test({
                 const response = await ctx.fetch(url, init);
                 await response.body?.cancel();
 
-                const valid = response.headers.get("x-steady-valid");
+                const valid = response.headers.get("x-steady-request-valid");
                 const codes = getDiagnosticCodes(response);
                 const status = response.status;
 

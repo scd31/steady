@@ -87,7 +87,7 @@ For each distinct failure category, try to understand what went wrong using only
 the tools a real user has:
 
 1. `curl` the failing endpoint to see the actual response
-2. Check response headers for clues (`x-steady-valid`,
+2. Check response headers for clues (`x-steady-request-valid`,
    `x-steady-example-source`, `x-steady-error-count`)
 3. Read the relevant section of the OpenAPI spec
 4. Compare what the spec says vs what the mock returned

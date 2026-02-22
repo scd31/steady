@@ -371,6 +371,34 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
     seeAlso: ["E1010"],
   },
 
+  E1018: {
+    description:
+      "A response uses HTTP 204 (No Content) or 304 (Not Modified) but\n" +
+      "also defines a response body via the `content` field. RFC 9110\n" +
+      'is clear: "A server MUST NOT send content in a response with a\n' +
+      '204 status code." HTTP runtimes (Deno, browsers, Node.js)\n' +
+      "enforce this and will throw a TypeError if you try to attach a\n" +
+      "body to a 204 or 304 response.",
+    reasoning:
+      "The spec is wrong. The author chose a status code that forbids a\n" +
+      "body, then defined body content anyway. Without a workaround,\n" +
+      "mock servers crash on every request to these endpoints. Steady\n" +
+      "strips the body at runtime so the endpoint is still usable, but\n" +
+      "the spec violates HTTP semantics.",
+    example: "  /resources:\n" +
+      "    post:\n" +
+      "      responses:\n" +
+      "        '204':\n" +
+      "          description: Success\n" +
+      "          content:                # WRONG: 204 MUST NOT have body\n" +
+      "            application/json:\n" +
+      "              schema:\n" +
+      "                $ref: '#/components/schemas/Response'",
+    fix: "Change the status code to 200 if a body is intended, or remove\n" +
+      "the content field if 204 is correct.",
+    seeAlso: ["E1010"],
+  },
+
   // ── E2xxx: Routing ──────────────────────────────────────────────────
 
   E2001: {

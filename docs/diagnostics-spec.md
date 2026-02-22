@@ -600,7 +600,7 @@ Exact behavior needs validation with real SDK test scenarios.
 Current sketch (subject to change):
 
 ```http
-X-Steady-Valid: false
+X-Steady-Request-Valid: false
 X-Steady-Error-Count: 2
 X-Steady-Error-1-Code: E3008
 X-Steady-Error-1-Path: body.email
@@ -1220,10 +1220,10 @@ Discovered during real-world SDK testing (sink-python: 5135 passed, 35 failed,
    incorrect or empty response (e.g., due to the allOf merge limitation above),
    the request log shows `200 OK` with no diagnostics. The SDK test fails, but
    Steady gives no indication that the response was wrong. Every signal —
-   `x-steady-valid: true`, `x-steady-error-count: 0`, `200 OK` — tells the
-   developer their request is fine, while the response is broken. This is the
-   highest-friction issue: the developer has zero indication from Steady that
-   anything is wrong and must resort to manually curling endpoints.
+   `x-steady-request-valid: true`, `x-steady-error-count: 0`, `200 OK` — tells
+   the developer their request is fine, while the response is broken. This is
+   the highest-friction issue: the developer has zero indication from Steady
+   that anything is wrong and must resort to manually curling endpoints.
 
    Possible approaches:
    - Detect when the generator produces an empty body for a schema with required
@@ -1264,7 +1264,7 @@ Discovered during real-world SDK testing (sink-python: 5135 passed, 35 failed,
 #### Response headers and documentation
 
 6. **Undocumented `x-steady-*` headers**: Response headers like
-   `x-steady-example-source: generated`, `x-steady-valid: true`, and
+   `x-steady-example-source: generated`, `x-steady-request-valid: true`, and
    `x-steady-error-count: 0` are useful clues, but only if the developer knows
    to look for them and understands what they mean. There is no documentation in
    the output or in `--help` explaining these headers. A first-time user seeing

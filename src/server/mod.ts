@@ -359,7 +359,7 @@ export class MockServer {
         });
       }
 
-      const { response, body: responseBody, minimal } =
+      const { response, body: responseBody, minimal, nullBodyStripped } =
         generateResponseFromObject(
           this.specDoc,
           this.logger,
@@ -387,6 +387,12 @@ export class MockServer {
         this.failedCount++;
       }
 
+      const responseWarning = nullBodyStripped
+        ? "null-body-stripped"
+        : minimal
+        ? "minimal"
+        : undefined;
+
       logRequestEvent(this.config, this.logger, {
         req,
         path,
@@ -399,7 +405,7 @@ export class MockServer {
         requestBody: body,
         responseHeaders: response.headers,
         responseBody,
-        responseWarning: minimal ? "minimal" : undefined,
+        responseWarning,
       });
 
       return addDiagnosticHeaders(response, allDiagnostics);

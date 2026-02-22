@@ -709,7 +709,7 @@ Request Headers (per-request overrides):
   X-Steady-Stream-Interval-Ms: <n>  Interval between streamed items in ms (default: 100)
 
 Response Headers (informational):
-  X-Steady-Valid                   "true" if no SDK issues, "false" otherwise
+  X-Steady-Request-Valid           "true" if no SDK issues, "false" otherwise
   X-Steady-Error-Count             Number of validation diagnostics
   X-Steady-Error-N-Code            E-code for Nth diagnostic
   X-Steady-Error-N-Path            Request location (e.g., body.email)

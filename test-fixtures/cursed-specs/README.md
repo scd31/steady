@@ -23,6 +23,7 @@ When adding a cursed spec, include:
 | `duplicate-path-patterns.yaml`    | Same URL pattern with different param names | Path Templating  |
 | `duplicate-param-name.yaml`       | Same param name twice: `/a/{id}/b/{id}`     | Path Templating  |
 | `missing-responses.yaml`          | Endpoint with no responses defined          | Responses Object |
+| `no-content-with-body.yaml`       | 204 response with body schema defined       | HTTP Semantics   |
 | `question-mark-query-params.yaml` | Query param names/values containing `?`     | Parameter Object |
 
 ## Ideas for Future Curses

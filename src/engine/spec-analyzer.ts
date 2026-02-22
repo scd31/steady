@@ -68,6 +68,7 @@ export function analyzeSpec(
   diagnostics.push(...checkMissingResponses(spec));
   diagnostics.push(...checkInvalidComponentNames(spec));
   diagnostics.push(...checkRedirectsWithoutLocation(spec));
+  diagnostics.push(...checkNullBodyWithContent(spec));
   timer?.stop("structural");
 
   // Single tree walk collects $ref info and schema pointers
@@ -577,6 +578,59 @@ function checkRedirectsWithoutLocation(spec: OpenAPIRaw): Diagnostic[] {
             ),
           );
         }
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
+// ── E1018: Null-body status code with response content ──────────────
+
+/** Status codes that MUST NOT have a response body per HTTP semantics. */
+const NULL_BODY_STATUSES = new Set(["204", "304"]);
+
+function checkNullBodyWithContent(spec: OpenAPIRaw): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  for (const [path, pathItem] of Object.entries(spec.paths)) {
+    if (!pathItem) continue;
+
+    for (const method of HTTP_METHODS) {
+      const operation = pathItem[method];
+      if (!operation?.responses) continue;
+
+      for (
+        const [statusCode, responseOrRef] of Object.entries(
+          operation.responses,
+        )
+      ) {
+        if (!NULL_BODY_STATUSES.has(statusCode)) continue;
+
+        // Resolve $ref if needed
+        const responseObj = isObject(responseOrRef) && "$ref" in responseOrRef
+          ? resolveLocalRef(
+            spec,
+            (responseOrRef as { $ref: string }).$ref,
+          )
+          : responseOrRef;
+        if (!isObject(responseObj)) continue;
+
+        // Check if content is defined and non-empty
+        const content = responseObj.content;
+        if (!isObject(content) || Object.keys(content).length === 0) continue;
+
+        diagnostics.push(
+          specDiagnostic(
+            "E1018",
+            `#/paths/${escapeSegment(path)}/${method}/responses/${statusCode}`,
+            `${statusCode} response on ${method.toUpperCase()} ${path} defines body content, but HTTP ${statusCode} must not have a body`,
+            {
+              suggestion:
+                `Remove the content field from the ${statusCode} response. Steady will strip the body at runtime to avoid crashes`,
+            },
+          ),
+        );
       }
     }
   }

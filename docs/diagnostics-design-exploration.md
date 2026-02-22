@@ -191,7 +191,7 @@ Content-Type: application/json
 X-Steady-Mode: strict
 
 # Validation result
-X-Steady-Valid: false
+X-Steady-Request-Valid: false
 X-Steady-Result: failed
 X-Steady-Error-Count: 2
 

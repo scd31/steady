@@ -46,6 +46,7 @@ export type ECode =
   | "E1015"
   | "E1016"
   | "E1017"
+  | "E1018"
   // E2xxx: Routing
   | "E2001"
   | "E2002"
@@ -185,6 +186,12 @@ const CODES: Record<ECode, ECodeDefinition> = {
   },
   E1017: {
     title: "Redirect without Location header",
+    severity: "warning",
+    category: "spec-issue",
+    context: "startup",
+  },
+  E1018: {
+    title: "Null-body status with response content",
     severity: "warning",
     category: "spec-issue",
     context: "startup",

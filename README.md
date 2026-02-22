@@ -237,7 +237,7 @@ Informational headers returned by the server:
 
 | Header                    | Description                                           |
 | ------------------------- | ----------------------------------------------------- |
-| `X-Steady-Valid`          | Whether the request passed SDK validation             |
+| `X-Steady-Request-Valid`  | Whether the request passed SDK validation             |
 | `X-Steady-Error-Count`    | Number of diagnostic issues found                     |
 | `X-Steady-Matched-Path`   | The OpenAPI path pattern that matched                 |
 | `X-Steady-Example-Source` | How the response was generated: `generated` or `none` |

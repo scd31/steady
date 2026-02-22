@@ -50,20 +50,21 @@ async function withServer(
 // =============================================================================
 
 Deno.test({
-  name: "Server: X-Steady-Valid is true for valid request",
+  name: "Server: X-Steady-Request-Valid is true for valid request",
   ...serverTestOpts,
 }, async () => {
   await withServer({}, async (_server, baseUrl) => {
     const response = await fetch(`${baseUrl}/users`);
     assertEquals(response.status, 200);
-    assertEquals(response.headers.get("X-Steady-Valid"), "true");
+    assertEquals(response.headers.get("X-Steady-Request-Valid"), "true");
     assertEquals(response.headers.get("X-Steady-Error-Count"), "0");
     await response.body?.cancel();
   });
 });
 
 Deno.test({
-  name: "Server: X-Steady-Valid is false when body has missing required field",
+  name:
+    "Server: X-Steady-Request-Valid is false when body has missing required field",
   ...serverTestOpts,
 }, async () => {
   await withServer({}, async (_server, baseUrl) => {
@@ -74,7 +75,7 @@ Deno.test({
     });
     // Mock response returned. Validation issues reported in headers only.
     assertEquals(response.status, 201);
-    assertEquals(response.headers.get("X-Steady-Valid"), "false");
+    assertEquals(response.headers.get("X-Steady-Request-Valid"), "false");
 
     const errorCount = parseInt(
       response.headers.get("X-Steady-Error-Count") ?? "0",
@@ -95,7 +96,7 @@ Deno.test({
   await withServer({}, async (_server, baseUrl) => {
     const response = await fetch(`${baseUrl}/nonexistent`);
     assertEquals(response.status, 404);
-    assertExists(response.headers.get("X-Steady-Valid"));
+    assertExists(response.headers.get("X-Steady-Request-Valid"));
     assertExists(response.headers.get("X-Steady-Error-Count"));
     await response.body?.cancel();
   });
@@ -348,7 +349,7 @@ Deno.test({
       body: JSON.stringify({ name: "Alice" }),
     });
     assertEquals(response.status, 201);
-    assertEquals(response.headers.get("X-Steady-Valid"), "false");
+    assertEquals(response.headers.get("X-Steady-Request-Valid"), "false");
     await response.body?.cancel();
   });
 });
@@ -414,7 +415,7 @@ Deno.test({
       });
       // Header disables rejection, so mock response returned
       assertEquals(response.status, 201);
-      assertEquals(response.headers.get("X-Steady-Valid"), "false");
+      assertEquals(response.headers.get("X-Steady-Request-Valid"), "false");
       await response.body?.cancel();
     },
   );
@@ -437,14 +438,14 @@ Deno.test({
 
 Deno.test({
   name:
-    "Server: missing required header returns mock with X-Steady-Valid: false",
+    "Server: missing required header returns mock with X-Steady-Request-Valid: false",
   ...serverTestOpts,
 }, async () => {
   await withServer({}, async (_server, baseUrl) => {
     // Missing required X-API-Key header. Engine produces E3004 (sdk-issue).
     const response = await fetch(`${baseUrl}/items`);
     assertEquals(response.status, 200);
-    assertEquals(response.headers.get("X-Steady-Valid"), "false");
+    assertEquals(response.headers.get("X-Steady-Request-Valid"), "false");
     await response.body?.cancel();
   });
 });
