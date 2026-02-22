@@ -47,6 +47,7 @@ export type ECode =
   | "E1016"
   | "E1017"
   | "E1018"
+  | "E1019"
   // E2xxx: Routing
   | "E2001"
   | "E2002"
@@ -193,6 +194,12 @@ const CODES: Record<ECode, ECodeDefinition> = {
   E1018: {
     title: "Null-body status with response content",
     severity: "warning",
+    category: "spec-issue",
+    context: "startup",
+  },
+  E1019: {
+    title: "No success response defined",
+    severity: "error",
     category: "spec-issue",
     context: "startup",
   },

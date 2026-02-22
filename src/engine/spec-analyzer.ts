@@ -69,6 +69,7 @@ export function analyzeSpec(
   diagnostics.push(...checkInvalidComponentNames(spec));
   diagnostics.push(...checkRedirectsWithoutLocation(spec));
   diagnostics.push(...checkNullBodyWithContent(spec));
+  diagnostics.push(...checkNoSuccessResponse(spec));
   timer?.stop("structural");
 
   // Single tree walk collects $ref info and schema pointers
@@ -588,7 +589,7 @@ function checkRedirectsWithoutLocation(spec: OpenAPIRaw): Diagnostic[] {
 // ── E1018: Null-body status code with response content ──────────────
 
 /** Status codes that MUST NOT have a response body per HTTP semantics. */
-const NULL_BODY_STATUSES = new Set(["204", "304"]);
+const NULL_BODY_STATUSES = new Set(["101", "204", "205", "304"]);
 
 function checkNullBodyWithContent(spec: OpenAPIRaw): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
@@ -628,6 +629,46 @@ function checkNullBodyWithContent(spec: OpenAPIRaw): Diagnostic[] {
             {
               suggestion:
                 `Remove the content field from the ${statusCode} response. Steady will strip the body at runtime to avoid crashes`,
+            },
+          ),
+        );
+      }
+    }
+  }
+
+  return diagnostics;
+}
+
+// ── E1019: No success response defined ──────────────────────────────
+
+function checkNoSuccessResponse(spec: OpenAPIRaw): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  for (const [path, pathItem] of Object.entries(spec.paths)) {
+    if (!pathItem) continue;
+
+    for (const method of HTTP_METHODS) {
+      const operation = pathItem[method];
+      if (!operation?.responses) continue;
+
+      const statusCodes = Object.keys(operation.responses);
+      const hasSuccess = statusCodes.some((code) => {
+        if (code === "default") return false;
+        const num = parseInt(code, 10);
+        return num >= 200 && num < 300;
+      });
+
+      if (!hasSuccess) {
+        diagnostics.push(
+          specDiagnostic(
+            "E1019",
+            `#/paths/${escapeSegment(path)}/${method}/responses`,
+            `${method.toUpperCase()} ${path} has no 2xx success response (only ${
+              statusCodes.join(", ")
+            }). Mock server will return an error status for valid requests`,
+            {
+              suggestion:
+                "Add a 200 or 201 response to define the expected success behavior",
             },
           ),
         );

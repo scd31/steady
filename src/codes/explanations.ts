@@ -373,12 +373,12 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
 
   E1018: {
     description:
-      "A response uses HTTP 204 (No Content) or 304 (Not Modified) but\n" +
-      "also defines a response body via the `content` field. RFC 9110\n" +
-      'is clear: "A server MUST NOT send content in a response with a\n' +
-      '204 status code." HTTP runtimes (Deno, browsers, Node.js)\n' +
-      "enforce this and will throw a TypeError if you try to attach a\n" +
-      "body to a 204 or 304 response.",
+      "A response uses a null-body status code (101, 204, 205, or 304)\n" +
+      "but also defines a response body via the `content` field.\n" +
+      'RFC 9110 is clear: "A server MUST NOT send content in a response\n' +
+      'with a 204 status code." The same applies to 101, 205, and 304.\n' +
+      "HTTP runtimes (Deno, browsers, Node.js) enforce this and will\n" +
+      "throw a TypeError if you try to attach a body to these responses.",
     reasoning:
       "The spec is wrong. The author chose a status code that forbids a\n" +
       "body, then defined body content anyway. Without a workaround,\n" +
@@ -388,14 +388,36 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
     example: "  /resources:\n" +
       "    post:\n" +
       "      responses:\n" +
-      "        '204':\n" +
-      "          description: Success\n" +
-      "          content:                # WRONG: 204 MUST NOT have body\n" +
+      "        '205':\n" +
+      "          description: Reset Content\n" +
+      "          content:                # WRONG: 205 MUST NOT have body\n" +
       "            application/json:\n" +
       "              schema:\n" +
       "                $ref: '#/components/schemas/Response'",
     fix: "Change the status code to 200 if a body is intended, or remove\n" +
-      "the content field if 204 is correct.",
+      "the content field if the null-body status is correct.",
+    seeAlso: ["E1010"],
+  },
+
+  E1019: {
+    description:
+      "An operation defines only error responses (4xx, 5xx) or `default`,\n" +
+      "with no 2xx success status code. The mock server has no success\n" +
+      "response to return, so it picks the first defined status (often 500),\n" +
+      "making every valid request look like a server error.",
+    reasoning:
+      "OpenAPI requires a responses object with at least one response code.\n" +
+      "Without a 2xx response, there is no way for a mock server to\n" +
+      "signal success. This is almost always a spec authoring oversight.",
+    example: "  /delivery-option:\n" +
+      "    post:\n" +
+      "      responses:\n" +
+      "        '500':               # Only error code defined\n" +
+      "          description: Internal Server error\n" +
+      "        default:\n" +
+      "          description: Unexpected error",
+    fix: "Add a 200 or appropriate 2xx response to define the expected\n" +
+      "success behavior for the operation.",
     seeAlso: ["E1010"],
   },
 

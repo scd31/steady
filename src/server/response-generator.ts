@@ -24,6 +24,9 @@ import {
   type StreamingOptions,
 } from "../streaming.ts";
 
+/** Status codes that MUST NOT have a response body (101, 204, 205, 304). */
+const NULL_BODY_STATUS_STRINGS = new Set(["101", "204", "205", "304"]);
+
 /**
  * Parse Accept header into array of media types, sorted by quality value (q).
  * Returns types in preference order (highest q first).
@@ -202,10 +205,10 @@ export function generateResponseFromObject(
       }
     }
   } else if (
-    acceptsJson(acceptTypes) && statusCode !== "204" && statusCode !== "304"
+    acceptsJson(acceptTypes) && !NULL_BODY_STATUS_STRINGS.has(statusCode)
   ) {
     // No content defined in spec, but client accepts JSON - return empty object
-    // (except for 204/304 which must not have a body)
+    // (except for null-body statuses which must not have a body)
     contentType = "application/json";
     body = {};
   }
@@ -226,9 +229,9 @@ export function generateResponseFromObject(
     headers.set("Location", location);
   }
 
-  // Null-body status codes (204, 304) must not have a body per HTTP semantics.
+  // Null-body status codes must not have a body per HTTP semantics.
   // Some specs incorrectly define content for these. Strip it to avoid crashes.
-  const isNullBodyStatus = numericStatus === 204 || numericStatus === 304;
+  const isNullBodyStatus = NULL_BODY_STATUS_STRINGS.has(statusCode);
   if (isNullBodyStatus && body !== null) {
     body = null;
     contentType = null;
