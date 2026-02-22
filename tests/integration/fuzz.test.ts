@@ -32,6 +32,7 @@ async function withServer(
   const server = new MockServer(spec, {
     port,
     host: "localhost",
+    quiet: true,
     logLevel: "summary",
   });
 
