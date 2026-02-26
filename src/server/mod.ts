@@ -19,7 +19,7 @@ import {
   VERSION,
 } from "../types.ts";
 import type { OpenAPIRaw } from "@steady/openapi";
-import { MatchError } from "../errors.ts";
+import { GenerationError } from "../errors.ts";
 import { SchemaRegistry } from "@steady/json-schema";
 import type { DocIndex } from "@steady/json-schema";
 import type { Logger } from "../logging/logger.ts";
@@ -391,10 +391,10 @@ export class MockServer {
         statusCode,
       );
       if (!responseObj) {
-        throw new MatchError("Response not defined", {
+        throw new GenerationError("Response not defined", {
           httpPath: path,
           httpMethod: method.toUpperCase(),
-          errorType: "match",
+          errorType: "generate",
           reason: `No response defined for status code ${statusCode}`,
           suggestion: `Available response codes: ${
             Object.keys(operation.responses).join(", ")

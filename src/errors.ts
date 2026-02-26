@@ -23,20 +23,3 @@ export class GenerationError extends SteadyError {
     this.name = "GenerationError";
   }
 }
-
-/**
- * Route matching error - could be SDK or spec issue
- */
-export class MatchError extends SteadyError {
-  readonly source: ErrorSource;
-
-  constructor(
-    message: string,
-    context: ErrorContext,
-    source: ErrorSource = "unknown",
-  ) {
-    super(message, { ...context, errorType: "match" });
-    this.name = "MatchError";
-    this.source = source;
-  }
-}
