@@ -94,7 +94,7 @@ export class MockServer {
     // Single document facade: all $ref resolution flows through here
     timer?.start("diagnostics-engine");
     this.specDoc = new OpenAPISpec(registry);
-    const treeValidator = new TreeValidator({ registry });
+    const treeValidator = new TreeValidator({ registry, direction: "request" });
     this.diagnosticEngine = new DiagnosticEngine(this.specDoc, treeValidator);
     timer?.stop("diagnostics-engine");
 

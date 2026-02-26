@@ -164,3 +164,33 @@ Deno.test("parseRequestBody - DELETE without body returns undefined", async () =
     assertEquals(result.body, undefined);
   }
 });
+
+Deno.test("parseRequestBody - DELETE with empty ReadableStream body and no content-type returns undefined", async () => {
+  // Deno's HTTP server sets req.body to a ReadableStream even for bodyless
+  // requests (unlike new Request() which sets it to null). The body parser
+  // must not treat this as a JSON request with an empty body.
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.close();
+    },
+  });
+  const req = new Request("http://localhost/test", {
+    method: "DELETE",
+    body: stream,
+  });
+  // Remove Content-Type that Request constructor may add
+  const headers = new Headers(req.headers);
+  headers.delete("content-type");
+  const cleanReq = new Request(req.url, {
+    method: req.method,
+    headers,
+    body: stream,
+  });
+
+  const result = await parseRequestBody(cleanReq, null);
+
+  assertEquals(isParseError(result), false, "Should not be a parse error");
+  if (!isParseError(result)) {
+    assertEquals(result.body, undefined);
+  }
+});

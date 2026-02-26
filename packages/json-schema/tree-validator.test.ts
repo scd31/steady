@@ -621,4 +621,100 @@ Deno.test("TreeValidator", async (t) => {
     const tree = validate(schema, "hello");
     assertEquals(tree.valid, true);
   });
+
+  // ── direction-aware required (readOnly / writeOnly) ───────────
+
+  await t.step(
+    "direction=request: readOnly property skipped from required",
+    () => {
+      const v = new TreeValidator({ direction: "request" });
+      const schema: Schema = {
+        type: "object",
+        required: ["id", "name"],
+        properties: {
+          id: { type: "string", readOnly: true },
+          name: { type: "string" },
+        },
+      };
+      const tree = v.validate({ name: "Alice" }, schema, "#/schema", ["body"]);
+      assertEquals(tree.valid, true);
+    },
+  );
+
+  await t.step(
+    "direction=request: non-readOnly property still required",
+    () => {
+      const v = new TreeValidator({ direction: "request" });
+      const schema: Schema = {
+        type: "object",
+        required: ["id", "name"],
+        properties: {
+          id: { type: "string", readOnly: true },
+          name: { type: "string" },
+        },
+      };
+      const tree = v.validate({ id: "123" }, schema, "#/schema", ["body"]);
+      assertEquals(tree.valid, false);
+      const leaf = tree.children?.[0];
+      assertEquals(leaf?.keyword, "required");
+      assertEquals(leaf?.field, "name");
+    },
+  );
+
+  await t.step(
+    "direction=response: writeOnly property skipped from required",
+    () => {
+      const v = new TreeValidator({ direction: "response" });
+      const schema: Schema = {
+        type: "object",
+        required: ["password", "username"],
+        properties: {
+          password: { type: "string", writeOnly: true },
+          username: { type: "string" },
+        },
+      };
+      const tree = v.validate({ username: "alice" }, schema, "#/schema", [
+        "body",
+      ]);
+      assertEquals(tree.valid, true);
+    },
+  );
+
+  await t.step("no direction: readOnly property still required", () => {
+    const schema: Schema = {
+      type: "object",
+      required: ["id", "name"],
+      properties: {
+        id: { type: "string", readOnly: true },
+        name: { type: "string" },
+      },
+    };
+    const tree = validate(schema, { name: "Alice" });
+    assertEquals(tree.valid, false);
+  });
+
+  await t.step("direction=request: nested readOnly property skipped", () => {
+    const v = new TreeValidator({ direction: "request" });
+    const schema: Schema = {
+      type: "object",
+      required: ["address"],
+      properties: {
+        address: {
+          type: "object",
+          required: ["id", "street"],
+          properties: {
+            id: { type: "string", readOnly: true },
+            street: { type: "string" },
+          },
+        },
+      },
+    };
+    const tree = v.validate(
+      { address: { street: "123 Main" } },
+      schema,
+      "#/schema",
+      ["body"],
+    );
+    assertEquals(tree.valid, true);
+  });
 });

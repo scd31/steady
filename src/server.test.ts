@@ -73,8 +73,8 @@ Deno.test({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "Alice" }),
     });
-    // Mock response returned. Validation issues reported in headers only.
-    assertEquals(response.status, 201);
+    // Default rejects invalid requests with 400
+    assertEquals(response.status, 400);
     assertEquals(response.headers.get("X-Steady-Request-Valid"), "false");
 
     const errorCount = parseInt(
@@ -338,11 +338,12 @@ Deno.test({
 // =============================================================================
 
 Deno.test({
-  name: "Server: default returns mock response for validation failures",
+  name:
+    "Server: rejectOnSdkError=false returns mock response for validation failures",
   ...serverTestOpts,
 }, async () => {
-  await withServer({}, async (_server, baseUrl) => {
-    // Missing required 'email' field, but default is to always mock
+  await withServer({ rejectOnSdkError: false }, async (_server, baseUrl) => {
+    // Missing required 'email' field, permissive mode returns mock
     const response = await fetch(`${baseUrl}/users`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -355,33 +356,31 @@ Deno.test({
 });
 
 Deno.test({
-  name: "Server: reject-on-sdk-error returns 400 with steady.errors format",
+  name: "Server: default rejects invalid requests with 400 and steady.errors",
   ...serverTestOpts,
 }, async () => {
-  await withServer(
-    { rejectOnSdkError: true },
-    async (_server, baseUrl) => {
-      const response = await fetch(`${baseUrl}/users`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "Alice" }),
-      });
-      assertEquals(response.status, 400);
+  await withServer({}, async (_server, baseUrl) => {
+    const response = await fetch(`${baseUrl}/users`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Alice" }),
+    });
+    assertEquals(response.status, 400);
 
-      const data = await response.json();
-      assertEquals(data.error, "Validation failed");
-      assertExists(data.steady);
-      assertEquals(data.steady.valid, false);
-      assertExists(data.steady.errors);
-      assertEquals(Array.isArray(data.steady.errors), true);
-      assertEquals(data.steady.errors.length > 0, true);
-      assertExists(data.steady.errors[0].code);
-    },
-  );
+    const data = await response.json();
+    assertEquals(data.error, "Validation failed");
+    assertExists(data.steady);
+    assertEquals(data.steady.valid, false);
+    assertExists(data.steady.errors);
+    assertEquals(Array.isArray(data.steady.errors), true);
+    assertEquals(data.steady.errors.length > 0, true);
+    assertExists(data.steady.errors[0].code);
+  });
 });
 
 Deno.test({
-  name: "Server: X-Steady-Reject-On-Error header overrides default to reject",
+  name:
+    "Server: X-Steady-Reject-On-Error: false header overrides default to allow",
   ...serverTestOpts,
 }, async () => {
   await withServer({}, async (_server, baseUrl) => {
@@ -389,21 +388,24 @@ Deno.test({
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Steady-Reject-On-Error": "true",
+        "X-Steady-Reject-On-Error": "false",
       },
       body: JSON.stringify({ name: "Alice" }),
     });
-    assertEquals(response.status, 400);
+    // Header disables rejection, so mock response returned despite default
+    assertEquals(response.status, 201);
+    assertEquals(response.headers.get("X-Steady-Request-Valid"), "false");
     await response.body?.cancel();
   });
 });
 
 Deno.test({
-  name: "Server: X-Steady-Reject-On-Error: false overrides server setting",
+  name:
+    "Server: X-Steady-Reject-On-Error: false overrides default reject behavior",
   ...serverTestOpts,
 }, async () => {
   await withServer(
-    { rejectOnSdkError: true },
+    {},
     async (_server, baseUrl) => {
       const response = await fetch(`${baseUrl}/users`, {
         method: "POST",
@@ -426,10 +428,11 @@ Deno.test({
 // =============================================================================
 
 Deno.test({
-  name: "Server: invalid path param returns mock response by default",
+  name:
+    "Server: rejectOnSdkError=false returns mock response for invalid path param",
   ...serverTestOpts,
 }, async () => {
-  await withServer({}, async (_server, baseUrl) => {
+  await withServer({ rejectOnSdkError: false }, async (_server, baseUrl) => {
     const response = await fetch(`${baseUrl}/users/not-a-number`);
     assertEquals(response.status, 200);
     await response.body?.cancel();
@@ -438,10 +441,10 @@ Deno.test({
 
 Deno.test({
   name:
-    "Server: missing required header returns mock with X-Steady-Request-Valid: false",
+    "Server: rejectOnSdkError=false returns mock with X-Steady-Request-Valid: false for missing header",
   ...serverTestOpts,
 }, async () => {
-  await withServer({}, async (_server, baseUrl) => {
+  await withServer({ rejectOnSdkError: false }, async (_server, baseUrl) => {
     // Missing required X-API-Key header. Engine produces E3004 (sdk-issue).
     const response = await fetch(`${baseUrl}/items`);
     assertEquals(response.status, 200);
@@ -451,11 +454,11 @@ Deno.test({
 });
 
 Deno.test({
-  name: "Server: reject-on-sdk-error returns 400 for missing required header",
+  name: "Server: default rejects missing required header with 400",
   ...serverTestOpts,
 }, async () => {
   await withServer(
-    { rejectOnSdkError: true },
+    {},
     async (_server, baseUrl) => {
       const response = await fetch(`${baseUrl}/items`);
       assertEquals(response.status, 400);
@@ -526,11 +529,12 @@ Deno.test(
 // =============================================================================
 
 Deno.test({
-  name: "Server: returns mock response despite validation errors by default",
+  name:
+    "Server: rejectOnSdkError=false returns mock response despite validation errors",
   ...serverTestOpts,
 }, async () => {
-  await withServer({}, async (_server, baseUrl) => {
-    // Invalid path param. Default always returns mock + diagnostic headers.
+  await withServer({ rejectOnSdkError: false }, async (_server, baseUrl) => {
+    // Invalid path param. Permissive mode returns mock + diagnostic headers.
     const response = await fetch(`${baseUrl}/users/not-a-number`);
     assertEquals(response.status, 200);
 
@@ -589,19 +593,20 @@ Deno.test(
 
 Deno.test(
   {
-    name: "Server: wrong Content-Type returns mock with diagnostic headers",
+    name:
+      "Server: rejectOnSdkError=false returns mock with diagnostic headers for wrong Content-Type",
     ...serverTestOpts,
   },
   async () => {
-    await withServer({}, async (_server, baseUrl) => {
-      // Wrong content-type. Default always mocks.
+    await withServer({ rejectOnSdkError: false }, async (_server, baseUrl) => {
+      // Wrong content-type. Permissive mode returns mock + diagnostic headers.
       const response = await fetch(`${baseUrl}/users`, {
         method: "POST",
         headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({ name: "Alice", email: "alice@example.com" }),
       });
 
-      // Default behavior: mock response + diagnostic headers
+      // Permissive mode: mock response + diagnostic headers
       assertEquals(response.status, 201);
       await response.body?.cancel();
     });

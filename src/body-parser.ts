@@ -44,8 +44,10 @@ export async function parseRequestBody(
   req: Request,
   _acceptedContentTypes: string[] | null,
 ): Promise<ParseResult> {
-  // No Content-Type and no body means no body to parse
-  if (!req.headers.get("content-type") && !req.body) {
+  // No Content-Type means no body to parse. Deno's HTTP server may set
+  // req.body to an empty ReadableStream even for bodyless requests, so we
+  // cannot rely on !req.body alone.
+  if (!req.headers.get("content-type")) {
     return { body: undefined, contentType: "" };
   }
 
@@ -79,7 +81,7 @@ export async function parseRequestBody(
     }
   }
 
-  const contentType = req.headers.get("content-type") || "application/json";
+  const contentType = req.headers.get("content-type") ?? "";
   const mediaType = getMediaType(contentType);
 
   try {

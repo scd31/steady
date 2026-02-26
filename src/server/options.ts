@@ -20,7 +20,7 @@ export function getRejectOnSdkError(
   const headerValue = req.headers.get(HEADERS.REJECT_ON_ERROR);
   if (headerValue === "true") return true;
   if (headerValue === "false") return false;
-  return config.rejectOnSdkError ?? false;
+  return config.rejectOnSdkError ?? true;
 }
 
 /**

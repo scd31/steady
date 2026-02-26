@@ -52,7 +52,7 @@ export function logStartup(
     },
     server: {
       url: `http://${config.host}:${config.port}`,
-      rejectOnSdkError: config.rejectOnSdkError ?? false,
+      rejectOnSdkError: config.rejectOnSdkError ?? true,
     },
     specPath: config.specPath,
     diagnostics: startupDiags,

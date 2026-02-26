@@ -11,6 +11,7 @@ import type { ResolvedParameter } from "./diagnostic-engine.ts";
 import {
   coerceScalar,
   deepCoerce,
+  deserializeNonQueryParam,
   getExpectedQueryKeys,
   isArraySchema,
   isObjectSchema,
@@ -522,4 +523,101 @@ Deno.test("getExpectedQueryKeys: non-query params excluded", () => {
   const { known } = getExpectedQueryKeys(params, "auto", "auto");
   assertEquals(known.has("limit"), true);
   assertEquals(known.has("X-Api-Key"), false);
+});
+
+// ── deserializeNonQueryParam ──────────────────────────────────────
+
+Deno.test("deserializeNonQueryParam: header array splits comma-separated values", () => {
+  const param = makeParam({
+    name: "X-Flags",
+    in: "header",
+    schema: { type: "array", items: { type: "string" } },
+  });
+  assertEquals(deserializeNonQueryParam("F1, F2", param), ["F1", "F2"]);
+});
+
+Deno.test("deserializeNonQueryParam: header array coerces integer items", () => {
+  const param = makeParam({
+    name: "X-Ids",
+    in: "header",
+    schema: { type: "array", items: { type: "integer" } },
+  });
+  assertEquals(deserializeNonQueryParam("1,2,3", param), [1, 2, 3]);
+});
+
+Deno.test("deserializeNonQueryParam: header object explode=false parses alternating key,value", () => {
+  const param = makeParam({
+    name: "X-Color",
+    in: "header",
+    schema: {
+      type: "object",
+      properties: {
+        R: { type: "integer" },
+        G: { type: "integer" },
+        B: { type: "integer" },
+      },
+    },
+  });
+  assertEquals(deserializeNonQueryParam("R,100,G,200,B,150", param), {
+    R: 100,
+    G: 200,
+    B: 150,
+  });
+});
+
+Deno.test("deserializeNonQueryParam: header object explode=true parses key=value pairs", () => {
+  const param = makeParam({
+    name: "X-Color",
+    in: "header",
+    explode: true,
+    schema: {
+      type: "object",
+      properties: {
+        R: { type: "integer" },
+        G: { type: "integer" },
+        B: { type: "integer" },
+      },
+    },
+  });
+  assertEquals(deserializeNonQueryParam("R=100,G=200,B=150", param), {
+    R: 100,
+    G: 200,
+    B: 150,
+  });
+});
+
+Deno.test("deserializeNonQueryParam: header scalar coerces type", () => {
+  const param = makeParam({
+    name: "X-Count",
+    in: "header",
+    schema: { type: "integer" },
+  });
+  assertEquals(deserializeNonQueryParam("42", param), 42);
+});
+
+Deno.test("deserializeNonQueryParam: path array splits comma-separated", () => {
+  const param = makeParam({
+    name: "ids",
+    in: "path",
+    schema: { type: "array", items: { type: "integer" } },
+  });
+  assertEquals(deserializeNonQueryParam("1,2,3", param), [1, 2, 3]);
+});
+
+Deno.test("deserializeNonQueryParam: cookie array splits comma-separated", () => {
+  const param = makeParam({
+    name: "prefs",
+    in: "cookie",
+    schema: { type: "array", items: { type: "string" } },
+  });
+  assertEquals(deserializeNonQueryParam("a,b,c", param), ["a", "b", "c"]);
+});
+
+Deno.test("deserializeNonQueryParam: boolean schema returns raw string", () => {
+  const param = makeParam({
+    name: "X-Custom",
+    in: "header",
+    schema: true as unknown as null,
+  });
+  assertEquals(deserializeNonQueryParam("anything", param), "anything");
 });

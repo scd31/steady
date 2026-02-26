@@ -12,6 +12,7 @@ import { assertEquals } from "@std/assert";
 import { assertSnapshot } from "@std/testing/snapshot";
 import { parseSpecFromFile } from "../../packages/openapi/mod.ts";
 import { MockServer } from "../../src/server/mod.ts";
+import type { ServerConfig } from "../../src/types.ts";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ interface ServerContext {
 
 async function withServer(
   fn: (ctx: ServerContext) => Promise<void>,
-  opts?: { validator?: { queryObjectFormat?: "brackets" | "dots" } },
+  opts?: Partial<Omit<ServerConfig, "port" | "host" | "logLevel">>,
 ): Promise<void> {
   const port = nextPort++;
   const { spec } = await parseSpecFromFile(SPEC_PATH);
@@ -91,7 +92,7 @@ Deno.test({
         headers: { "Content-Type": "application/json" },
         body: '"not a number"',
       });
-      assertEquals(response.status, 200);
+      assertEquals(response.status, 400);
       await assertSnapshot(t, diagnosticHeaders(response));
       await response.text();
     });
@@ -145,7 +146,7 @@ Deno.test({
           body: "{}",
         },
       );
-      assertEquals(response.status, 200);
+      assertEquals(response.status, 400);
       await assertSnapshot(t, diagnosticHeaders(response));
       await response.text();
     });
@@ -163,7 +164,7 @@ Deno.test({
         headers: { "Content-Type": "application/json" },
         body: "{}",
       });
-      assertEquals(response.status !== 404, true);
+      assertEquals(response.status, 400);
       await assertSnapshot(t, diagnosticHeaders(response));
       await response.text();
     });
@@ -187,7 +188,7 @@ Deno.test({
           }),
         },
       );
-      assertEquals(response.status !== 404, true);
+      assertEquals(response.status, 400);
       await assertSnapshot(t, diagnosticHeaders(response));
       await response.text();
     });
@@ -315,7 +316,7 @@ Deno.test({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify([{ foo: "item1" }]),
       });
-      assertEquals(response.status !== 404, true);
+      assertEquals(response.status, 400);
       await assertSnapshot(t, diagnosticHeaders(response));
       await response.text();
     });
@@ -352,7 +353,7 @@ Deno.test({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ optionalNullable: "test" }),
       });
-      assertEquals(response.status !== 404, true);
+      assertEquals(response.status, 400);
       await assertSnapshot(t, diagnosticHeaders(response));
       await response.text();
     });
@@ -440,7 +441,7 @@ Deno.test({
   fn: async (t) => {
     await withServer(async (ctx) => {
       const response = await ctx.fetch("/search?q=test&status=invalid");
-      assertEquals(response.status, 200);
+      assertEquals(response.status, 400);
       await assertSnapshot(t, diagnosticHeaders(response));
       await response.text();
     });
@@ -473,7 +474,7 @@ Deno.test({
   fn: async (t) => {
     await withServer(async (ctx) => {
       const response = await ctx.fetch("/session");
-      assertEquals(response.status, 200);
+      assertEquals(response.status, 400);
       await assertSnapshot(t, diagnosticHeaders(response));
       await response.text();
     });

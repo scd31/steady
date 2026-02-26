@@ -143,6 +143,7 @@ export async function main() {
     default: {
       "log-level": "summary",
       "log-format": "text",
+      "reject-on-sdk-error": true,
     },
   });
 
@@ -210,8 +211,8 @@ export async function main() {
   const logFormat: LogFormat = rawLogFormat;
   const portOverride = args.port ? parseInt(args.port, 10) : undefined;
 
-  // Determine reject-on-sdk-error
-  const rejectOnSdkError = args["reject-on-sdk-error"] ?? false;
+  // Determine reject-on-sdk-error (default: true)
+  const rejectOnSdkError = args["reject-on-sdk-error"];
 
   // Validate query format args
   const queryArrayFormat = args["validator-query-array-format"] as
@@ -637,7 +638,7 @@ Options:
   --log-format <format>    Output format: text|json|ci (default: text, auto-detects CI)
   --log-bodies             Show request/response bodies in summary mode
   -q, --quiet              Suppress per-request logging (startup/shutdown still print)
-  --reject-on-sdk-error    Return 400 for SDK issues (E3xxx) instead of mock response
+  --reject-on-sdk-error    Return 400 for SDK issues (E3xxx) instead of mock response (default: true)
   --fail-on-ambiguous      Exit 1 if any ambiguous diagnostics found (CI mode)
   --fail-on-warnings       Exit 1 if any warning-level diagnostics found (CI mode)
   --no-color               Disable colored output (also respects NO_COLOR env)
@@ -727,7 +728,7 @@ Examples:
   steady --log-level=details api.yaml      # Show detailed logs
   steady --log-format=json api.yaml        # NDJSON output for CI
   steady --log-bodies api.yaml             # Show bodies in summary mode
-  steady --reject-on-sdk-error api.yaml    # 400 for SDK issues
+  steady --reject-on-sdk-error=false api.yaml  # Allow invalid requests through
   steady -r api.yaml                       # Auto-reload on file changes
 
 `);

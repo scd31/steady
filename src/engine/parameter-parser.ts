@@ -93,6 +93,81 @@ export function coerceScalar(raw: string, schema: Schema): unknown {
   return raw;
 }
 
+// ── Non-query parameter deserialization ────────────────────────────
+
+/**
+ * Deserialize a non-query parameter (header, path, cookie) value.
+ *
+ * Unlike query/form params which have multiple serialization formats
+ * (repeat, comma, pipe, brackets, etc.), non-query params are always
+ * comma-separated per the OpenAPI spec and HTTP standards:
+ *
+ * - Headers: restricted to style=simple (OpenAPI 3.x spec, "Style Values" table)
+ * - Path: defaults to style=simple (label/matrix exist but are rare)
+ * - Cookies: restricted to style=form (single string value)
+ *
+ * HTTP itself constrains header values to comma-separated lists (RFC 9110
+ * Section 5.3). Every major SDK generator (OpenAPI Generator, Speakeasy,
+ * Swagger Codegen) uses .join(",") for header arrays. API gateways (Kong,
+ * AWS API Gateway, Apigee) all treat header arrays as comma-separated.
+ * No real-world APIs use pipe, space, or bracket formats for headers.
+ *
+ * No user-configurable format flags are needed here (unlike query params)
+ * because there is only one valid serialization.
+ *
+ * Serialization per OpenAPI 3.x spec:
+ *   Array  (any explode):    "blue,black,brown"
+ *   Object (explode=false):  "R,100,G,200,B,150"
+ *   Object (explode=true):   "R=100,G=200,B=150"
+ *   Scalar:                  "blue"
+ */
+export function deserializeNonQueryParam(
+  raw: string,
+  param: ResolvedParameter,
+): unknown {
+  const schema = param.schema;
+  if (!schema || typeof schema === "boolean") return raw;
+
+  const isArray = isArraySchema(schema);
+  const isObj = isObjectSchema(schema);
+
+  if (!isArray && !isObj) return coerceScalar(raw, schema);
+
+  // simple (header/path default): explode defaults to false
+  // form (cookie default): explode defaults to true
+  const style = param.style ?? (param.in === "cookie" ? "form" : "simple");
+  const explode = param.explode ?? (style === "form");
+
+  if (isArray) {
+    const values = raw.split(",").map((s) => s.trim());
+    return deepCoerce(values, schema);
+  }
+
+  // Object: explode=true means "R=100,G=200,B=150"
+  if (explode) {
+    const obj: Record<string, string> = Object.create(null);
+    for (const segment of raw.split(",")) {
+      const eqIdx = segment.indexOf("=");
+      if (eqIdx !== -1) {
+        obj[segment.slice(0, eqIdx).trim()] = segment.slice(eqIdx + 1).trim();
+      }
+    }
+    return deepCoerce(obj, schema);
+  }
+
+  // Object: explode=false means "R,100,G,200,B,150" (alternating key,value)
+  const parts = raw.split(",").map((s) => s.trim());
+  const obj: Record<string, string> = Object.create(null);
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const key = parts[i];
+    const val = parts[i + 1];
+    if (key !== undefined && val !== undefined) {
+      obj[key] = val;
+    }
+  }
+  return deepCoerce(obj, schema);
+}
+
 // ── Deep coercion ──────────────────────────────────────────────────
 
 /**

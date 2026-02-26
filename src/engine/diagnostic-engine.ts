@@ -26,7 +26,7 @@ import { type ECode, getCode } from "../codes/registry.ts";
 import { matchRoute } from "./routing.ts";
 import { interpret } from "./interpreter.ts";
 import {
-  coerceScalar,
+  deserializeNonQueryParam,
   getExpectedQueryKeys,
   parseQueryParam,
 } from "./parameter-parser.ts";
@@ -238,7 +238,7 @@ export class DiagnosticEngine {
         if (param.schema && param.schemaPath) {
           const rawValue = getParameterValue(param, request);
           if (rawValue !== undefined) {
-            const coerced = coerceScalar(rawValue, param.schema);
+            const coerced = deserializeNonQueryParam(rawValue, param);
             const location: DiagnosticLocation = param.in;
             const dataPath = [param.in, param.name];
 

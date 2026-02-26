@@ -160,7 +160,7 @@ Deno.test({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: "Bob" }),
       });
-      assertEquals(response.status !== 404, true);
+      assertEquals(response.status, 400);
       await assertSnapshot(t, diagnosticHeaders(response));
       await response.text();
     });
@@ -182,7 +182,7 @@ Deno.test({
           age: "not-a-number",
         }),
       });
-      assertEquals(response.status !== 404, true);
+      assertEquals(response.status, 400);
       await assertSnapshot(t, diagnosticHeaders(response));
       await response.text();
     });
@@ -211,7 +211,7 @@ Deno.test({
   fn: async () => {
     await withServer(BODY_SPEC, async (ctx) => {
       const response = await ctx.fetch("/users/not-a-number");
-      assertEquals(response.status, 200);
+      assertEquals(response.status, 400);
       await response.text();
     });
   },

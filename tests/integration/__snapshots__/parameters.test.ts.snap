@@ -6,10 +6,7 @@ snapshot[`PUT /count - string instead of integer → mock with diagnostics 1`] =
   "x-steady-error-1-message": "Expected type integer, got string",
   "x-steady-error-1-path": "body",
   "x-steady-error-count": "1",
-  "x-steady-example-source": "generated",
-  "x-steady-matched-path": "/count",
   "x-steady-request-valid": "false",
-  "x-steady-response-warning": "minimal",
 }
 `;
 
@@ -19,8 +16,6 @@ snapshot[`POST /json-v{version}/users/{userId} - invalid path param type 1`] = `
   "x-steady-error-1-message": "Expected type integer, got string",
   "x-steady-error-1-path": "path.version",
   "x-steady-error-count": "1",
-  "x-steady-example-source": "generated",
-  "x-steady-matched-path": "/json-v{version}/users/{userId}",
   "x-steady-request-valid": "false",
 }
 `;
@@ -37,8 +32,6 @@ snapshot[`POST /json-v{version}/users/{userId} - missing required query params 1
   "x-steady-error-3-message": "Missing required query parameter: datetime",
   "x-steady-error-3-path": "query.datetime",
   "x-steady-error-count": "3",
-  "x-steady-example-source": "generated",
-  "x-steady-matched-path": "/json-v{version}/users/{userId}",
   "x-steady-request-valid": "false",
 }
 `;
@@ -49,8 +42,6 @@ snapshot[`POST /json-v{version}/users/{userId} - boolean as string in body 1`] =
   "x-steady-error-1-message": "Expected type boolean, got string",
   "x-steady-error-1-path": "body.preferences.alerts",
   "x-steady-error-count": "1",
-  "x-steady-example-source": "generated",
-  "x-steady-matched-path": "/json-v{version}/users/{userId}",
   "x-steady-request-valid": "false",
 }
 `;
@@ -86,10 +77,7 @@ snapshot[`POST /bulk - invalid item schema → mock with diagnostics 1`] = `
   "x-steady-error-1-message": "Missing required property: baz",
   "x-steady-error-1-path": "body.0",
   "x-steady-error-count": "1",
-  "x-steady-example-source": "generated",
-  "x-steady-matched-path": "/bulk",
   "x-steady-request-valid": "false",
-  "x-steady-response-warning": "minimal",
 }
 `;
 
@@ -99,10 +87,7 @@ snapshot[`POST /nullable - missing required field → mock with diagnostics 1`] 
   "x-steady-error-1-message": "Missing required property: requiredField",
   "x-steady-error-1-path": "body",
   "x-steady-error-count": "1",
-  "x-steady-example-source": "generated",
-  "x-steady-matched-path": "/nullable",
   "x-steady-request-valid": "false",
-  "x-steady-response-warning": "minimal",
 }
 `;
 
@@ -112,8 +97,6 @@ snapshot[`GET /search - invalid enum value → mock with diagnostics 1`] = `
   "x-steady-error-1-message": 'Value "invalid" is not in allowed values',
   "x-steady-error-1-path": "query.status.0",
   "x-steady-error-count": "1",
-  "x-steady-example-source": "generated",
-  "x-steady-matched-path": "/search",
   "x-steady-request-valid": "false",
 }
 `;
@@ -124,10 +107,7 @@ snapshot[`GET /session - missing required cookie → mock with diagnostics 1`] =
   "x-steady-error-1-message": "Missing required cookie parameter: session_id",
   "x-steady-error-1-path": "cookie.session_id",
   "x-steady-error-count": "1",
-  "x-steady-example-source": "generated",
-  "x-steady-matched-path": "/session",
   "x-steady-request-valid": "false",
-  "x-steady-response-warning": "minimal",
 }
 `;
 

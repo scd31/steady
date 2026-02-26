@@ -56,15 +56,25 @@ interface TreeValidatorOptions {
    * schema will be resolved via the registry.
    */
   registry?: SchemaRegistry;
+
+  /**
+   * Validation direction for readOnly/writeOnly filtering.
+   * - "request": readOnly properties excluded from required checks
+   * - "response": writeOnly properties excluded from required checks
+   * - undefined: no filtering (all required properties enforced)
+   */
+  direction?: "request" | "response";
 }
 
 // ── Validator ──────────────────────────────────────────────────────
 
 export class TreeValidator {
   private readonly registry?: SchemaRegistry;
+  private readonly direction?: "request" | "response";
 
   constructor(options?: TreeValidatorOptions) {
     this.registry = options?.registry;
+    this.direction = options?.direction;
   }
 
   /**
@@ -241,13 +251,19 @@ export class TreeValidator {
       const obj = data;
 
       if (schema.required) {
-        this.validateRequired(
-          obj,
+        const required = this.filterRequired(
           schema.required,
-          schemaPath,
-          dataPath,
-          errors,
+          schema.properties,
         );
+        if (required.length > 0) {
+          this.validateRequired(
+            obj,
+            required,
+            schemaPath,
+            dataPath,
+            errors,
+          );
+        }
       }
 
       // properties (applicator, flattened)
@@ -381,6 +397,31 @@ export class TreeValidator {
   }
 
   // ── Required validation ──────────────────────────────────────────
+
+  /**
+   * Filter required fields based on validation direction.
+   * In request direction, readOnly properties are excluded.
+   * In response direction, writeOnly properties are excluded.
+   */
+  private filterRequired(
+    required: string[],
+    properties: Record<string, Schema> | undefined,
+  ): string[] {
+    if (!this.direction || !properties) return required;
+
+    return required.filter((field) => {
+      const propSchema = properties[field];
+      if (!propSchema || typeof propSchema !== "object") return true;
+
+      if (this.direction === "request" && propSchema.readOnly === true) {
+        return false;
+      }
+      if (this.direction === "response" && propSchema.writeOnly === true) {
+        return false;
+      }
+      return true;
+    });
+  }
 
   private validateRequired(
     obj: Record<string, unknown>,
