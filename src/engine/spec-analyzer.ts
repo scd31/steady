@@ -61,6 +61,7 @@ export function analyzeSpec(
   timer?.stop("metaschema");
 
   timer?.start("structural");
+  diagnostics.push(...checkFragmentInPath(spec));
   diagnostics.push(...checkMultipleQuestionMarks(spec));
   diagnostics.push(...checkQuestionMarkInParams(spec));
   diagnostics.push(...checkDuplicatePathPatterns(spec));
@@ -272,6 +273,30 @@ function checkMetaschema(
         },
       ),
     );
+  }
+
+  return diagnostics;
+}
+
+// ── E1021: URI fragment in path ──────────────────────────────────────
+
+function checkFragmentInPath(spec: OpenAPIRaw): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  for (const path of Object.keys(spec.paths)) {
+    if (path.includes("#")) {
+      diagnostics.push(
+        specDiagnostic(
+          "E1021",
+          `#/paths/${escapeSegment(path)}`,
+          `Path "${path}" contains a URI fragment (#). Fragments are stripped by HTTP clients and cannot be routed.`,
+          {
+            suggestion:
+              "Steady will skip this path during validation and fuzzing",
+          },
+        ),
+      );
+    }
   }
 
   return diagnostics;

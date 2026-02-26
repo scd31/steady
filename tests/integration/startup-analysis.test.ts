@@ -79,6 +79,29 @@ Deno.test("unresolved $ref → E1004 + fatal", async (t) => {
   await assertSnapshot(t, result.diagnostics);
 });
 
+Deno.test("URI fragment in path → E1021", async (t) => {
+  const { spec } = await parseSpec(JSON.stringify({
+    openapi: "3.1.0",
+    info: { title: "Test", version: "1.0.0" },
+    paths: {
+      "/users": {
+        get: { responses: { "200": { description: "OK" } } },
+      },
+      "/#X-Amz-Target=Kinesis.CreateStream": {
+        post: { responses: { "200": { description: "OK" } } },
+      },
+      "/oauth2/token#refresh": {
+        post: { responses: { "200": { description: "OK" } } },
+      },
+    },
+  }));
+
+  const result = analyzeSpec(spec);
+  const e1021 = result.diagnostics.filter((d) => d.code === "E1021");
+  assertEquals(e1021.length, 2);
+  await assertSnapshot(t, e1021);
+});
+
 Deno.test("clean spec → no diagnostics", async () => {
   const { spec } = await parseSpec(JSON.stringify({
     openapi: "3.1.0",

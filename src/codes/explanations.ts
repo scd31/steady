@@ -447,6 +447,26 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
     seeAlso: [],
   },
 
+  E1021: {
+    description:
+      "A path template contains a URI fragment (#). HTTP clients strip\n" +
+      "fragments before sending requests, so the server never sees the\n" +
+      "fragment portion. These paths cannot be routed or tested over HTTP.",
+    reasoning:
+      "This is a spec issue. Some API converters (notably aws2openapi)\n" +
+      "use fragments as a disambiguation hack for RPC-style APIs where\n" +
+      "multiple operations share the same base path. For example, AWS\n" +
+      "JSON-RPC services route via X-Amz-Target headers, not paths.",
+    example: "  paths:\n" +
+      "    /#X-Amz-Target=Kinesis.CreateStream:    # Fragment path\n" +
+      "      post: ...\n" +
+      "    /oauth2/token#refresh:                   # Fragment path\n" +
+      "      post: ...",
+    fix: "Steady will skip these paths during validation and fuzzing.\n" +
+      "No action needed unless you expect these operations to be tested.",
+    seeAlso: ["E1013"],
+  },
+
   // ── E2xxx: Routing ──────────────────────────────────────────────────
 
   E2001: {

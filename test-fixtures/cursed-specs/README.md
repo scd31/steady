@@ -26,6 +26,7 @@ When adding a cursed spec, include:
 | `error-only-responses.yaml`       | Only 500/default responses, no success code | Responses Object |
 | `no-content-with-body.yaml`       | 204 response with body schema defined       | HTTP Semantics   |
 | `question-mark-query-params.yaml` | Query param names/values containing `?`     | Parameter Object |
+| `fragment-in-path.yaml`           | URI fragment (`#`) in path templates        | Path Templating  |
 
 ## Ideas for Future Curses
 
