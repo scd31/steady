@@ -29,6 +29,12 @@ export function walkSpec(doc: OpenAPISpec): OperationInfo[] {
   const paths = doc.paths;
 
   for (const pathPattern of Object.keys(paths)) {
+    // Skip paths with URI fragments (#). These appear in AWS and Box specs
+    // as an RPC disambiguation hack (e.g. /#X-Amz-Target=Kinesis.CreateStream).
+    // Fragments are stripped by HTTP clients before sending, so these paths
+    // cannot be matched or tested over the wire.
+    if (pathPattern.includes("#")) continue;
+
     const pathItem = paths[pathPattern];
     if (!pathItem) continue;
 
