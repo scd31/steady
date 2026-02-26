@@ -187,6 +187,54 @@ Deno.test("OpenAPISpec", async (t) => {
     assertEquals(params[0]!.schema !== null, true);
   });
 
+  await t.step("$ref parameter schema is resolved", () => {
+    const spec = createSpec({
+      paths: {
+        "/users": {
+          get: {
+            parameters: [
+              {
+                name: "metadata",
+                in: "query",
+                schema: { $ref: "#/components/schemas/Metadata" },
+              },
+            ],
+            responses: { "200": { description: "OK" } },
+          },
+        },
+      },
+      components: {
+        schemas: {
+          Metadata: {
+            anyOf: [
+              {
+                type: "object",
+                additionalProperties: { type: "string" },
+              },
+            ],
+          },
+        },
+      },
+    });
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+    const params = doc.getParameters("/users", "get");
+
+    assertEquals(params.length, 1);
+    assertEquals(params[0]!.name, "metadata");
+    // Schema should be the resolved Metadata definition, not { $ref: '...' }
+    assertEquals(params[0]!.schema !== null, true);
+    assertEquals(
+      "$ref" in (params[0]!.schema as Record<string, unknown>),
+      false,
+    );
+    assertEquals(
+      (params[0]!.schema as Record<string, unknown>).anyOf !== undefined,
+      true,
+    );
+    // schemaPath should point to the resolved target
+    assertEquals(params[0]!.schemaPath, "#/components/schemas/Metadata");
+  });
+
   await t.step("parameter without schema has null schema/schemaPath", () => {
     const spec = createSpec({
       paths: {

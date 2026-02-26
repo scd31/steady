@@ -173,18 +173,20 @@ export class OpenAPISpec {
       merged.set(key, entry);
     }
 
-    // Map to ResolvedParameter
+    // Map to ResolvedParameter (resolving schema $refs via registry)
     return Array.from(merged.values()).map(({ param, pointer }) => {
-      const rawSchema = param.schema;
-      const hasSchema = rawSchema !== undefined && isSchema(rawSchema);
+      const { schema, schemaPath } = this.resolveSchemaRef(
+        param.schema,
+        `${pointer}/schema`,
+      );
 
       return {
         name: param.name,
         in: param.in,
         // Path parameters are implicitly required per OpenAPI spec
         required: param.in === "path" ? true : param.required === true,
-        schema: hasSchema ? rawSchema : null,
-        schemaPath: hasSchema ? `${pointer}/schema` : null,
+        schema,
+        schemaPath,
         style: param.style,
         explode: param.explode,
       };
@@ -218,17 +220,19 @@ export class OpenAPISpec {
     const jsonContent = requestBody.content["application/json"];
     if (!jsonContent?.schema) return null;
 
-    // Ensure schema is a plain object (not a $ref, those should be resolved upstream)
-    if (!isSchema(jsonContent.schema)) return null;
-
-    // Build the schema path
     const escapedPath = escapeSegment(pathPattern);
-    const schemaPath: FragmentPointer =
+    const inlinePointer: FragmentPointer =
       `#/paths/${escapedPath}/${method}/requestBody/content/application~1json/schema`;
 
+    const { schema, schemaPath } = this.resolveSchemaRef(
+      jsonContent.schema,
+      inlinePointer,
+    );
+    if (!schema) return null;
+
     return {
-      schema: jsonContent.schema,
-      schemaPath,
+      schema,
+      schemaPath: schemaPath ?? inlinePointer,
       required: requestBody.required === true,
     };
   }
@@ -374,6 +378,33 @@ export class OpenAPISpec {
     }
 
     return { param: paramOrRef, pointer };
+  }
+
+  /**
+   * Resolve a schema that may be a $ref, following the reference
+   * through the registry. Used for parameter and body schemas.
+   */
+  private resolveSchemaRef(
+    rawSchema: ParameterObject["schema"],
+    inlinePointer: FragmentPointer,
+  ): { schema: Schema | null; schemaPath: FragmentPointer | null } {
+    if (!rawSchema) return { schema: null, schemaPath: null };
+
+    // If schema is a $ref, resolve through the registry
+    if ("$ref" in rawSchema && typeof rawSchema.$ref === "string") {
+      const resolved = this.resolveRef(rawSchema.$ref);
+      if (isSchema(resolved)) {
+        const schemaPath: FragmentPointer = isFragmentPointer(rawSchema.$ref)
+          ? rawSchema.$ref
+          : inlinePointer;
+        return { schema: resolved, schemaPath };
+      }
+      return { schema: null, schemaPath: null };
+    }
+
+    // Inline schema
+    if (!isSchema(rawSchema)) return { schema: null, schemaPath: null };
+    return { schema: rawSchema, schemaPath: inlinePointer };
   }
 }
 
