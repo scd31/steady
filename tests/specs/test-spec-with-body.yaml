@@ -110,6 +110,43 @@ paths:
                 name: "Alice Updated"
                 email: "alice.new@example.com"
 
+  /users/{id}/deactivate:
+    post:
+      summary: Deactivate a user (no request body)
+      operationId: deactivateUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: User deactivated
+          content:
+            application/json:
+              example:
+                status: "deactivated"
+
+    delete:
+      summary: Delete a user (no request body)
+      operationId: deleteUser
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: User deleted
+          content:
+            application/json:
+              example:
+                deleted: true
+
   /posts:
     post:
       summary: Create a post with complex nested schema

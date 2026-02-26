@@ -84,14 +84,13 @@ Deno.test("parseRequestBody - invalid Content-Length (negative)", async () => {
   }
 });
 
-Deno.test("parseRequestBody - empty JSON body", async () => {
+Deno.test("parseRequestBody - empty JSON body returns undefined", async () => {
   const req = jsonRequest("");
   const result = await parseRequestBody(req, ["application/json"]);
 
-  assertEquals(isParseError(result), true);
-  if (isParseError(result)) {
-    const d = firstDiag(result);
-    assertEquals(d.code, "E3005");
+  assertEquals(isParseError(result), false, "Empty body is not a parse error");
+  if (!isParseError(result)) {
+    assertEquals(result.body, undefined);
   }
 });
 
@@ -160,6 +159,36 @@ Deno.test("parseRequestBody - DELETE without body returns undefined", async () =
   const result = await parseRequestBody(req, null);
 
   assertEquals(isParseError(result), false);
+  if (!isParseError(result)) {
+    assertEquals(result.body, undefined);
+  }
+});
+
+Deno.test("parseRequestBody - empty JSON body returns undefined (not E3005)", async () => {
+  // SDKs commonly send Content-Type: application/json on all requests,
+  // including DELETE/cancel endpoints that have no body. The body parser
+  // should treat this as "no body" and let the diagnostic engine decide
+  // whether the spec requires one.
+  const req = new Request("http://localhost/test", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: "",
+  });
+  const result = await parseRequestBody(req, null);
+
+  assertEquals(isParseError(result), false, "Should not be a parse error");
+  if (!isParseError(result)) {
+    assertEquals(result.body, undefined);
+  }
+});
+
+Deno.test("parseRequestBody - POST with empty JSON body returns undefined (not E3005)", async () => {
+  // Same principle for POST: the body parser shouldn't decide if an empty
+  // body is an error. That depends on the spec (required: true or not).
+  const req = jsonRequest("");
+  const result = await parseRequestBody(req, ["application/json"]);
+
+  assertEquals(isParseError(result), false, "Should not be a parse error");
   if (!isParseError(result)) {
     assertEquals(result.body, undefined);
   }

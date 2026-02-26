@@ -92,26 +92,11 @@ export async function parseRequestBody(
     } else if (isJsonMediaType(mediaType)) {
       const body = await readBody(req.clone());
       if (body === "") {
-        const def = getCode("E3005");
-        return {
-          diagnostics: [{
-            code: "E3005",
-            severity: def.severity,
-            category: def.category,
-            requestPath: "body",
-            specPointer: "",
-            message: "Expected JSON body but received empty request body",
-            expected: "non-empty JSON body",
-            actual: "",
-            attribution: {
-              confidence: 0.95,
-              reasoning: [
-                "Request has a JSON content type but the body is empty",
-              ],
-            },
-            suggestion: "Ensure the SDK sends a JSON body with the request",
-          }],
-        };
+        // Empty body with JSON content-type: treat as "no body provided."
+        // SDKs commonly set Content-Type: application/json on all requests,
+        // including DELETE/cancel endpoints that have no body.
+        // The diagnostic engine will emit E3005 if the spec requires a body.
+        return { body: undefined, contentType: "" };
       }
       parsedBody = JSON.parse(body);
     } else {

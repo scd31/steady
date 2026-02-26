@@ -189,6 +189,63 @@ Deno.test({
   },
 });
 
+// ── HTTP server: empty body on bodyless endpoints ───────────────────
+
+Deno.test({
+  name:
+    "POST with Content-Type: application/json but no body to bodyless endpoint → 200",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(BODY_SPEC, async (ctx) => {
+      // SDKs commonly set Content-Type: application/json on all requests,
+      // even for action endpoints (cancel, deactivate) with no request body.
+      const response = await ctx.fetch("/users/123/deactivate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      assertEquals(response.status, 200);
+      await response.text();
+    });
+  },
+});
+
+Deno.test({
+  name:
+    "DELETE with Content-Type: application/json but no body to bodyless endpoint → 200",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(BODY_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/users/123/deactivate", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+      assertEquals(response.status, 200);
+      await response.text();
+    });
+  },
+});
+
+Deno.test({
+  name: "POST with empty body to required-body endpoint → 400",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(BODY_SPEC, async (ctx) => {
+      // This endpoint requires a body. Empty body should be rejected.
+      const response = await ctx.fetch("/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      assertEquals(response.status, 400);
+      const headers = diagnosticHeaders(response);
+      assertEquals(headers["x-steady-request-valid"], "false");
+      await response.text();
+    });
+  },
+});
+
 // ── HTTP server: path params ────────────────────────────────────────
 
 Deno.test({
