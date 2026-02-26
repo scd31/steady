@@ -227,7 +227,7 @@ Deno.test({
     const response = await fetch(`${baseUrl}/users/123`, { method: "DELETE" });
     assertEquals(response.status, 405);
     const data = await response.json();
-    assertEquals(data.error, "Method not allowed");
+    assertEquals(data.error, "Method DELETE not allowed for /users/{id}");
   });
 });
 

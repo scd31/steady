@@ -9,7 +9,8 @@ import type { Diagnostic } from "../diagnostic.ts";
 import type { DiagnosticCollector } from "../diagnostics/collector.ts";
 import type { SessionStore } from "../session/store.ts";
 import type { PipelineTimer } from "../timing.ts";
-import type { HttpMethod, PathItemObject } from "./route-matcher.ts";
+import type { HttpMethod } from "../types.ts";
+import type { PathItemObject } from "@steady/openapi";
 
 /**
  * Log startup event

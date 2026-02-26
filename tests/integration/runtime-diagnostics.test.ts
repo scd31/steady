@@ -20,6 +20,7 @@ import {
   DiagnosticEngine,
 } from "../../src/engine/diagnostic-engine.ts";
 import type { Diagnostic } from "../../src/diagnostic.ts";
+import { Router } from "../../src/router.ts";
 
 /** Load the acme spec once, shared across all tests. */
 let engine: DiagnosticEngine;
@@ -31,7 +32,8 @@ async function getEngine(): Promise<DiagnosticEngine> {
   const registry = SchemaRegistry.fromSpec(spec);
   const doc = new OpenAPISpec(registry);
   const validator = new TreeValidator({ registry });
-  engine = new DiagnosticEngine(doc, validator);
+  const router = new Router(spec.paths);
+  engine = new DiagnosticEngine(doc, validator, router);
   return engine;
 }
 

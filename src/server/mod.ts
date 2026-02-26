@@ -39,12 +39,7 @@ import { SessionStore } from "../session/store.ts";
 import { handleSessionRequest } from "../session/endpoints.ts";
 import { DiagnosticCollector } from "../diagnostics/collector.ts";
 
-import {
-  type CompiledPath,
-  compileRoutes,
-  findOperation,
-  getMethodsForPath,
-} from "./route-matcher.ts";
+import { getMethodsForPath, Router } from "../router.ts";
 import {
   addDiagnosticHeaders,
   generateResponseFromObject,
@@ -74,9 +69,8 @@ export class MockServer {
   private requestCount = 0;
   private failedCount = 0;
 
-  // Pre-compiled routes for O(1) exact matches and efficient pattern matching
-  private exactRoutes: Map<string, CompiledPath[]>;
-  private patternRoutes: CompiledPath[];
+  // Unified router: pre-compiled routes with query disambiguation
+  private router: Router;
 
   constructor(
     spec: OpenAPIRaw,
@@ -94,8 +88,13 @@ export class MockServer {
     // Single document facade: all $ref resolution flows through here
     timer?.start("diagnostics-engine");
     this.specDoc = new OpenAPISpec(registry);
+    this.router = new Router(spec.paths);
     const treeValidator = new TreeValidator({ registry, direction: "request" });
-    this.diagnosticEngine = new DiagnosticEngine(this.specDoc, treeValidator);
+    this.diagnosticEngine = new DiagnosticEngine(
+      this.specDoc,
+      treeValidator,
+      this.router,
+    );
     timer?.stop("diagnostics-engine");
 
     this.abortController = new AbortController();
@@ -124,12 +123,7 @@ export class MockServer {
     this.collector = new DiagnosticCollector();
     this.collector.setStaticDiagnostics(config.startupDiagnostics ?? []);
 
-    // Pre-compile all path patterns at construction time
-    timer?.start("compile-routes");
-    const routes = compileRoutes(spec);
-    this.exactRoutes = routes.exactRoutes;
-    this.patternRoutes = routes.patternRoutes;
-    timer?.stop("compile-routes");
+    // Note: route compilation happens in Router constructor above
   }
 
   start(): void {
@@ -228,22 +222,71 @@ export class MockServer {
     // Check if request should reject on SDK errors
     const rejectOnSdkError = getRejectOnSdkError(req, this.config);
 
-    try {
-      const {
-        operation,
-        statusCode,
-        pathPattern,
-        pathParams,
-        consumedQueryParams,
-      } = findOperation(
-        path,
-        method,
-        url.searchParams,
-        this.exactRoutes,
-        this.patternRoutes,
-        this.specDoc.rawSpec,
-      );
+    // Route matching (unified router handles query disambiguation + diagnostics)
+    const routeResult = this.router.match({
+      path,
+      method,
+      queryParams: url.searchParams,
+    });
 
+    if (!routeResult.matched) {
+      // Route not found or method not allowed
+      const timing = Math.round(performance.now() - startTime);
+      this.requestCount++;
+      this.failedCount++;
+
+      const routeDiags = routeResult.diagnostics;
+
+      // Collect runtime diagnostics
+      this.collector.addRuntimeDiagnostics(routeDiags, method, path, false);
+
+      // Track session if X-Steady-Session header present
+      const sessionId = req.headers.get("X-Steady-Session");
+      if (sessionId) {
+        this.sessionStore.addRequest(sessionId, method, path, routeDiags);
+      }
+
+      // E2002 (method not allowed) -> 405, E2001 (path not found) -> 404
+      const isMethodNotAllowed = routeDiags.some((d) => d.code === "E2002");
+      const status = isMethodNotAllowed ? 405 : 404;
+      const statusText = isMethodNotAllowed
+        ? "Method Not Allowed"
+        : "Not Found";
+
+      logRequestEvent(this.config, this.logger, {
+        req,
+        path,
+        pathPattern: path,
+        method,
+        status,
+        statusText,
+        timing,
+        diagnostics: routeDiags,
+      });
+
+      const firstDiag = routeDiags[0];
+      const errorResponse = new Response(
+        JSON.stringify({
+          error: firstDiag?.message ?? "Route not found",
+          suggestion: firstDiag?.suggestion,
+        }),
+        {
+          status,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+      return addDiagnosticHeaders(errorResponse, routeDiags);
+    }
+
+    const {
+      operation,
+      statusCode,
+      pathPattern,
+      pathParams,
+      consumedQueryParams,
+    } = routeResult;
+
+    try {
       // Parse request body
       const parseResult = await parseRequestBody(req, null);
       let parseDiags: Diagnostic[] = [];
@@ -413,68 +456,6 @@ export class MockServer {
       const timing = Math.round(performance.now() - startTime);
       this.requestCount++;
       this.failedCount++;
-
-      if (error instanceof MatchError) {
-        // Run the diagnostics engine. Produces E2001/E2002 with enrichment
-        const engineDiags = this.runDiagnosticEngine(
-          path,
-          method,
-          url.searchParams,
-          req.headers,
-          undefined,
-        );
-
-        // Collect runtime diagnostics
-        this.collector.addRuntimeDiagnostics(
-          engineDiags,
-          method,
-          path,
-          false,
-        );
-
-        // Track session if X-Steady-Session header present
-        const sessionId = req.headers.get("X-Steady-Session");
-        if (sessionId) {
-          this.sessionStore.addRequest(
-            sessionId,
-            method,
-            path,
-            engineDiags,
-          );
-        }
-
-        // E2002 (method not allowed) -> 405, E2001 (path not found) -> 404
-        const isMethodNotAllowed = engineDiags.some(
-          (d) => d.code === "E2002",
-        );
-        const status = isMethodNotAllowed ? 405 : 404;
-        const statusText = isMethodNotAllowed
-          ? "Method Not Allowed"
-          : "Not Found";
-
-        logRequestEvent(this.config, this.logger, {
-          req,
-          path,
-          pathPattern: path,
-          method,
-          status,
-          statusText,
-          timing,
-          diagnostics: engineDiags,
-        });
-
-        const errorResponse = new Response(
-          JSON.stringify({
-            error: error.message,
-            suggestion: error.context.suggestion,
-          }),
-          {
-            status,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-        return addDiagnosticHeaders(errorResponse, engineDiags);
-      }
 
       // 500 - internal error
       logRequestEvent(this.config, this.logger, {

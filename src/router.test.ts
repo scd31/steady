@@ -1,12 +1,8 @@
 import { assertEquals } from "@std/assert";
-import type {
-  OperationObject,
-  PathItemObject,
-  PathsObject,
-} from "@steady/openapi";
-import { matchRoute } from "./routing.ts";
+import type { OperationObject, PathItemObject } from "@steady/openapi";
+import { Router } from "./router.ts";
 
-Deno.test("matchRoute", async (t) => {
+Deno.test("Router", async (t) => {
   // Minimal valid operations for testing
   const GET_OP: OperationObject = {
     responses: { "200": { description: "OK" } },
@@ -18,8 +14,8 @@ Deno.test("matchRoute", async (t) => {
   // ── Successful matches ────────────────────────────────────────────
 
   await t.step("exact path, correct method → match", () => {
-    const paths: PathsObject = { "/users": { get: GET_OP } };
-    const result = matchRoute(paths, { path: "/users", method: "get" });
+    const router = new Router({ "/users": { get: GET_OP } });
+    const result = router.match({ path: "/users", method: "get" });
 
     assertEquals(result.matched, true);
     if (result.matched) {
@@ -30,8 +26,8 @@ Deno.test("matchRoute", async (t) => {
   });
 
   await t.step("parameterized path → extracts params", () => {
-    const paths: PathsObject = { "/users/{id}": { get: GET_OP } };
-    const result = matchRoute(paths, { path: "/users/123", method: "get" });
+    const router = new Router({ "/users/{id}": { get: GET_OP } });
+    const result = router.match({ path: "/users/123", method: "get" });
 
     assertEquals(result.matched, true);
     if (result.matched) {
@@ -49,8 +45,8 @@ Deno.test("matchRoute", async (t) => {
       },
       responses: { "200": { description: "Results" } },
     };
-    const paths: PathsObject = { "/search": { query: QUERY_OP } };
-    const result = matchRoute(paths, { path: "/search", method: "query" });
+    const router = new Router({ "/search": { query: QUERY_OP } });
+    const result = router.match({ path: "/search", method: "query" });
 
     assertEquals(result.matched, true);
     if (result.matched) {
@@ -60,8 +56,8 @@ Deno.test("matchRoute", async (t) => {
   });
 
   await t.step("case-insensitive method → match", () => {
-    const paths: PathsObject = { "/users": { post: POST_OP } };
-    const result = matchRoute(paths, { path: "/users", method: "POST" });
+    const router = new Router({ "/users": { post: POST_OP } });
+    const result = router.match({ path: "/users", method: "POST" });
 
     assertEquals(result.matched, true);
     if (result.matched) {
@@ -71,8 +67,8 @@ Deno.test("matchRoute", async (t) => {
 
   await t.step("match includes pathItem", () => {
     const pathItem: PathItemObject = { get: GET_OP, post: POST_OP };
-    const paths: PathsObject = { "/users": pathItem };
-    const result = matchRoute(paths, { path: "/users", method: "get" });
+    const router = new Router({ "/users": pathItem });
+    const result = router.match({ path: "/users", method: "get" });
 
     assertEquals(result.matched, true);
     if (result.matched) {
@@ -87,11 +83,11 @@ Deno.test("matchRoute", async (t) => {
     const paramOp: OperationObject = {
       responses: { "200": { description: "param" } },
     };
-    const paths: PathsObject = {
+    const router = new Router({
       "/users/{id}": { get: paramOp },
       "/users/me": { get: exactOp },
-    };
-    const result = matchRoute(paths, { path: "/users/me", method: "get" });
+    });
+    const result = router.match({ path: "/users/me", method: "get" });
 
     assertEquals(result.matched, true);
     if (result.matched) {
@@ -100,11 +96,21 @@ Deno.test("matchRoute", async (t) => {
     }
   });
 
+  await t.step("match includes statusCode", () => {
+    const router = new Router({ "/users": { post: POST_OP } });
+    const result = router.match({ path: "/users", method: "post" });
+
+    assertEquals(result.matched, true);
+    if (result.matched) {
+      assertEquals(result.statusCode, "201");
+    }
+  });
+
   // ── E2001: Path not found ─────────────────────────────────────────
 
   await t.step("no matching path → E2001", () => {
-    const paths: PathsObject = { "/users": { get: GET_OP } };
-    const result = matchRoute(paths, { path: "/posts", method: "get" });
+    const router = new Router({ "/users": { get: GET_OP } });
+    const result = router.match({ path: "/posts", method: "get" });
 
     assertEquals(result.matched, false);
     if (!result.matched) {
@@ -115,11 +121,11 @@ Deno.test("matchRoute", async (t) => {
   });
 
   await t.step("E2001 includes available paths in suggestion", () => {
-    const paths: PathsObject = {
+    const router = new Router({
       "/users": { get: GET_OP },
       "/posts": { get: GET_OP },
-    };
-    const result = matchRoute(paths, { path: "/items", method: "get" });
+    });
+    const result = router.match({ path: "/items", method: "get" });
 
     assertEquals(result.matched, false);
     if (!result.matched) {
@@ -130,8 +136,8 @@ Deno.test("matchRoute", async (t) => {
   });
 
   await t.step("E2001 default confidence 0.7", () => {
-    const paths: PathsObject = { "/users": { get: GET_OP } };
-    const result = matchRoute(paths, { path: "/posts", method: "get" });
+    const router = new Router({ "/users": { get: GET_OP } });
+    const result = router.match({ path: "/posts", method: "get" });
 
     assertEquals(result.matched, false);
     if (!result.matched) {
@@ -142,8 +148,8 @@ Deno.test("matchRoute", async (t) => {
   // ── E2002: Method not allowed ─────────────────────────────────────
 
   await t.step("path matches, wrong method → E2002", () => {
-    const paths: PathsObject = { "/users": { get: GET_OP } };
-    const result = matchRoute(paths, { path: "/users", method: "post" });
+    const router = new Router({ "/users": { get: GET_OP } });
+    const result = router.match({ path: "/users", method: "post" });
 
     assertEquals(result.matched, false);
     if (!result.matched) {
@@ -154,8 +160,10 @@ Deno.test("matchRoute", async (t) => {
   });
 
   await t.step("E2002 includes available methods in suggestion", () => {
-    const paths: PathsObject = { "/users": { get: GET_OP, post: POST_OP } };
-    const result = matchRoute(paths, { path: "/users", method: "delete" });
+    const router = new Router({
+      "/users": { get: GET_OP, post: POST_OP },
+    });
+    const result = router.match({ path: "/users", method: "delete" });
 
     assertEquals(result.matched, false);
     if (!result.matched) {
@@ -166,8 +174,8 @@ Deno.test("matchRoute", async (t) => {
   });
 
   await t.step("E2002 on parameterized path", () => {
-    const paths: PathsObject = { "/users/{id}": { get: GET_OP } };
-    const result = matchRoute(paths, { path: "/users/123", method: "delete" });
+    const router = new Router({ "/users/{id}": { get: GET_OP } });
+    const result = router.match({ path: "/users/123", method: "delete" });
 
     assertEquals(result.matched, false);
     if (!result.matched) {
@@ -178,11 +186,11 @@ Deno.test("matchRoute", async (t) => {
   // ── Double-? enrichment ───────────────────────────────────────────
 
   await t.step("E2001 with double-? in query → confidence 0.95", () => {
-    const paths: PathsObject = { "/users": { get: GET_OP } };
+    const router = new Router({ "/users": { get: GET_OP } });
     const queryParams = new URLSearchParams();
     queryParams.set("key", "value?extra=true");
 
-    const result = matchRoute(paths, {
+    const result = router.match({
       path: "/posts",
       method: "get",
       queryParams,
@@ -196,11 +204,11 @@ Deno.test("matchRoute", async (t) => {
   });
 
   await t.step("E2002 with double-? in query → confidence 0.95", () => {
-    const paths: PathsObject = { "/users": { get: GET_OP } };
+    const router = new Router({ "/users": { get: GET_OP } });
     const queryParams = new URLSearchParams();
     queryParams.set("key", "value?extra=true");
 
-    const result = matchRoute(paths, {
+    const result = router.match({
       path: "/users",
       method: "delete",
       queryParams,
@@ -214,11 +222,11 @@ Deno.test("matchRoute", async (t) => {
   });
 
   await t.step("no double-? → default confidence not boosted", () => {
-    const paths: PathsObject = { "/users": { get: GET_OP } };
+    const router = new Router({ "/users": { get: GET_OP } });
     const queryParams = new URLSearchParams();
     queryParams.set("key", "normalvalue");
 
-    const result = matchRoute(paths, {
+    const result = router.match({
       path: "/posts",
       method: "get",
       queryParams,
@@ -229,4 +237,102 @@ Deno.test("matchRoute", async (t) => {
       assertEquals(result.diagnostics[0]!.attribution.confidence, 0.7);
     }
   });
+
+  // ── Query disambiguation ──────────────────────────────────────────
+
+  await t.step("query-disambiguated path matches with correct query", () => {
+    const router = new Router({
+      "/templates": { get: GET_OP },
+      "/templates?desc=cached_upload": { post: POST_OP },
+    });
+    const queryParams = new URLSearchParams("desc=cached_upload");
+
+    const result = router.match({
+      path: "/templates",
+      method: "post",
+      queryParams,
+    });
+
+    assertEquals(result.matched, true);
+    if (result.matched) {
+      assertEquals(result.pathPattern, "/templates?desc=cached_upload");
+      assertEquals(result.operation, POST_OP);
+      assertEquals(result.consumedQueryParams, ["desc"]);
+    }
+  });
+
+  await t.step(
+    "query-disambiguated path falls back to base path when query doesn't match",
+    () => {
+      const router = new Router({
+        "/templates": { get: GET_OP },
+        "/templates?desc=cached_upload": { post: POST_OP },
+      });
+
+      const result = router.match({
+        path: "/templates",
+        method: "get",
+      });
+
+      assertEquals(result.matched, true);
+      if (result.matched) {
+        assertEquals(result.pathPattern, "/templates");
+        assertEquals(result.operation, GET_OP);
+        assertEquals(result.consumedQueryParams, undefined);
+      }
+    },
+  );
+
+  await t.step(
+    "query disambiguation with parameterized paths",
+    () => {
+      const router = new Router({
+        "/items/{id}": { get: GET_OP },
+        "/items/{id}?action=delete": { post: POST_OP },
+      });
+      const queryParams = new URLSearchParams("action=delete");
+
+      const result = router.match({
+        path: "/items/42",
+        method: "post",
+        queryParams,
+      });
+
+      assertEquals(result.matched, true);
+      if (result.matched) {
+        assertEquals(result.pathPattern, "/items/{id}?action=delete");
+        assertEquals(result.pathParams, { id: "42" });
+        assertEquals(result.consumedQueryParams, ["action"]);
+      }
+    },
+  );
+
+  await t.step(
+    "multiple query-disambiguated paths pick the matching one",
+    () => {
+      const opA: OperationObject = {
+        responses: { "200": { description: "A" } },
+      };
+      const opB: OperationObject = {
+        responses: { "200": { description: "B" } },
+      };
+      const router = new Router({
+        "/templates?desc=cached_upload": { post: opA },
+        "/templates?desc=html": { post: opB },
+      });
+      const queryParams = new URLSearchParams("desc=html");
+
+      const result = router.match({
+        path: "/templates",
+        method: "post",
+        queryParams,
+      });
+
+      assertEquals(result.matched, true);
+      if (result.matched) {
+        assertEquals(result.pathPattern, "/templates?desc=html");
+        assertEquals(result.operation, opB);
+      }
+    },
+  );
 });

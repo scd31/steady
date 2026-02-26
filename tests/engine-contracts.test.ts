@@ -21,10 +21,10 @@ Deno.test("Engine contracts", async (t) => {
       },
     };
 
-    const doc: Spec = new OpenAPISpec(
+    // Compile-time check: if OpenAPISpec doesn't satisfy Spec, this fails.
+    new OpenAPISpec(
       SchemaRegistry.fromSpec(spec),
-    );
-    assertEquals(Object.keys(doc.paths).length, 1);
+    ) satisfies Spec;
   });
 
   await t.step("TreeValidator satisfies SchemaValidator", () => {

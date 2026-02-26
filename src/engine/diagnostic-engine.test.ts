@@ -10,6 +10,7 @@ import {
   type SchemaValidator,
   type Spec,
 } from "./diagnostic-engine.ts";
+import { Router } from "../router.ts";
 
 // ── Test stubs ──────────────────────────────────────────────────────
 
@@ -25,7 +26,8 @@ const OP: OperationObject = {
  * Tests configure the stub with the data the engine should see.
  */
 class StubSpec implements Spec {
-  paths: PathsObject;
+  /** Paths used to construct the Router. Not part of the Spec interface. */
+  readonly paths: PathsObject;
   parameters: ResolvedParameter[] = [];
   bodySchema: BodySchemaInfo | null = null;
   responses = true;
@@ -96,6 +98,15 @@ class StubValidator implements SchemaValidator {
   }
 }
 
+/** Helper: create a DiagnosticEngine with a Router from the StubSpec's paths. */
+function createEngine(
+  spec: StubSpec,
+  validator: StubValidator = new StubValidator(),
+): DiagnosticEngine {
+  const router = new Router(spec.paths);
+  return new DiagnosticEngine(spec, validator, router);
+}
+
 // ── Tests ───────────────────────────────────────────────────────────
 
 Deno.test("DiagnosticEngine", async (t) => {
@@ -103,7 +114,7 @@ Deno.test("DiagnosticEngine", async (t) => {
 
   await t.step("route not found → E2001", () => {
     const spec = new StubSpec({ "/users": { get: OP } });
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({ path: "/posts", method: "get" });
 
@@ -113,7 +124,7 @@ Deno.test("DiagnosticEngine", async (t) => {
 
   await t.step("method not allowed → E2002", () => {
     const spec = new StubSpec({ "/users": { get: OP } });
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({ path: "/users", method: "delete" });
 
@@ -126,7 +137,7 @@ Deno.test("DiagnosticEngine", async (t) => {
   await t.step("no responses → E1010", () => {
     const spec = new StubSpec({ "/users": { get: OP } });
     spec.responses = false;
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({ path: "/users", method: "get" });
 
@@ -148,7 +159,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({ path: "/users", method: "get" });
 
@@ -169,7 +180,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({ path: "/users", method: "get" });
 
@@ -190,7 +201,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({ path: "/users", method: "get" });
 
@@ -215,7 +226,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const queryParams = new URLSearchParams();
     queryParams.set("limit", "10");
@@ -241,7 +252,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({
       path: "/users",
@@ -277,7 +288,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({ path: "/users", method: "get" });
 
@@ -323,7 +334,7 @@ Deno.test("DiagnosticEngine", async (t) => {
     };
     spec.schemas.set(leafSchemaPath, {});
 
-    const engine = new DiagnosticEngine(spec, validator);
+    const engine = createEngine(spec, validator);
 
     const result = engine.analyze({
       path: "/users",
@@ -338,7 +349,7 @@ Deno.test("DiagnosticEngine", async (t) => {
   await t.step("no body schema → no body diagnostics", () => {
     const spec = new StubSpec({ "/users": { get: OP } });
     // bodySchema is null by default
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({ path: "/users", method: "get" });
 
@@ -352,7 +363,7 @@ Deno.test("DiagnosticEngine", async (t) => {
       schemaPath: "#/paths/~1users/post/requestBody/...",
       required: true,
     };
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     // No body in request
     const result = engine.analyze({ path: "/users", method: "post" });
@@ -371,7 +382,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: "#/paths/~1users/post/requestBody/...",
         required: false,
       };
-      const engine = new DiagnosticEngine(spec, new StubValidator());
+      const engine = createEngine(spec);
 
       const result = engine.analyze({ path: "/users", method: "post" });
 
@@ -386,7 +397,7 @@ Deno.test("DiagnosticEngine", async (t) => {
       schemaPath: "#/paths/~1users/post/requestBody/...",
       required: false,
     };
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     // No body in request
     const result = engine.analyze({ path: "/users", method: "post" });
@@ -434,7 +445,7 @@ Deno.test("DiagnosticEngine", async (t) => {
     };
     spec.schemas.set(leafSchemaPath, { pattern: "^.+@.+$" });
 
-    const engine = new DiagnosticEngine(spec, validator);
+    const engine = createEngine(spec, validator);
 
     const result = engine.analyze({
       path: "/users",
@@ -476,7 +487,7 @@ Deno.test("DiagnosticEngine", async (t) => {
       ];
       spec.schemas.set(paramSchemaPath, { type: "integer" });
 
-      const engine = new DiagnosticEngine(spec, validator);
+      const engine = createEngine(spec, validator);
       const queryParams = new URLSearchParams();
       queryParams.set("limit", "abc");
 
@@ -504,7 +515,7 @@ Deno.test("DiagnosticEngine", async (t) => {
           schemaPath: null,
         },
       ];
-      const engine = new DiagnosticEngine(spec, new StubValidator());
+      const engine = createEngine(spec);
 
       const queryParams = new URLSearchParams();
       queryParams.set("limit", "abc");
@@ -546,7 +557,7 @@ Deno.test("DiagnosticEngine", async (t) => {
       ];
       spec.schemas.set(paramSchemaPath, { enum: ["a", "b"] });
 
-      const engine = new DiagnosticEngine(spec, validator);
+      const engine = createEngine(spec, validator);
 
       const result = engine.analyze({
         path: "/users",
@@ -574,7 +585,7 @@ Deno.test("DiagnosticEngine", async (t) => {
           schemaPath: paramSchemaPath,
         },
       ];
-      const engine = new DiagnosticEngine(spec, new StubValidator());
+      const engine = createEngine(spec);
 
       // No queryParams at all. Param is missing
       const result = engine.analyze({ path: "/users", method: "get" });
@@ -613,7 +624,7 @@ Deno.test("DiagnosticEngine", async (t) => {
       ];
       spec.schemas.set(paramSchemaPath, { type: "integer" });
 
-      const engine = new DiagnosticEngine(spec, validator);
+      const engine = createEngine(spec, validator);
 
       const result = engine.analyze({
         path: "/users/not-a-number",
@@ -643,7 +654,7 @@ Deno.test("DiagnosticEngine", async (t) => {
       ];
       spec.schemas.set(paramSchemaPath, { type: "integer" });
 
-      const engine = new DiagnosticEngine(spec, new StubValidator());
+      const engine = createEngine(spec);
 
       const result = engine.analyze({
         path: "/users/123",
@@ -671,7 +682,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         },
       ];
 
-      const engine = new DiagnosticEngine(spec, new StubValidator());
+      const engine = createEngine(spec);
 
       // No pathParams. Engine can't validate, should produce no diagnostic
       const result = engine.analyze({
@@ -696,7 +707,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     // No Cookie header at all
     const result = engine.analyze({ path: "/users", method: "get" });
@@ -720,7 +731,7 @@ Deno.test("DiagnosticEngine", async (t) => {
           schemaPath: null,
         },
       ];
-      const engine = new DiagnosticEngine(spec, new StubValidator());
+      const engine = createEngine(spec);
 
       // Cookie header present but doesn't contain "session"
       const result = engine.analyze({
@@ -745,7 +756,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({ path: "/users", method: "get" });
 
@@ -763,7 +774,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({
       path: "/users",
@@ -799,7 +810,7 @@ Deno.test("DiagnosticEngine", async (t) => {
     ];
     spec.schemas.set(paramSchemaPath, { type: "integer" });
 
-    const engine = new DiagnosticEngine(spec, validator);
+    const engine = createEngine(spec, validator);
 
     const result = engine.analyze({
       path: "/users",
@@ -826,7 +837,7 @@ Deno.test("DiagnosticEngine", async (t) => {
     ];
     spec.schemas.set(paramSchemaPath, { type: "integer" });
 
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({
       path: "/users",
@@ -848,7 +859,7 @@ Deno.test("DiagnosticEngine", async (t) => {
       required: true,
     };
     spec.acceptedContentTypes = ["application/json"];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({
       path: "/users",
@@ -872,7 +883,7 @@ Deno.test("DiagnosticEngine", async (t) => {
       required: true,
     };
     spec.acceptedContentTypes = ["application/json"];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({
       path: "/users",
@@ -893,7 +904,7 @@ Deno.test("DiagnosticEngine", async (t) => {
       required: true,
     };
     spec.acceptedContentTypes = ["application/json"];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({
       path: "/users",
@@ -914,7 +925,7 @@ Deno.test("DiagnosticEngine", async (t) => {
       required: true,
     };
     spec.acceptedContentTypes = ["application/json"];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({
       path: "/users",
@@ -928,7 +939,7 @@ Deno.test("DiagnosticEngine", async (t) => {
   await t.step("no requestBody in spec → no E3006", () => {
     const spec = new StubSpec({ "/users": { get: OP } });
     // acceptedContentTypes is null by default (no requestBody)
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({
       path: "/users",
@@ -952,7 +963,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const queryParams = new URLSearchParams();
     queryParams.append("items[]", "a");
@@ -981,7 +992,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const queryParams = new URLSearchParams();
     queryParams.set("user.name", "alice");
@@ -1007,7 +1018,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const queryParams = new URLSearchParams();
     queryParams.set("limit", "10");
@@ -1043,7 +1054,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const queryParams = new URLSearchParams();
     queryParams.set("limit", "10");
@@ -1070,7 +1081,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const result = engine.analyze({
       path: "/users",
@@ -1094,7 +1105,7 @@ Deno.test("DiagnosticEngine", async (t) => {
         schemaPath: null,
       },
     ];
-    const engine = new DiagnosticEngine(spec, new StubValidator());
+    const engine = createEngine(spec);
 
     const queryParams = new URLSearchParams();
     queryParams.set("limit", "10");

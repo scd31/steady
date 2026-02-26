@@ -17,13 +17,12 @@
 
 import type { Schema } from "@steady/json-schema";
 import { escapeSegment, type FragmentPointer } from "@steady/json-pointer";
-import type { PathsObject } from "@steady/openapi";
 import type { Diagnostic, DiagnosticLocation } from "../diagnostic.ts";
 import type { QueryArrayFormat, QueryObjectFormat } from "../types.ts";
 import { wrapURLSearchParams } from "../param-format.ts";
 import type { SpecResolver, ValidationNode } from "./types.ts";
 import { type ECode, getCode } from "../codes/registry.ts";
-import { matchRoute } from "./routing.ts";
+import type { Router } from "../router.ts";
 import { interpret } from "./interpreter.ts";
 import {
   deserializeNonQueryParam,
@@ -35,9 +34,6 @@ import {
 
 /** Structured access to an OpenAPI spec document. */
 export interface Spec {
-  /** All path templates, for routing. */
-  readonly paths: PathsObject;
-
   /**
    * Resolved parameters for a matched route.
    * Merges path-level and operation-level. Resolves $refs.
@@ -132,18 +128,20 @@ export class DiagnosticEngine {
   private readonly spec: Spec;
   private readonly validator: SchemaValidator;
   private readonly specResolver: SpecResolver;
+  private readonly router: Router;
 
-  constructor(spec: Spec, validator: SchemaValidator) {
+  constructor(spec: Spec, validator: SchemaValidator, router: Router) {
     this.spec = spec;
     this.validator = validator;
+    this.router = router;
     this.specResolver = {
       resolve: (path) => this.spec.resolveSchema(path),
     };
   }
 
   analyze(request: AnalyzeRequest): Diagnostic[] {
-    // 1. Route matching
-    const route = matchRoute(this.spec.paths, {
+    // 1. Route matching (uses the shared pre-compiled Router)
+    const route = this.router.match({
       path: request.path,
       method: request.method,
       queryParams: request.queryParams,

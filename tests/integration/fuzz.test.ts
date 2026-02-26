@@ -208,6 +208,62 @@ Deno.test({
   },
 });
 
+// ── Query-disambiguated paths (formapi pattern) ─────────────────────
+
+const FORMAPI_SPEC =
+  "./test-fixtures/openapi-directory/APIs/formapi.io/v1/openapi.yaml";
+
+Deno.test({
+  name:
+    "fuzz session: formapi query-disambiguated paths have no false positives",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async (t) => {
+    await withServer(FORMAPI_SPEC, async (ctx) => {
+      const { spec } = await parseSpecFromFile(FORMAPI_SPEC);
+      const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+
+      const session = new FuzzSession(doc, { seed: 42 });
+      const falsePositives: string[] = [];
+
+      for (const fuzzCase of session) {
+        await t.step(
+          `${fuzzCase.operation}: ${fuzzCase.mutation}`,
+          async () => {
+            const url = buildUrl(fuzzCase.request);
+            const init = toRequestInit(fuzzCase.request);
+            const response = await ctx.fetch(url, init);
+            await response.body?.cancel();
+
+            const valid = response.headers.get("x-steady-request-valid");
+            const status = response.status;
+
+            session.record(fuzzCase, {
+              accepted: valid === "true" || status >= 500,
+              reportedCodes: getDiagnosticCodes(response),
+            });
+
+            if (valid === "true") {
+              falsePositives.push(
+                `${fuzzCase.operation}: ${fuzzCase.mutation}`,
+              );
+            }
+          },
+        );
+      }
+
+      await t.step("no false positives", () => {
+        assertEquals(
+          falsePositives.length,
+          0,
+          `${falsePositives.length} false positive(s):\n` +
+            falsePositives.map((fp) => `  - ${fp}`).join("\n"),
+        );
+      });
+    });
+  },
+});
+
 // ── Misc ────────────────────────────────────────────────────────────
 
 Deno.test({
