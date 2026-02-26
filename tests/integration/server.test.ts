@@ -10,6 +10,7 @@
 
 import { assertEquals, assertExists } from "@std/assert";
 import { assertSnapshot } from "@std/testing/snapshot";
+import { request as httpRequest } from "node:http";
 import { parseSpecFromFile } from "../../packages/openapi/mod.ts";
 import { MockServer } from "../../src/server/mod.ts";
 import { matchPathPattern } from "../../src/path-matcher.ts";
@@ -512,6 +513,82 @@ Deno.test({
         "Should report at least one diagnostic",
       );
 
+      await response.body?.cancel();
+    });
+  },
+});
+
+// ── HTTP server: GET with request body ───────────────────────────────
+
+/** Send a request via node:http (supports body on GET/HEAD). */
+function sendViaNodeHttp(
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body?: string,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = httpRequest(
+      {
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname + u.search,
+        method,
+        headers,
+      },
+      (res) => {
+        const chunks: Uint8Array[] = [];
+        res.on("data", (chunk: Uint8Array) => chunks.push(chunk));
+        res.on("end", () => {
+          const buf = new Uint8Array(
+            chunks.reduce((acc, c) => acc + c.length, 0),
+          );
+          let offset = 0;
+          for (const chunk of chunks) {
+            buf.set(chunk, offset);
+            offset += chunk.length;
+          }
+          const h = new Headers();
+          for (const [key, value] of Object.entries(res.headers)) {
+            if (value) {
+              const v = Array.isArray(value) ? value[0] : value;
+              if (v) h.set(key, v);
+            }
+          }
+          resolve(
+            new Response(buf.length > 0 ? buf : null, {
+              status: res.statusCode ?? 200,
+              headers: h,
+            }),
+          );
+        });
+      },
+    );
+    req.on("error", reject);
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+Deno.test({
+  name: "GET request body is stripped by Deno.serve (cannot validate)",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(BODY_SPEC, async (ctx) => {
+      // Deno.serve strips the body from GET requests before our handler
+      // sees it. Even though we send a wrong body type via node:http,
+      // the server never receives it and reports the request as valid.
+      const response = await sendViaNodeHttp(
+        `http://localhost:${ctx.port}/balances/test-account`,
+        "GET",
+        { "content-type": "application/json" },
+        JSON.stringify({ address: 99999 }), // wrong type, but stripped
+      );
+      const valid = response.headers.get("x-steady-request-valid");
+      assertEquals(response.status, 200);
+      assertEquals(valid, "true", "Body is stripped so request appears valid");
       await response.body?.cancel();
     });
   },

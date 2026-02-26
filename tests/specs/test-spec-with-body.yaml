@@ -205,6 +205,32 @@ paths:
                   id: 1
                   name: "Alice"
 
+  /balances/{account}:
+    get:
+      summary: Get balance (GET with requestBody, like chaingateway)
+      operationId: getBalance
+      parameters:
+        - name: account
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                address:
+                  type: string
+      responses:
+        "200":
+          description: Balance found
+          content:
+            application/json:
+              example:
+                balance: 100
+
   /products/{category}/{id}:
     get:
       summary: Get product with multiple path parameters

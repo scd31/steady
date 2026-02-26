@@ -207,7 +207,7 @@ const CODES: Record<ECode, ECodeDefinition> = {
   },
   E1020: {
     title: "Request body on GET/HEAD/DELETE/OPTIONS",
-    severity: "info",
+    severity: "warning",
     category: "spec-issue",
     context: "startup",
   },

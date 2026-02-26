@@ -429,9 +429,9 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
       "but some HTTP clients, proxies, or CDNs may strip or reject the body.",
     reasoning:
       "The spec is valid per OpenAPI but unconventional per HTTP semantics.\n" +
-      "Steady will parse and validate the request body if one is present.\n" +
-      "Some tooling may not handle this correctly, which could cause\n" +
-      "confusing behavior during testing.",
+      "For DELETE and OPTIONS, Steady will parse and validate the body if\n" +
+      "present. For GET and HEAD, the HTTP server layer strips the body\n" +
+      "before Steady can read it, so body validation is not possible.",
     example: "  /resources:\n" +
       "    delete:\n" +
       "      requestBody:           # Unconventional but valid\n" +
@@ -442,8 +442,10 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
       "              properties:\n" +
       "                ids:\n" +
       "                  type: array",
-    fix: "No action needed if this is intentional. Be aware that some\n" +
-      "HTTP tooling may not forward the body for this method.",
+    fix:
+      "For DELETE/OPTIONS, no action needed if intentional. For GET/HEAD,\n" +
+      "consider using the QUERY method (RFC 9110) if a request body is\n" +
+      "required. GET/HEAD bodies cannot be validated by Steady.",
     seeAlso: [],
   },
 

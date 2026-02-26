@@ -707,6 +707,9 @@ function checkNoSuccessResponse(spec: OpenAPIRaw): Diagnostic[] {
 
 // ── E1020: Request body on unconventional methods ───────────────────
 
+// GET/HEAD bodies are stripped by the HTTP server before Steady can read them.
+const BODY_STRIPPED_METHODS = new Set(["get", "head"]);
+
 const UNCONVENTIONAL_BODY_METHODS = new Set([
   "get",
   "head",
@@ -725,14 +728,16 @@ function checkUnconventionalRequestBody(spec: OpenAPIRaw): Diagnostic[] {
       const operation = pathItem[method];
       if (!operation?.requestBody) continue;
 
+      const stripped = BODY_STRIPPED_METHODS.has(method);
       diagnostics.push(
         specDiagnostic(
           "E1020",
           `#/paths/${escapeSegment(path)}/${method}/requestBody`,
           `${method.toUpperCase()} ${path} defines a request body. HTTP ${method.toUpperCase()} requests conventionally do not carry a body`,
           {
-            suggestion:
-              "Steady will validate the body if present. No action needed unless this is unintentional",
+            suggestion: stripped
+              ? `${method.toUpperCase()} request bodies are stripped by the HTTP layer before Steady can read them. Body validation will be skipped. Consider using the QUERY method instead if a request body is required`
+              : "Steady will validate the body if present. No action needed unless this is unintentional",
           },
         ),
       );
