@@ -139,10 +139,13 @@ export const omitRequiredBodyField: Mutator = {
       if (isPlainObject(req.body)) {
         delete req.body[field];
       }
+      // readOnly fields are excluded from required checks during request
+      // validation, so omitting them should be accepted as valid.
+      const readOnly = isReadOnlyField(schema, field);
       cases.push({
         mutation: `omit required body field '${field}'`,
         request: req,
-        expectedCodes: ["E3008"],
+        expectedCodes: readOnly ? [] : ["E3008"],
         detail: { location: "body", fieldDepth: 0 },
       });
     }
@@ -249,6 +252,18 @@ export const ALL_MUTATORS: Mutator[] = [
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────
+
+/** Check if a field in a schema is marked readOnly. */
+function isReadOnlyField(
+  schema: { properties?: unknown },
+  field: string,
+): boolean {
+  const props = schema.properties;
+  if (!props || typeof props !== "object") return false;
+  const propSchema = (props as Record<string, unknown>)[field];
+  if (!propSchema || typeof propSchema !== "object") return false;
+  return (propSchema as Record<string, unknown>).readOnly === true;
+}
 
 function getWrongTypeValue(
   expectedType: string,

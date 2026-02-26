@@ -132,7 +132,21 @@ export class FuzzSession implements Iterable<FuzzCase> {
 
       if (!result) continue;
 
-      if (result.accepted) {
+      // Cases with expectedCodes expect rejection; empty expectedCodes
+      // means the mutation produces a valid request (e.g. readOnly field
+      // omitted from a request).
+      const expectsRejection = fuzzCase.expectedCodes.length > 0;
+      const correctOutcome = expectsRejection
+        ? !result.accepted
+        : result.accepted;
+
+      if (correctOutcome) {
+        passed++;
+        mutatorPassed.set(
+          fuzzCase.mutatorId,
+          (mutatorPassed.get(fuzzCase.mutatorId) ?? 0) + 1,
+        );
+      } else {
         falsePositives++;
         mutatorFP.set(
           fuzzCase.mutatorId,
@@ -146,12 +160,6 @@ export class FuzzSession implements Iterable<FuzzCase> {
           expectedCodes: fuzzCase.expectedCodes,
           reportedCodes: result.reportedCodes ?? [],
         });
-      } else {
-        passed++;
-        mutatorPassed.set(
-          fuzzCase.mutatorId,
-          (mutatorPassed.get(fuzzCase.mutatorId) ?? 0) + 1,
-        );
       }
     }
 

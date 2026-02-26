@@ -302,8 +302,11 @@ Deno.test({
 
             const serverError = status >= 500;
 
+            const expectsRejection = fuzzCase.expectedCodes.length > 0;
+            const isAccepted = valid !== "false";
+
             session.record(fuzzCase, {
-              accepted: valid === "true" || serverError,
+              accepted: isAccepted || serverError,
               reportedCodes: codes,
             });
 
@@ -311,7 +314,7 @@ Deno.test({
               serverErrors.push(
                 `${name}: SERVER ERROR (${status}) ${fuzzCase.operation} / ${fuzzCase.mutation}`,
               );
-            } else if (valid !== "false") {
+            } else if (expectsRejection && valid !== "false") {
               falsePositives.push(
                 `${name}: ${fuzzCase.operation} / ${fuzzCase.mutation}`,
               );
