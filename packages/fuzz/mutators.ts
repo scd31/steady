@@ -21,6 +21,11 @@ function cloneRequest(req: FuzzRequest): FuzzRequest {
   };
 }
 
+// Deno.serve (and many HTTP servers) silently strip request bodies from
+// GET and HEAD requests before the handler sees them. Body mutations on
+// these methods are untestable and always produce false positives.
+const BODY_STRIPPED_METHODS = new Set(["get", "head"]);
+
 // ── Mutators ──────────────────────────────────────────────────────
 
 export const removeRequiredQueryParam: Mutator = {
@@ -47,6 +52,7 @@ export const removeRequiredQueryParam: Mutator = {
 // them would always be false positives.
 const FETCH_MANAGED_HEADERS = new Set([
   "accept",
+  "accept-encoding",
   "accept-language",
   "content-length",
   "host",
@@ -83,6 +89,7 @@ export const wrongContentType: Mutator = {
   id: "wrongContentType",
   apply(op, baseline) {
     if (!op.bodyInfo) return [];
+    if (BODY_STRIPPED_METHODS.has(op.method)) return [];
     if (op.bodyInfo.contentTypes.length === 0) return [];
 
     const accepted = new Set(
@@ -109,6 +116,7 @@ export const omitRequiredBody: Mutator = {
   id: "omitRequiredBody",
   apply(op, baseline) {
     if (!op.bodyInfo) return [];
+    if (BODY_STRIPPED_METHODS.has(op.method)) return [];
     if (!op.bodyInfo.required) return [];
 
     const req = cloneRequest(baseline);
@@ -128,6 +136,7 @@ export const omitRequiredBodyField: Mutator = {
   id: "omitRequiredBodyField",
   apply(op, baseline) {
     if (!op.bodyInfo) return [];
+    if (BODY_STRIPPED_METHODS.has(op.method)) return [];
     const schema = op.bodyInfo.schema;
     const requiredFields = schema.required;
     if (!requiredFields || requiredFields.length === 0) return [];
@@ -157,6 +166,7 @@ export const wrongBodyFieldType: Mutator = {
   id: "wrongBodyFieldType",
   apply(op, baseline) {
     if (!op.bodyInfo) return [];
+    if (BODY_STRIPPED_METHODS.has(op.method)) return [];
     const properties = op.bodyInfo.schema.properties;
     if (!properties) return [];
     if (!isPlainObject(baseline.body)) return [];
@@ -193,6 +203,7 @@ export const extraProperty: Mutator = {
   id: "extraProperty",
   apply(op, baseline) {
     if (!op.bodyInfo) return [];
+    if (BODY_STRIPPED_METHODS.has(op.method)) return [];
     if (op.bodyInfo.schema.additionalProperties !== false) return [];
     if (!isPlainObject(baseline.body)) return [];
 
@@ -214,6 +225,7 @@ export const wrongEnumValue: Mutator = {
   id: "wrongEnumValue",
   apply(op, baseline) {
     if (!op.bodyInfo) return [];
+    if (BODY_STRIPPED_METHODS.has(op.method)) return [];
     const properties = op.bodyInfo.schema.properties;
     if (!properties) return [];
     if (!isPlainObject(baseline.body)) return [];
