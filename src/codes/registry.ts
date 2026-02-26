@@ -103,7 +103,7 @@ const CODES: Record<ECode, ECodeDefinition> = {
   },
   E1003: {
     title: "Missing required spec field",
-    severity: "error",
+    severity: "warning",
     category: "spec-issue",
     context: "startup",
   },

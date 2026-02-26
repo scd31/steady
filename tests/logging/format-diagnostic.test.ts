@@ -368,7 +368,7 @@ Deno.test("formatStartupDiagnostics: mixed severities get separate lines", () =>
 
 Deno.test("formatStartupDiagnostics: errors always shown even when warnings collapsed", () => {
   const diagnostics = [
-    diag({ code: "E1003", severity: "error", message: "Missing field" }),
+    diag({ code: "E1019", severity: "error", message: "No success response" }),
     diag({ code: "E1005", severity: "warning", message: "a" }),
     diag({ code: "E1005", severity: "warning", message: "b" }),
     diag({ code: "E1005", severity: "warning", message: "c" }),
@@ -379,7 +379,7 @@ Deno.test("formatStartupDiagnostics: errors always shown even when warnings coll
 
   const result = formatStartupDiagnostics(diagnostics, "api.yaml", false);
   // Error shown in full
-  assertEquals(result.includes("error[E1003]"), true);
+  assertEquals(result.includes("error[E1019]"), true);
   // Warnings collapsed
   assertEquals(result.includes("6 warnings"), true);
   assertEquals(result.includes("steady validate api.yaml"), true);

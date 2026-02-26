@@ -1414,7 +1414,7 @@ Deno.test("E1003 - reports diagnostics for defaulted fields", () => {
   assertEquals(e1003[0]?.message.includes("info.title"), true);
   assertEquals(e1003[0]?.suggestion, 'Add the "info.title" field to your spec');
 
-  assertEquals(e1003[0]?.severity, "error");
+  assertEquals(e1003[0]?.severity, "warning");
   assertEquals(e1003[0]?.category, "spec-issue");
 
   // Second diagnostic: paths
