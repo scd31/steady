@@ -6,10 +6,19 @@
  * and filters out operations that would lose in router matching.
  */
 
-import type { OpenAPISpec, PathsObject } from "@steady/openapi";
-import { Router } from "../../src/router.ts";
+import type { OpenAPISpec } from "@steady/openapi";
+import { getMediaType } from "@steady/media-type";
 import { buildBaseline } from "./request-builder.ts";
 import type { OperationInfo, ParameterInfo } from "./types.ts";
+
+/**
+ * A function that matches a concrete path + method against path templates.
+ * Returns the matched path pattern, or null if no match.
+ */
+export type PathMatcher = (
+  path: string,
+  method: string,
+) => string | null;
 
 const HTTP_METHODS = [
   "get",
@@ -33,7 +42,10 @@ const HTTP_METHODS = [
  * @param doc - A parsed OpenAPISpec (handles $ref resolution)
  * @returns One OperationInfo per operation in the spec
  */
-export function walkSpec(doc: OpenAPISpec): OperationInfo[] {
+export function walkSpec(
+  doc: OpenAPISpec,
+  pathMatcher?: PathMatcher,
+): OperationInfo[] {
   const operations: OperationInfo[] = [];
   const paths = doc.paths;
 
@@ -95,7 +107,7 @@ export function walkSpec(doc: OpenAPISpec): OperationInfo[] {
         ? {
           schema: bodySchema.schema,
           required: bodySchema.required,
-          contentTypes: contentTypes ?? [],
+          contentTypes: (contentTypes ?? []).map((ct) => getMediaType(ct)),
         }
         : null;
 
@@ -118,7 +130,8 @@ export function walkSpec(doc: OpenAPISpec): OperationInfo[] {
     }
   }
 
-  return filterAmbiguousOperations(operations, paths);
+  if (!pathMatcher) return operations;
+  return filterAmbiguousOperations(operations, pathMatcher);
 }
 
 /**
@@ -128,13 +141,11 @@ export function walkSpec(doc: OpenAPISpec): OperationInfo[] {
  */
 function filterAmbiguousOperations(
   operations: OperationInfo[],
-  paths: PathsObject,
+  pathMatcher: PathMatcher,
 ): OperationInfo[] {
   // Only build a router if there are parameterized paths that could conflict
   const paramPaths = operations.filter((op) => op.path.includes("{"));
   if (paramPaths.length === 0) return operations;
-
-  const router = new Router(paths);
 
   return operations.filter((op) => {
     // Non-parameterized paths can't be ambiguous
@@ -142,16 +153,13 @@ function filterAmbiguousOperations(
 
     // Build a concrete URL and check which path the router matches
     const baseline = buildBaseline(op);
-    const result = router.match({
-      path: baseline.path,
-      method: op.method,
-    });
+    const matchedPattern = pathMatcher(baseline.path, op.method);
 
-    if (!result.matched) return true;
+    if (!matchedPattern) return true;
 
     // Strip query disambiguation from both patterns for comparison
     const expectedBase = op.path.split("?")[0];
-    const matchedBase = result.pathPattern.split("?")[0];
+    const matchedBase = matchedPattern.split("?")[0];
 
     if (matchedBase !== expectedBase) {
       // Router would match a different path template. Skip this operation.

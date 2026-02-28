@@ -12,7 +12,8 @@ import { OpenAPISpec } from "../../packages/openapi/spec.ts";
 import { SchemaRegistry } from "@steady/json-schema";
 import { MockServer } from "../../src/server/mod.ts";
 import { FuzzSession } from "@steady/fuzz";
-import type { FuzzRequest } from "@steady/fuzz";
+import type { FuzzRequest, PathMatcher } from "@steady/fuzz";
+import { Router } from "../../src/router.ts";
 
 // ── Unix socket helper ──────────────────────────────────────────────
 // Uses a unix socket instead of TCP to avoid client-side ephemeral port
@@ -201,6 +202,16 @@ function getDiagnosticCodes(response: Response): string[] {
   return codes;
 }
 
+function createPathMatcher(
+  spec: { paths: import("@steady/openapi").PathsObject },
+): PathMatcher {
+  const router = new Router(spec.paths);
+  return (path, method) => {
+    const result = router.match({ path, method });
+    return result.matched ? result.pathPattern : null;
+  };
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 const FUZZ_SPEC = "./tests/specs/fuzz-test-spec.yaml";
@@ -213,8 +224,9 @@ Deno.test({
     await withServer(FUZZ_SPEC, async (ctx) => {
       const { spec } = await parseSpecFromFile(FUZZ_SPEC);
       const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+      const pathMatcher = createPathMatcher(spec);
 
-      const session = new FuzzSession(doc, { seed: 42 });
+      const session = new FuzzSession(doc, { seed: 42, pathMatcher });
 
       for (const fuzzCase of session) {
         await t.step(
@@ -278,8 +290,9 @@ Deno.test({
     await withServer(FUZZ_SPEC, async (ctx) => {
       const { spec } = await parseSpecFromFile(FUZZ_SPEC);
       const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+      const pathMatcher = createPathMatcher(spec);
 
-      const session = new FuzzSession(doc, { maxCases: 3 });
+      const session = new FuzzSession(doc, { maxCases: 3, pathMatcher });
 
       let count = 0;
       for (const fuzzCase of session) {
@@ -348,8 +361,9 @@ Deno.test({
           await withServer(specPath, async (ctx) => {
             const { spec } = await parseSpecFromFile(specPath);
             const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+            const pathMatcher = createPathMatcher(spec);
 
-            const session = new FuzzSession(doc, { seed: 42 });
+            const session = new FuzzSession(doc, { seed: 42, pathMatcher });
 
             for (const fuzzCase of session) {
               const url = buildUrl(fuzzCase.request);

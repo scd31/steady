@@ -19,23 +19,12 @@ import type { Schema, SchemaRegistry } from "@steady/json-schema";
 import { RegistryResponseGenerator } from "@steady/json-schema";
 import type { GenerateOptions } from "@steady/json-schema";
 import type { ReferenceObject } from "@steady/openapi";
-
-/** Streaming content types that trigger streaming behavior */
-export const STREAMING_CONTENT_TYPES = [
-  "application/x-ndjson",
-  "application/ndjson",
-  "application/jsonl",
-  "application/x-jsonl",
-  "application/jsonlines",
-  "application/x-jsonlines",
-  "application/json-lines",
-  "application/x-ldjson",
-  "application/json-seq",
-  "text/x-ndjson",
-  "text/event-stream",
-] as const;
-
-export type StreamingContentType = typeof STREAMING_CONTENT_TYPES[number];
+import {
+  getMediaType,
+  getStreamingFormat,
+  isStreamingMediaType,
+} from "./media-type.ts";
+export type { StreamingMediaType } from "./media-type.ts";
 
 /**
  * SSE event structure for examples.
@@ -52,37 +41,18 @@ export interface SSEEvent {
   retry?: number;
 }
 
-/** Check if a content type is a streaming type */
-export function isStreamingContentType(
-  contentType: string,
-): contentType is StreamingContentType {
-  const normalized = contentType.toLowerCase().split(";")[0]?.trim() ?? "";
-  return (STREAMING_CONTENT_TYPES as readonly string[]).includes(normalized);
+/** Check if a raw Content-Type header value is a streaming type. */
+export function isStreamingContentType(contentType: string): boolean {
+  const essence = getMediaType(contentType);
+  return isStreamingMediaType(essence);
 }
 
-/** Get the streaming format for a content type */
+/** Get the streaming format from a raw Content-Type header value. */
 export function getStreamFormat(
   contentType: string,
 ): "ndjson" | "sse" | null {
-  const normalized = contentType.toLowerCase().split(";")[0]?.trim() ?? "";
-  if (
-    normalized === "application/x-ndjson" ||
-    normalized === "application/ndjson" ||
-    normalized === "application/jsonl" ||
-    normalized === "application/x-jsonl" ||
-    normalized === "application/jsonlines" ||
-    normalized === "application/x-jsonlines" ||
-    normalized === "application/json-lines" ||
-    normalized === "application/x-ldjson" ||
-    normalized === "application/json-seq" ||
-    normalized === "text/x-ndjson"
-  ) {
-    return "ndjson";
-  }
-  if (normalized === "text/event-stream") {
-    return "sse";
-  }
-  return null;
+  const essence = getMediaType(contentType);
+  return getStreamingFormat(essence);
 }
 
 export interface StreamingOptions {

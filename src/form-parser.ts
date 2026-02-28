@@ -388,27 +388,3 @@ function coerceValue(
       return value;
   }
 }
-
-/**
- * Get media type from Content-Type header (strips parameters like charset, boundary)
- */
-export function getMediaType(contentType: string): string {
-  return contentType.split(";")[0]?.trim() || "application/json";
-}
-
-/**
- * Check if a media type is a form type
- */
-export function isFormMediaType(mediaType: string): boolean {
-  return (
-    mediaType === "multipart/form-data" ||
-    mediaType === "application/x-www-form-urlencoded"
-  );
-}
-
-/**
- * Check if a media type is JSON
- */
-export function isJsonMediaType(mediaType: string): boolean {
-  return mediaType === "application/json" || mediaType.endsWith("+json");
-}

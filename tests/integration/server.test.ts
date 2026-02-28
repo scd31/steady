@@ -605,3 +605,48 @@ Deno.test({
     });
   },
 });
+
+// ── Response content type: octet-stream ─────────────────────────────
+
+const OCTET_SPEC = "./tests/specs/octet-stream.yaml";
+
+Deno.test({
+  name: "octet-stream response is not JSON-quoted",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(OCTET_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/download");
+      assertEquals(response.status, 200);
+      assertEquals(
+        response.headers.get("content-type"),
+        "application/octet-stream",
+      );
+      const text = await response.text();
+      // Should NOT start with a JSON quote
+      assertEquals(
+        text.startsWith('"'),
+        false,
+        `Response body is JSON-quoted: ${text}`,
+      );
+    });
+  },
+});
+
+Deno.test({
+  name: "text/plain response is not JSON-quoted",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    await withServer(OCTET_SPEC, async (ctx) => {
+      const response = await ctx.fetch("/text");
+      assertEquals(response.status, 200);
+      assertEquals(
+        response.headers.get("content-type"),
+        "text/plain",
+      );
+      const text = await response.text();
+      assertEquals(text, "Hello world");
+    });
+  },
+});

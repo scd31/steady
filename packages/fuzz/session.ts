@@ -12,6 +12,7 @@ import { ALL_MUTATORS } from "./mutators.ts";
 import { Budget, type StopReason } from "./budget.ts";
 import { computeSpecHash, createEmptyCache } from "./cache.ts";
 import { planCases } from "./planner.ts";
+import type { PathMatcher } from "./spec-walker.ts";
 import type {
   FalsePositiveDetail,
   FuzzCache,
@@ -34,6 +35,8 @@ export interface FuzzSessionOptions {
   mutators?: Mutator[];
   /** Loaded cache data from a previous run. */
   cache?: FuzzCache;
+  /** Path matcher for filtering ambiguous operations. */
+  pathMatcher?: PathMatcher;
 }
 
 /**
@@ -73,6 +76,7 @@ export class FuzzSession implements Iterable<FuzzCase> {
       seed: this.seed,
       mutators: options?.mutators ?? ALL_MUTATORS,
       cache: options?.cache,
+      pathMatcher: options?.pathMatcher,
     });
 
     this.plan = casePlan.cases;

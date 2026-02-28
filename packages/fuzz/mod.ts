@@ -55,4 +55,5 @@ export { SeededRng } from "./rng.ts";
 
 // Low-level building blocks
 export { walkSpec } from "./spec-walker.ts";
+export type { PathMatcher } from "./spec-walker.ts";
 export { buildBaseline, generateFromSchema } from "./request-builder.ts";

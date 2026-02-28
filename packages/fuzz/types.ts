@@ -3,6 +3,7 @@
  */
 
 import type { Schema } from "@steady/json-schema";
+import type { MediaTypeEssence } from "@steady/media-type";
 
 // ── Spec extraction types ─────────────────────────────────────────
 
@@ -18,7 +19,7 @@ export interface ParameterInfo {
 export interface BodyInfo {
   schema: Schema;
   required: boolean;
-  contentTypes: string[];
+  contentTypes: MediaTypeEssence[];
 }
 
 /** A single operation extracted from an OpenAPI spec. */

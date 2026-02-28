@@ -11,13 +11,14 @@
 
 import type { Diagnostic } from "./diagnostic.ts";
 import { getCode } from "./codes/registry.ts";
+import { parseFormData, parseUrlEncoded } from "./form-parser.ts";
 import {
   getMediaType,
   isFormMediaType,
   isJsonMediaType,
-  parseFormData,
-  parseUrlEncoded,
-} from "./form-parser.ts";
+  isMultipartFormData,
+} from "./media-type.ts";
+import type { MultipartFormData, UrlEncoded } from "./media-type.ts";
 
 export interface BodyParseResult {
   body: unknown;
@@ -81,15 +82,17 @@ export async function parseRequestBody(
     }
   }
 
-  const contentType = req.headers.get("content-type") ?? "";
-  const mediaType = getMediaType(contentType);
+  const contentTypeHeader = req.headers.get("content-type");
+  const maybeMediaType = contentTypeHeader
+    ? getMediaType(contentTypeHeader)
+    : null;
 
   try {
     let parsedBody: unknown;
 
-    if (isFormMediaType(mediaType)) {
-      parsedBody = await parseFormBody(req.clone(), mediaType);
-    } else if (isJsonMediaType(mediaType)) {
+    if (maybeMediaType && isFormMediaType(maybeMediaType)) {
+      parsedBody = await parseFormBody(req.clone(), maybeMediaType);
+    } else if (maybeMediaType && isJsonMediaType(maybeMediaType)) {
       const body = await readBody(req.clone());
       if (body === "") {
         // Empty body with JSON content-type: treat as "no body provided."
@@ -100,11 +103,11 @@ export async function parseRequestBody(
       }
       parsedBody = JSON.parse(body);
     } else {
-      // Other content types: read as raw string
+      // No content-type or non-JSON/non-form: read as raw string
       parsedBody = await readBody(req.clone());
     }
 
-    return { body: parsedBody, contentType: mediaType };
+    return { body: parsedBody, contentType: maybeMediaType ?? "" };
   } catch (error) {
     if (error instanceof SyntaxError) {
       const def = getCode("E3021");
@@ -115,12 +118,12 @@ export async function parseRequestBody(
           category: def.category,
           requestPath: "body",
           specPointer: "",
-          message: `Invalid ${mediaType} format: ${error.message}`,
-          expected: `valid ${mediaType}`,
+          message: `Invalid ${maybeMediaType} format: ${error.message}`,
+          expected: `valid ${maybeMediaType}`,
           attribution: {
             confidence: 0.95,
             reasoning: [
-              `Request body could not be parsed as ${mediaType}`,
+              `Request body could not be parsed as ${maybeMediaType}`,
             ],
           },
           suggestion:
@@ -166,9 +169,9 @@ async function readBody(req: Request): Promise<string> {
  */
 async function parseFormBody(
   req: Request,
-  mediaType: string,
+  mediaType: MultipartFormData | UrlEncoded,
 ): Promise<unknown> {
-  if (mediaType === "multipart/form-data") {
+  if (isMultipartFormData(mediaType)) {
     const formData = await req.formData();
     const parsed = parseFormData(formData, {
       formArrayFormat: "repeat",

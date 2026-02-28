@@ -4,7 +4,7 @@
  */
 
 import type { OpenAPISpec } from "@steady/openapi";
-import { walkSpec } from "./spec-walker.ts";
+import { type PathMatcher, walkSpec } from "./spec-walker.ts";
 import { buildBaseline } from "./request-builder.ts";
 import { computeFingerprint } from "./fingerprint.ts";
 import { ALL_MUTATORS } from "./mutators.ts";
@@ -15,6 +15,7 @@ export interface PlanOptions {
   seed: number;
   mutators: Mutator[];
   cache?: FuzzCache;
+  pathMatcher?: PathMatcher;
 }
 
 export interface CasePlan {
@@ -39,7 +40,7 @@ export function planCases(
   doc: OpenAPISpec,
   options: PlanOptions,
 ): CasePlan {
-  const operations = walkSpec(doc);
+  const operations = walkSpec(doc, options.pathMatcher);
   const mutators = options.mutators.length > 0
     ? options.mutators
     : ALL_MUTATORS;

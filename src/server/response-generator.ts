@@ -23,6 +23,8 @@ import {
   isStreamingContentType,
   type StreamingOptions,
 } from "../streaming.ts";
+import { getMediaType, isJsonMediaType, isWildcard } from "../media-type.ts";
+import type { MediaTypeEssence } from "../media-type.ts";
 
 /** Status codes that MUST NOT have a response body (101, 204, 205, 304). */
 const NULL_BODY_STATUS_STRINGS = new Set(["101", "204", "205", "304"]);
@@ -31,15 +33,18 @@ const NULL_BODY_STATUS_STRINGS = new Set(["101", "204", "205", "304"]);
  * Parse Accept header into array of media types, sorted by quality value (q).
  * Returns types in preference order (highest q first).
  */
-export function parseAcceptHeader(header: string | null): string[] {
+export function parseAcceptHeader(
+  header: string | null,
+): MediaTypeEssence[] {
   if (!header) return [];
 
-  const entries: { type: string; q: number }[] = [];
+  const entries: { type: MediaTypeEssence; q: number }[] = [];
   for (const part of header.split(",")) {
-    const segments = part.split(";");
-    const type = segments[0]?.trim();
-    if (!type) continue;
+    const trimmed = part.trim();
+    if (!trimmed) continue;
 
+    // Extract q parameter before parsing
+    const segments = trimmed.split(";");
     let q = 1.0;
     for (let i = 1; i < segments.length; i++) {
       const param = segments[i]?.trim();
@@ -48,12 +53,19 @@ export function parseAcceptHeader(header: string | null): string[] {
         break;
       }
     }
-    entries.push({ type, q });
+
+    try {
+      const essence = getMediaType(trimmed);
+      entries.push({ type: essence, q });
+    } catch {
+      // Skip malformed media types in Accept header
+      continue;
+    }
   }
 
   entries.sort((a, b) => b.q - a.q);
 
-  const result: string[] = [];
+  const result: MediaTypeEssence[] = [];
   for (const entry of entries) {
     result.push(entry.type);
   }
@@ -61,11 +73,11 @@ export function parseAcceptHeader(header: string | null): string[] {
 }
 
 /**
- * Check if Accept header types include JSON (application/json or wildcard).
+ * Check if Accept header types include JSON or wildcard.
  */
-export function acceptsJson(acceptTypes: string[]): boolean {
+export function acceptsJson(acceptTypes: MediaTypeEssence[]): boolean {
   for (const t of acceptTypes) {
-    if (t === "application/json" || t === "*/*") {
+    if (isWildcard(t) || isJsonMediaType(t)) {
       return true;
     }
   }
@@ -112,14 +124,16 @@ export function generateResponseFromObject(
 
     // Select content type based on Accept header
     // Priority: Accept header match > first content type in spec
+    // Normalize spec keys to essences for case-insensitive comparison
+    const contentEssences = contentKeys.map((k) => getMediaType(k));
     let selectedContentType: string | undefined;
     for (const acceptType of acceptTypes) {
-      if (contentKeys.includes(acceptType)) {
-        selectedContentType = acceptType;
+      const matchIndex = contentEssences.indexOf(acceptType);
+      if (matchIndex !== -1) {
+        selectedContentType = contentKeys[matchIndex];
         break;
       }
-      // Handle wildcards like "*/*"
-      if (acceptType === "*/*") {
+      if (isWildcard(acceptType)) {
         selectedContentType = contentKeys[0];
         break;
       }
@@ -239,34 +253,42 @@ export function generateResponseFromObject(
     nullBodyStripped = true;
   }
 
-  // Safely stringify body - handle circular references and non-serializable values
+  // Serialize body according to content type.
+  // JSON content types get JSON.stringify; everything else (octet-stream,
+  // text/plain, etc.) gets the raw value as a string.
   let bodyString: string | null = null;
   if (body !== null) {
-    try {
-      bodyString = JSON.stringify(body, null, 2);
-    } catch (error) {
-      // Handle non-serializable values (circular refs, BigInt, etc.)
-      const errorMessage = error instanceof Error
-        ? error.message
-        : "Unknown serialization error";
-      logger.warning(
-        `Failed to serialize response body: ${errorMessage}`,
-        {
-          hint:
-            "Response contains non-serializable values (circular references, BigInt, etc.)",
-        },
-      );
-      bodyString = JSON.stringify(
-        {
-          error: "Response serialization failed",
-          reason: errorMessage,
-          hint:
-            "The generated response contains non-serializable values (circular references, BigInt, etc.)",
-        },
-        null,
-        2,
-      );
-      headers.set(HEADERS.SERIALIZATION_ERROR, "true");
+    const essence = contentType ? getMediaType(contentType) : null;
+
+    if (essence && isJsonMediaType(essence)) {
+      try {
+        bodyString = JSON.stringify(body, null, 2);
+      } catch (error) {
+        // Handle non-serializable values (circular refs, BigInt, etc.)
+        const errorMessage = error instanceof Error
+          ? error.message
+          : "Unknown serialization error";
+        logger.warning(
+          `Failed to serialize response body: ${errorMessage}`,
+          {
+            hint:
+              "Response contains non-serializable values (circular references, BigInt, etc.)",
+          },
+        );
+        bodyString = JSON.stringify(
+          {
+            error: "Response serialization failed",
+            reason: errorMessage,
+            hint:
+              "The generated response contains non-serializable values (circular references, BigInt, etc.)",
+          },
+          null,
+          2,
+        );
+        headers.set(HEADERS.SERIALIZATION_ERROR, "true");
+      }
+    } else {
+      bodyString = String(body);
     }
   }
 

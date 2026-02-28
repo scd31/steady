@@ -11,13 +11,7 @@
  */
 
 import { assertEquals } from "@std/assert";
-import {
-  getMediaType,
-  isFormMediaType,
-  isJsonMediaType,
-  parseFormData,
-  parseUrlEncoded,
-} from "./form-parser.ts";
+import { parseFormData, parseUrlEncoded } from "./form-parser.ts";
 
 // =============================================================================
 // parseUrlEncoded - Basic parsing
@@ -383,83 +377,6 @@ Deno.test("parseFormData: coerces types with schema", () => {
     active: true,
     price: 19.99,
   });
-});
-
-// =============================================================================
-// getMediaType
-// =============================================================================
-
-Deno.test("getMediaType: extracts media type without parameters", () => {
-  assertEquals(getMediaType("application/json"), "application/json");
-});
-
-Deno.test("getMediaType: strips charset parameter", () => {
-  assertEquals(
-    getMediaType("application/json; charset=utf-8"),
-    "application/json",
-  );
-});
-
-Deno.test("getMediaType: strips boundary parameter", () => {
-  assertEquals(
-    getMediaType("multipart/form-data; boundary=----WebKitFormBoundary"),
-    "multipart/form-data",
-  );
-});
-
-Deno.test("getMediaType: handles empty input", () => {
-  assertEquals(getMediaType(""), "application/json");
-});
-
-Deno.test("getMediaType: handles multiple parameters", () => {
-  assertEquals(
-    getMediaType("text/html; charset=utf-8; boundary=something"),
-    "text/html",
-  );
-});
-
-// =============================================================================
-// isFormMediaType
-// =============================================================================
-
-Deno.test("isFormMediaType: returns true for multipart/form-data", () => {
-  assertEquals(isFormMediaType("multipart/form-data"), true);
-});
-
-Deno.test("isFormMediaType: returns true for application/x-www-form-urlencoded", () => {
-  assertEquals(isFormMediaType("application/x-www-form-urlencoded"), true);
-});
-
-Deno.test("isFormMediaType: returns false for application/json", () => {
-  assertEquals(isFormMediaType("application/json"), false);
-});
-
-Deno.test("isFormMediaType: returns false for text/plain", () => {
-  assertEquals(isFormMediaType("text/plain"), false);
-});
-
-// =============================================================================
-// isJsonMediaType
-// =============================================================================
-
-Deno.test("isJsonMediaType: returns true for application/json", () => {
-  assertEquals(isJsonMediaType("application/json"), true);
-});
-
-Deno.test("isJsonMediaType: returns true for vendor+json types", () => {
-  assertEquals(isJsonMediaType("application/vnd.api+json"), true);
-});
-
-Deno.test("isJsonMediaType: returns true for problem+json", () => {
-  assertEquals(isJsonMediaType("application/problem+json"), true);
-});
-
-Deno.test("isJsonMediaType: returns false for application/xml", () => {
-  assertEquals(isJsonMediaType("application/xml"), false);
-});
-
-Deno.test("isJsonMediaType: returns false for text/plain", () => {
-  assertEquals(isJsonMediaType("text/plain"), false);
 });
 
 // =============================================================================
