@@ -44,6 +44,13 @@ export function walkSpec(doc: OpenAPISpec): OperationInfo[] {
     // cannot be matched or tested over the wire.
     if (pathPattern.includes("#")) continue;
 
+    // Skip paths with templated query values (e.g., /search?query={query}).
+    // OpenAPI path templates only support {param} in the path portion.
+    // Query parameters belong in the parameters array with in: query.
+    // These malformed paths cause routing/validation mismatches.
+    const queryIdx = pathPattern.indexOf("?");
+    if (queryIdx >= 0 && pathPattern.slice(queryIdx).includes("{")) continue;
+
     const pathItem = paths[pathPattern];
     if (!pathItem) continue;
 
@@ -92,6 +99,13 @@ export function walkSpec(doc: OpenAPISpec): OperationInfo[] {
         }
         : null;
 
+      // Extract routing query params from the path pattern's query string
+      let routingQueryParams: Set<string> | undefined;
+      if (queryIdx >= 0) {
+        const pathQuery = new URLSearchParams(pathPattern.slice(queryIdx + 1));
+        routingQueryParams = new Set(pathQuery.keys());
+      }
+
       operations.push({
         path: pathPattern,
         method,
@@ -99,6 +113,7 @@ export function walkSpec(doc: OpenAPISpec): OperationInfo[] {
         queryParams,
         headerParams,
         bodyInfo,
+        routingQueryParams,
       });
     }
   }

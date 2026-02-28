@@ -31,6 +31,8 @@ export interface OperationInfo {
   queryParams: ParameterInfo[];
   headerParams: ParameterInfo[];
   bodyInfo: BodyInfo | null;
+  /** Query param names used for route disambiguation (from the path pattern's query string). */
+  routingQueryParams?: Set<string>;
 }
 
 // ── Request types ─────────────────────────────────────────────────

@@ -17,8 +17,12 @@ import type { FuzzRequest, OperationInfo, ParameterInfo } from "./types.ts";
  * correct content-type, and a body conforming to the schema.
  */
 export function buildBaseline(op: OperationInfo): FuzzRequest {
+  // Separate path from query disambiguation (e.g., /files?view=fileinfo).
+  // The query portion is added to req.query so mutators can modify it.
+  const queryIndex = op.path.indexOf("?");
+  let path = queryIndex >= 0 ? op.path.slice(0, queryIndex) : op.path;
+
   // Build concrete path by replacing {param} with generated values
-  let path = op.path;
   for (const param of op.pathParams) {
     const value = generateParamValue(param);
     path = path.replace(`{${param.name}}`, encodeURIComponent(String(value)));
@@ -26,6 +30,17 @@ export function buildBaseline(op: OperationInfo): FuzzRequest {
 
   // Query params: include all required ones
   const query: Record<string, string> = {};
+
+  // Add query disambiguation values from the path pattern first.
+  // These are routing-level requirements (e.g., view=fileinfo).
+  if (queryIndex >= 0) {
+    const pathQuery = new URLSearchParams(op.path.slice(queryIndex + 1));
+    for (const [key, value] of pathQuery) {
+      query[key] = value;
+    }
+  }
+
+  // Then add declared required query params (may override path query values)
   for (const param of op.queryParams) {
     if (param.required) {
       query[param.name] = String(generateParamValue(param));

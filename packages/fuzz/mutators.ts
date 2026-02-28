@@ -34,6 +34,9 @@ export const removeRequiredQueryParam: Mutator = {
     const cases: MutatedCase[] = [];
     for (const param of op.queryParams) {
       if (!param.required) continue;
+      // Skip params used for route disambiguation. Removing them changes which
+      // operation the router matches, not just the validation outcome.
+      if (op.routingQueryParams?.has(param.name)) continue;
       const req = cloneRequest(baseline);
       delete req.query[param.name];
       cases.push({
