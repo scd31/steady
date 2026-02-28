@@ -717,4 +717,34 @@ Deno.test("TreeValidator", async (t) => {
     );
     assertEquals(tree.valid, true);
   });
+
+  // ── Google API pattern: properties without top-level type ────────
+
+  await t.step(
+    "properties without explicit type: object rejects wrong field type",
+    () => {
+      // Google API schemas often omit `type: object` at the top level
+      const schema: Schema = {
+        properties: {
+          disabled: { type: "boolean" },
+          name: { type: "string" },
+          tags: { type: "array", items: { type: "string" } },
+        },
+      };
+      const tree = validate(schema, { disabled: "wrong_string" });
+      assertEquals(tree.valid, false);
+    },
+  );
+
+  await t.step("properties with type: object rejects wrong field type", () => {
+    const schema: Schema = {
+      type: "object",
+      properties: {
+        disabled: { type: "boolean" },
+        name: { type: "string" },
+      },
+    };
+    const tree = validate(schema, { disabled: "wrong_string" });
+    assertEquals(tree.valid, false);
+  });
 });
