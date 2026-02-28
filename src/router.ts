@@ -115,12 +115,17 @@ export class Router {
       });
     }
 
-    // Sort pattern routes by specificity (more literal segments first),
-    // then by requiredQuery presence (more specific first)
+    // Sort pattern routes by specificity:
+    // 1. More literal segments first
+    // 2. More mixed segments (have literal prefix/suffix constraints) before pure params
+    // 3. Routes with requiredQuery before those without
     patternRoutes.sort((a, b) => {
       const aLiterals = a.segments.filter((s) => s.type === "literal").length;
       const bLiterals = b.segments.filter((s) => s.type === "literal").length;
       if (bLiterals !== aLiterals) return bLiterals - aLiterals;
+      const aMixed = a.segments.filter((s) => s.type === "mixed").length;
+      const bMixed = b.segments.filter((s) => s.type === "mixed").length;
+      if (bMixed !== aMixed) return bMixed - aMixed;
       if (a.requiredQuery && !b.requiredQuery) return -1;
       if (!a.requiredQuery && b.requiredQuery) return 1;
       return 0;
