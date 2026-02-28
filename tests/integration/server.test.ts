@@ -17,8 +17,6 @@ import { matchPathPattern } from "../../src/path-matcher.ts";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-let nextPort = 5100;
-
 interface ServerContext {
   server: MockServer;
   port: number;
@@ -30,16 +28,15 @@ async function withServer(
   fn: (ctx: ServerContext) => Promise<void>,
   opts?: { validator?: { queryObjectFormat?: "brackets" | "dots" } },
 ): Promise<void> {
-  const port = nextPort++;
   const { spec } = await parseSpecFromFile(specPath);
   const server = new MockServer(spec, {
-    port,
+    port: 0,
     host: "localhost",
     logLevel: "summary",
     ...opts,
   });
 
-  server.start();
+  const port = await server.start();
 
   try {
     await fn({
@@ -48,7 +45,7 @@ async function withServer(
       fetch: (path, init) => fetch(`http://localhost:${port}${path}`, init),
     });
   } finally {
-    server.stop();
+    await server.stop();
   }
 }
 

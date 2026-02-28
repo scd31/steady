@@ -126,25 +126,49 @@ export class MockServer {
     // Note: route compilation happens in Router constructor above
   }
 
-  start(): void {
+  /** The port the server is actually listening on (set after start()). */
+  get port(): number {
+    return this._port;
+  }
+  private _port = 0;
+
+  start(): Promise<number> {
     this.startTime = new Date();
 
-    const server = Deno.serve({
-      port: this.config.port,
-      hostname: this.config.host,
-      signal: this.abortController.signal,
-      onListen: () => {
-        logStartup(
-          this.specDoc.rawSpec,
-          this.config,
-          this.logger,
-          this.collector,
-          this.sessionStore,
-          getMethodsForPath,
-          this.timer,
-        );
-      },
-    }, (req) => this.handleRequest(req));
+    const { promise: listening, resolve: onReady } = Promise.withResolvers<
+      number
+    >();
+
+    const handler = (req: Request) => this.handleRequest(req);
+
+    const onListen = (port: number) => {
+      this._port = port;
+      logStartup(
+        this.specDoc.rawSpec,
+        this.config,
+        this.logger,
+        this.collector,
+        this.sessionStore,
+        getMethodsForPath,
+        this.timer,
+      );
+      onReady(port);
+    };
+
+    const serveOptions = this.config.socketPath
+      ? {
+        path: this.config.socketPath,
+        signal: this.abortController.signal,
+        onListen: () => onListen(0),
+      }
+      : {
+        port: this.config.port,
+        hostname: this.config.host,
+        signal: this.abortController.signal,
+        onListen: ({ port }: { port: number }) => onListen(port),
+      };
+
+    const server = Deno.serve(serveOptions, handler);
 
     // Store the finished promise for proper shutdown
     this.serverFinished = server.finished;
@@ -169,6 +193,8 @@ export class MockServer {
         // Signal not supported on this platform
       }
     }
+
+    return listening;
   }
 
   /**

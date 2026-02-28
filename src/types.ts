@@ -233,6 +233,8 @@ export interface ServerConfig {
   failOnAmbiguous?: boolean;
   /** Exit with code 1 if any runtime diagnostic has severity "warning". */
   failOnWarnings?: boolean;
+  /** Unix socket path. When set, the server listens on a unix socket instead of TCP. */
+  socketPath?: string;
 }
 
 // Validation types

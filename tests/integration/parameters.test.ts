@@ -17,8 +17,6 @@ import type { ServerConfig } from "../../src/types.ts";
 // ── Helpers ─────────────────────────────────────────────────────────
 
 const SPEC_PATH = "./tests/specs/parameter-suite.yaml";
-let nextPort = 5200;
-
 interface ServerContext {
   server: MockServer;
   port: number;
@@ -29,16 +27,15 @@ async function withServer(
   fn: (ctx: ServerContext) => Promise<void>,
   opts?: Partial<Omit<ServerConfig, "port" | "host" | "logLevel">>,
 ): Promise<void> {
-  const port = nextPort++;
   const { spec } = await parseSpecFromFile(SPEC_PATH);
   const server = new MockServer(spec, {
-    port,
+    port: 0,
     host: "localhost",
     logLevel: "summary",
     ...opts,
   });
 
-  server.start();
+  const port = await server.start();
 
   try {
     await fn({
@@ -47,7 +44,7 @@ async function withServer(
       fetch: (path, init) => fetch(`http://localhost:${port}${path}`, init),
     });
   } finally {
-    server.stop();
+    await server.stop();
   }
 }
 

@@ -14,65 +14,108 @@ import { MockServer } from "../../src/server/mod.ts";
 import { FuzzSession } from "@steady/fuzz";
 import type { FuzzRequest } from "@steady/fuzz";
 
-// ── Helpers ─────────────────────────────────────────────────────────
+// ── Unix socket helper ──────────────────────────────────────────────
+// Uses a unix socket instead of TCP to avoid client-side ephemeral port
+// exhaustion (TIME_WAIT accumulation from ~40k fetch() calls across
+// ~1970 specs in the openapi-directory fuzz suite).
 
-let nextPort = 5200;
+const socketPath = `${
+  Deno.env.get("TMPDIR") ?? "/tmp"
+}/steady-fuzz-${Deno.pid}.sock`;
+
+// ── Helpers ─────────────────────────────────────────────────────────
 
 interface ServerContext {
   server: MockServer;
-  port: number;
   fetch: (path: string, init?: RequestInit) => Promise<Response>;
+}
+
+/** Transport info for routing requests to the right backend. */
+interface Transport {
+  client: Deno.HttpClient;
+  socketPath: string;
 }
 
 const NO_FETCH_BODY_METHODS = new Set(["GET", "HEAD"]);
 
-/** fetch() throws on GET/HEAD with body, so fall back to node:http. */
-function sendRequest(url: string, init?: RequestInit): Promise<Response> {
+/**
+ * Send an HTTP request via fetch() or node:http.
+ *
+ * fetch() is preferred, but the fetch spec forbids bodies on GET/HEAD.
+ * For those cases, fall back to node:http which allows it. When using
+ * unix sockets, node:http's socketPath option routes through the socket.
+ */
+function sendRequest(
+  url: string,
+  init?: RequestInit,
+  transport?: Transport,
+): Promise<Response> {
   const method = init?.method ?? "GET";
   const hasBody = init?.body !== undefined && init.body !== null;
 
   if (!hasBody || !NO_FETCH_BODY_METHODS.has(method)) {
-    return fetch(url, init);
+    return fetch(
+      url,
+      transport ? { ...init, client: transport.client } : init,
+    );
   }
 
+  // fetch() throws on GET/HEAD with body. Use node:http instead,
+  // with socketPath for unix sockets or hostname/port for TCP.
+  return sendViaNodeHttp(url, method, init, transport?.socketPath);
+}
+
+/** Send a GET/HEAD request with body via node:http. */
+function sendViaNodeHttp(
+  url: string,
+  method: string,
+  init?: RequestInit,
+  unixSocketPath?: string,
+): Promise<Response> {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
-    const req = httpRequest(
-      {
+    const reqOpts = unixSocketPath
+      ? {
+        socketPath: unixSocketPath,
+        path: u.pathname + u.search,
+        method,
+        headers: init?.headers as Record<string, string>,
+      }
+      : {
         hostname: u.hostname,
         port: u.port,
         path: u.pathname + u.search,
         method,
         headers: init?.headers as Record<string, string>,
-      },
-      (res) => {
-        const chunks: Uint8Array[] = [];
-        res.on("data", (chunk: Uint8Array) => chunks.push(chunk));
-        res.on("end", () => {
-          const body = new Uint8Array(
-            chunks.reduce((acc, c) => acc + c.length, 0),
-          );
-          let offset = 0;
-          for (const chunk of chunks) {
-            body.set(chunk, offset);
-            offset += chunk.length;
+      };
+
+    const req = httpRequest(reqOpts, (res) => {
+      const chunks: Uint8Array[] = [];
+      res.on("data", (chunk: Uint8Array) => chunks.push(chunk));
+      res.on("end", () => {
+        const body = new Uint8Array(
+          chunks.reduce((acc, c) => acc + c.length, 0),
+        );
+        let offset = 0;
+        for (const chunk of chunks) {
+          body.set(chunk, offset);
+          offset += chunk.length;
+        }
+        const headers = new Headers();
+        for (const [key, value] of Object.entries(res.headers)) {
+          if (value) {
+            const v = Array.isArray(value) ? value[0] : value;
+            if (v) headers.set(key, v);
           }
-          const headers = new Headers();
-          for (const [key, value] of Object.entries(res.headers)) {
-            if (value) {
-              const v = Array.isArray(value) ? value[0] : value;
-              if (v) headers.set(key, v);
-            }
-          }
-          resolve(
-            new Response(body.length > 0 ? body : null, {
-              status: res.statusCode ?? 200,
-              headers,
-            }),
-          );
-        });
-      },
-    );
+        }
+        resolve(
+          new Response(body.length > 0 ? body : null, {
+            status: res.statusCode ?? 200,
+            headers,
+          }),
+        );
+      });
+    });
     req.on("error", reject);
     req.write(init!.body as string);
     req.end();
@@ -82,27 +125,44 @@ function sendRequest(url: string, init?: RequestInit): Promise<Response> {
 async function withServer(
   specPath: string,
   fn: (ctx: ServerContext) => Promise<void>,
+  opts?: { useSocket?: boolean },
 ): Promise<void> {
-  const port = nextPort++;
-  const { spec } = await parseSpecFromFile(specPath);
+  const spec = (await parseSpecFromFile(specPath)).spec;
+  const useSocket = opts?.useSocket ?? false;
+
+  if (useSocket) {
+    try {
+      await Deno.remove(socketPath);
+    } catch { /* ignore */ }
+  }
+
   const server = new MockServer(spec, {
-    port,
+    port: 0,
     host: "localhost",
     quiet: true,
     logLevel: "summary",
+    ...(useSocket ? { socketPath } : {}),
   });
 
-  server.start();
+  const port = await server.start();
+  const transport = useSocket
+    ? {
+      client: Deno.createHttpClient({
+        proxy: { url: "unix:" + socketPath },
+      }),
+      socketPath,
+    }
+    : undefined;
+  const baseUrl = useSocket ? "http://localhost" : `http://localhost:${port}`;
 
   try {
     await fn({
       server,
-      port,
-      fetch: (path, init) =>
-        sendRequest(`http://localhost:${port}${path}`, init),
+      fetch: (path, init) => sendRequest(`${baseUrl}${path}`, init, transport),
     });
   } finally {
-    server.stop();
+    transport?.client.close();
+    await server.stop();
   }
 }
 
@@ -340,45 +400,51 @@ Deno.test({
       const name = specPath.replace(OPENAPI_DIR + "/", "");
 
       await t.step(name, async () => {
-        await withServer(specPath, async (ctx) => {
-          const { spec } = await parseSpecFromFile(specPath);
-          const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+        try {
+          await withServer(specPath, async (ctx) => {
+            const { spec } = await parseSpecFromFile(specPath);
+            const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
 
-          const session = new FuzzSession(doc, { seed: 42 });
+            const session = new FuzzSession(doc, { seed: 42 });
 
-          for (const fuzzCase of session) {
-            const url = buildUrl(fuzzCase.request);
-            const init = toRequestInit(fuzzCase.request);
-            const response = await ctx.fetch(url, init);
-            await response.body?.cancel();
+            for (const fuzzCase of session) {
+              const url = buildUrl(fuzzCase.request);
+              const init = toRequestInit(fuzzCase.request);
+              const response = await ctx.fetch(url, init);
+              await response.body?.cancel();
 
-            const valid = response.headers.get("x-steady-request-valid");
-            const codes = getDiagnosticCodes(response);
-            const status = response.status;
+              const valid = response.headers.get("x-steady-request-valid");
+              const codes = getDiagnosticCodes(response);
+              const status = response.status;
 
-            const serverError = status >= 500;
+              const serverError = status >= 500;
 
-            const expectsRejection = fuzzCase.expectedCodes.length > 0;
-            const isAccepted = valid !== "false";
+              const expectsRejection = fuzzCase.expectedCodes.length > 0;
+              const isAccepted = valid !== "false";
 
-            session.record(fuzzCase, {
-              accepted: isAccepted || serverError,
-              reportedCodes: codes,
-            });
+              session.record(fuzzCase, {
+                accepted: isAccepted || serverError,
+                reportedCodes: codes,
+              });
 
-            if (serverError) {
-              serverErrors.push(
-                `${name}: SERVER ERROR (${status}) ${fuzzCase.operation} / ${fuzzCase.mutation}`,
-              );
-            } else if (expectsRejection && valid !== "false") {
-              falsePositives.push(
-                `${name}: ${fuzzCase.operation} / ${fuzzCase.mutation}`,
-              );
+              if (serverError) {
+                serverErrors.push(
+                  `${name}: SERVER ERROR (${status}) ${fuzzCase.operation} / ${fuzzCase.mutation}`,
+                );
+              } else if (expectsRejection && valid !== "false") {
+                falsePositives.push(
+                  `${name}: ${fuzzCase.operation} / ${fuzzCase.mutation}`,
+                );
+              }
+
+              totalCases++;
             }
-
-            totalCases++;
-          }
-        });
+          }, { useSocket: true });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          serverErrors.push(`${name}: CRASH: ${msg}`);
+          throw e;
+        }
       });
     }
 

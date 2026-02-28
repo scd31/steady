@@ -21,27 +21,22 @@ const serverTestOpts = { sanitizeOps: false, sanitizeResources: false };
 
 /** Helper to create a server and ensure cleanup */
 async function withServer(
-  opts: { rejectOnSdkError?: boolean; port?: number },
+  opts: { rejectOnSdkError?: boolean },
   fn: (server: MockServer, baseUrl: string) => Promise<void>,
 ): Promise<void> {
   const { spec } = await parseSpecFromFile(TEST_SPEC_PATH);
-  const port = opts.port ?? 3100 + Math.floor(Math.random() * 900);
   const server = new MockServer(spec, {
-    port,
+    port: 0,
     host: "localhost",
     rejectOnSdkError: opts.rejectOnSdkError,
     logLevel: "summary",
   });
 
-  server.start();
-  // Give server time to start
-  await new Promise((r) => setTimeout(r, 10));
+  const port = await server.start();
   try {
     await fn(server, `http://localhost:${port}`);
   } finally {
-    server.stop();
-    // Give server time to cleanup
-    await new Promise((r) => setTimeout(r, 10));
+    await server.stop();
   }
 }
 
@@ -623,26 +618,22 @@ const ARRAY_TEST_SPEC_PATH = "./tests/specs/array-test-api.yaml";
 async function withArrayServer(
   opts: {
     generator?: { arrayMin?: number; arrayMax?: number; seed?: number };
-    port?: number;
   },
   fn: (server: MockServer, baseUrl: string) => Promise<void>,
 ): Promise<void> {
   const { spec } = await parseSpecFromFile(ARRAY_TEST_SPEC_PATH);
-  const port = opts.port ?? 3100 + Math.floor(Math.random() * 900);
   const server = new MockServer(spec, {
-    port,
+    port: 0,
     host: "localhost",
     logLevel: "summary",
     generator: opts.generator,
   });
 
-  server.start();
-  await new Promise((r) => setTimeout(r, 10));
+  const port = await server.start();
   try {
     await fn(server, `http://localhost:${port}`);
   } finally {
-    server.stop();
-    await new Promise((r) => setTimeout(r, 10));
+    await server.stop();
   }
 }
 
@@ -818,20 +809,17 @@ async function withQueryPathServer(
   fn: (server: MockServer, baseUrl: string) => Promise<void>,
 ): Promise<void> {
   const { spec } = await parseSpecFromFile(QUERY_PATH_SPEC);
-  const port = 3100 + Math.floor(Math.random() * 900);
   const server = new MockServer(spec, {
-    port,
+    port: 0,
     host: "localhost",
     logLevel: "summary",
   });
 
-  server.start();
-  await new Promise((r) => setTimeout(r, 10));
+  const port = await server.start();
   try {
     await fn(server, `http://localhost:${port}`);
   } finally {
-    server.stop();
-    await new Promise((r) => setTimeout(r, 10));
+    await server.stop();
   }
 }
 
@@ -899,20 +887,17 @@ async function withSamePatternServer(
   fn: (server: MockServer, baseUrl: string) => Promise<void>,
 ): Promise<void> {
   const { spec } = await parseSpecFromFile(SAME_PATTERN_SPEC_PATH);
-  const port = 3100 + Math.floor(Math.random() * 900);
   const server = new MockServer(spec, {
-    port,
+    port: 0,
     host: "localhost",
     logLevel: "summary",
   });
 
-  server.start();
-  await new Promise((r) => setTimeout(r, 10));
+  const port = await server.start();
   try {
     await fn(server, `http://localhost:${port}`);
   } finally {
-    server.stop();
-    await new Promise((r) => setTimeout(r, 10));
+    await server.stop();
   }
 }
 
@@ -962,20 +947,17 @@ async function withCursedQmarkServer(
   fn: (server: MockServer, baseUrl: string) => Promise<void>,
 ): Promise<void> {
   const { spec } = await parseSpecFromFile(CURSED_QMARK_SPEC);
-  const port = 3100 + Math.floor(Math.random() * 900);
   const server = new MockServer(spec, {
-    port,
+    port: 0,
     host: "localhost",
     logLevel: "summary",
   });
 
-  server.start();
-  await new Promise((r) => setTimeout(r, 10));
+  const port = await server.start();
   try {
     await fn(server, `http://localhost:${port}`);
   } finally {
-    server.stop();
-    await new Promise((r) => setTimeout(r, 10));
+    await server.stop();
   }
 }
 
@@ -1068,20 +1050,17 @@ async function withCursedClientServer(
   fn: (server: MockServer, baseUrl: string) => Promise<void>,
 ): Promise<void> {
   const { spec } = await parseSpecFromFile(CURSED_CLIENT_SPEC);
-  const port = 3100 + Math.floor(Math.random() * 900);
   const server = new MockServer(spec, {
-    port,
+    port: 0,
     host: "localhost",
     logLevel: "summary",
   });
 
-  server.start();
-  await new Promise((r) => setTimeout(r, 10));
+  const port = await server.start();
   try {
     await fn(server, `http://localhost:${port}`);
   } finally {
-    server.stop();
-    await new Promise((r) => setTimeout(r, 10));
+    await server.stop();
   }
 }
 
@@ -1168,16 +1147,14 @@ Deno.test({
   ...serverTestOpts,
 }, async () => {
   const { spec } = await parseSpecFromFile(TEST_SPEC_PATH);
-  const port = 3100 + Math.floor(Math.random() * 900);
   const server = new MockServer(spec, {
-    port,
+    port: 0,
     host: "localhost",
     quiet: true,
     logLevel: "summary",
   });
 
-  server.start();
-  await new Promise((r) => setTimeout(r, 10));
+  const port = await server.start();
 
   // Capture console.log during request
   const logs: string[] = [];
@@ -1195,7 +1172,6 @@ Deno.test({
     assertEquals(logs.length, 0, "quiet mode should suppress request logging");
   } finally {
     console.log = originalLog;
-    server.stop();
-    await new Promise((r) => setTimeout(r, 10));
+    await server.stop();
   }
 });

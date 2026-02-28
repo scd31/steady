@@ -394,7 +394,7 @@ export async function main() {
 async function startServer(
   specPath: string,
   options: ServerOptions,
-): Promise<{ start: () => void; stop: () => Promise<void> }> {
+): Promise<{ start: () => Promise<number>; stop: () => Promise<void> }> {
   // Lazy import to avoid loading server code for validate command
   const { MockServer } = await import("../src/server/mod.ts");
 
@@ -453,7 +453,7 @@ async function startServer(
   timer.start("server-init");
   const server = new MockServer(spec, config, analysis.docIndex, timer);
   timer.stop("server-init");
-  server.start();
+  await server.start();
   return server;
 }
 
@@ -462,7 +462,9 @@ async function startWithWatch(
   options: ServerOptions,
 ) {
   const useColor = options.color;
-  let server: { start: () => void; stop: () => Promise<void> } | null = null;
+  let server:
+    | { start: () => Promise<number>; stop: () => Promise<void> }
+    | null = null;
 
   // Initial start. Fatal spec errors exit immediately
   try {
