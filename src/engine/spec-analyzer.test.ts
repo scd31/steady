@@ -1731,3 +1731,120 @@ Deno.test("E1012 - detects string vs type array disjointness in allOf", () => {
   );
   assertEquals(d.length, 1);
 });
+
+// ── E1022: Invalid content type key ─────────────────────────────────
+
+Deno.test("E1022 - detects empty string content type in requestBody", () => {
+  const spec = minimalSpec({
+    paths: {
+      "/recipes": {
+        post: {
+          requestBody: {
+            content: {
+              "": { schema: { type: "object" } },
+              "application/json": { schema: { type: "object" } },
+            },
+          },
+          responses: { "200": { description: "OK" } },
+        },
+      },
+    },
+  });
+
+  const result = analyzeSpec(spec);
+  const d = singleDiag(result.diagnostics, "E1022");
+  assertEquals(d.severity, "error");
+  assertEquals(d.category, "spec-issue");
+  assertEquals(d.specPointer, "#/paths/~1recipes/post/requestBody/content/");
+  assertEquals(d.message.includes('""'), true);
+});
+
+Deno.test("E1022 - detects empty string content type in response", () => {
+  const spec = minimalSpec({
+    paths: {
+      "/recipes": {
+        get: {
+          responses: {
+            "200": {
+              description: "OK",
+              content: {
+                "": { schema: { type: "object" } },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const result = analyzeSpec(spec);
+  const d = singleDiag(result.diagnostics, "E1022");
+  assertEquals(d.specPointer, "#/paths/~1recipes/get/responses/200/content/");
+});
+
+Deno.test("E1022 - valid content types produce no diagnostic", () => {
+  const spec = minimalSpec({
+    paths: {
+      "/users": {
+        post: {
+          requestBody: {
+            content: {
+              "application/json": { schema: { type: "object" } },
+              "multipart/form-data": { schema: { type: "object" } },
+            },
+          },
+          responses: { "200": { description: "OK" } },
+        },
+      },
+    },
+  });
+
+  const result = analyzeSpec(spec);
+  filterCode(result.diagnostics, "E1022", 0);
+});
+
+Deno.test("E1022 - detects multiple invalid keys across operations", () => {
+  const spec = minimalSpec({
+    paths: {
+      "/a": {
+        post: {
+          requestBody: {
+            content: { "": { schema: { type: "string" } } },
+          },
+          responses: {
+            "200": {
+              description: "OK",
+              content: { "": { schema: { type: "string" } } },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const result = analyzeSpec(spec);
+  filterCode(result.diagnostics, "E1022", 2);
+});
+
+Deno.test("E1022 - resolves $ref'd requestBody", () => {
+  const spec = minimalSpec({
+    paths: {
+      "/items": {
+        post: {
+          requestBody: { $ref: "#/components/requestBodies/BadBody" },
+          responses: { "200": { description: "OK" } },
+        },
+      },
+    },
+    components: {
+      requestBodies: {
+        BadBody: {
+          content: { "": { schema: { type: "object" } } },
+        },
+      },
+    },
+  });
+
+  const result = analyzeSpec(spec);
+  filterCode(result.diagnostics, "E1022", 1);
+});

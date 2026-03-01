@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "@std/assert";
+import { assertEquals } from "@std/assert";
 import {
   getMediaType,
   getStreamingFormat,
@@ -53,8 +53,8 @@ Deno.test("getMediaType: normalizes to lowercase", () => {
   );
 });
 
-Deno.test("getMediaType: throws on empty input", () => {
-  assertThrows(() => getMediaType(""), TypeError);
+Deno.test("getMediaType: returns null on empty input", () => {
+  assertEquals(getMediaType(""), null);
 });
 
 // =============================================================================

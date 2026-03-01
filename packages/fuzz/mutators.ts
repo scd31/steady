@@ -98,7 +98,7 @@ export const wrongContentType: Mutator = {
 
     const accepted = new Set(op.bodyInfo.contentTypes);
     const wrong = getMediaType("text/plain");
-    if (accepted.has(wrong)) return [];
+    if (!wrong || accepted.has(wrong)) return [];
 
     const req = cloneRequest(baseline);
     req.headers["content-type"] = wrong;

@@ -1,6 +1,13 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { getMediaType } from "@steady/media-type";
+import type { MediaTypeEssence } from "@steady/media-type";
 import type { OperationInfo } from "./types.ts";
+
+function mediaType(s: string): MediaTypeEssence {
+  const result = getMediaType(s);
+  if (!result) throw new Error(`Invalid media type in test: ${s}`);
+  return result;
+}
 import { buildBaseline } from "./request-builder.ts";
 import {
   extraProperty,
@@ -54,7 +61,7 @@ const CREATE_USER: OperationInfo = {
       additionalProperties: false,
     },
     required: true,
-    contentTypes: [getMediaType("application/json")],
+    contentTypes: [mediaType("application/json")],
   },
 };
 
@@ -245,7 +252,7 @@ Deno.test("mutators", async (t) => {
         bodyInfo: {
           schema: { type: "object", properties: { name: { type: "string" } } },
           required: true,
-          contentTypes: [getMediaType("application/json")],
+          contentTypes: [mediaType("application/json")],
         },
       };
       const baseline = buildBaseline(op);

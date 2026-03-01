@@ -50,6 +50,7 @@ export type ECode =
   | "E1019"
   | "E1020"
   | "E1021"
+  | "E1022"
   // E2xxx: Routing
   | "E2001"
   | "E2002"
@@ -73,7 +74,9 @@ export type ECode =
   | "E3017"
   | "E3018"
   | "E3019"
+  | "E3020"
   | "E3021"
+  | "E3022"
   // E4xxx: Content
   | "E4001"
   | "E4002"
@@ -217,6 +220,12 @@ const CODES: Record<ECode, ECodeDefinition> = {
     category: "spec-issue",
     context: "startup",
   },
+  E1022: {
+    title: "Invalid content type key",
+    severity: "error",
+    category: "spec-issue",
+    context: "startup",
+  },
 
   // ── E2xxx: Routing ──────────────────────────────────────────────────
   E2001: {
@@ -332,9 +341,21 @@ const CODES: Record<ECode, ECodeDefinition> = {
     category: "sdk-issue",
     context: "runtime",
   },
+  E3020: {
+    title: "Malformed Content-Type",
+    severity: "error",
+    category: "sdk-issue",
+    context: "runtime",
+  },
   E3021: {
     title: "Malformed request body",
     severity: "error",
+    category: "sdk-issue",
+    context: "runtime",
+  },
+  E3022: {
+    title: "Malformed Accept header",
+    severity: "warning",
     category: "sdk-issue",
     context: "runtime",
   },

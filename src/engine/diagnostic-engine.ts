@@ -312,25 +312,48 @@ export class DiagnosticEngine {
     }
 
     // 4. Content-Type validation
-    const acceptedTypes = this.spec.getAcceptedContentTypes(
-      pathPattern,
-      method,
-    );
-    if (acceptedTypes) {
-      const contentType = getContentType(request.headers);
-      if (contentType) {
-        const essence = getMediaType(contentType);
-        const acceptedEssences = acceptedTypes.map((t) => getMediaType(t));
-        if (!acceptedEssences.includes(essence)) {
-          diagnostics.push(
-            createWrongContentTypeDiagnostic(
-              pathPattern,
-              method,
-              essence,
-              acceptedTypes,
-            ),
-          );
+    const contentType = getHeaderValue(request.headers, "content-type");
+    if (contentType) {
+      const essence = getMediaType(contentType);
+      if (!essence) {
+        diagnostics.push(
+          createMalformedContentTypeDiagnostic(contentType),
+        );
+      } else {
+        const acceptedTypes = this.spec.getAcceptedContentTypes(
+          pathPattern,
+          method,
+        );
+        if (acceptedTypes) {
+          const acceptedEssences = acceptedTypes.flatMap((t) => {
+            const e = getMediaType(t);
+            return e ? [e] : [];
+          });
+          if (!acceptedEssences.includes(essence)) {
+            diagnostics.push(
+              createWrongContentTypeDiagnostic(
+                pathPattern,
+                method,
+                essence,
+                acceptedTypes,
+              ),
+            );
+          }
         }
+      }
+    }
+
+    // 4b. Accept header validation
+    const acceptHeader = getHeaderValue(request.headers, "accept");
+    if (acceptHeader) {
+      const hasValidEntry = acceptHeader.split(",").some((part) => {
+        const trimmed = part.trim();
+        return trimmed !== "" && getMediaType(trimmed) !== null;
+      });
+      if (!hasValidEntry) {
+        diagnostics.push(
+          createMalformedAcceptDiagnostic(acceptHeader),
+        );
       }
     }
 
@@ -542,16 +565,74 @@ function createWrongContentTypeDiagnostic(
 }
 
 /**
- * Extract the Content-Type header value (case-insensitive).
+ * Extract a header value by name (case-insensitive).
  */
-function getContentType(
+function getHeaderValue(
   headers: Record<string, string> | undefined,
+  name: string,
 ): string | undefined {
   if (!headers) return undefined;
+  const lower = name.toLowerCase();
   for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === "content-type") return value;
+    if (key.toLowerCase() === lower) return value;
   }
   return undefined;
+}
+
+/**
+ * Create an E3020 diagnostic for a malformed Content-Type header.
+ */
+function createMalformedContentTypeDiagnostic(
+  rawContentType: string,
+): Diagnostic {
+  const def = getCode("E3020");
+
+  return {
+    code: "E3020",
+    severity: def.severity,
+    category: def.category,
+    requestPath: "header.content-type",
+    specPointer: "",
+    message:
+      `Content-Type "${rawContentType}" is not a valid media type. Expected a type/subtype format like "application/json"`,
+    actual: rawContentType,
+    attribution: {
+      confidence: 1.0,
+      reasoning: [
+        `Content-Type header value "${rawContentType}" cannot be parsed as a media type`,
+      ],
+    },
+    suggestion:
+      "Check the SDK's Content-Type header. It should follow the type/subtype format (e.g. application/json)",
+  };
+}
+
+/**
+ * Create an E3022 diagnostic for a fully malformed Accept header.
+ */
+function createMalformedAcceptDiagnostic(
+  rawAccept: string,
+): Diagnostic {
+  const def = getCode("E3022");
+
+  return {
+    code: "E3022",
+    severity: def.severity,
+    category: def.category,
+    requestPath: "header.accept",
+    specPointer: "",
+    message:
+      `Accept header "${rawAccept}" contains no valid media types. Content negotiation will use the server default`,
+    actual: rawAccept,
+    attribution: {
+      confidence: 1.0,
+      reasoning: [
+        `Accept header "${rawAccept}" has no parseable media type entries`,
+      ],
+    },
+    suggestion:
+      "Check the SDK's Accept header. It should contain type/subtype values like application/json or */*",
+  };
 }
 
 /**

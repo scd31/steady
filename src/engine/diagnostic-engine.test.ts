@@ -950,6 +950,122 @@ Deno.test("DiagnosticEngine", async (t) => {
     assertEquals(result.filter((d) => d.code === "E3006").length, 0);
   });
 
+  // ── Malformed Content-Type ──────────────────────────────────────
+
+  await t.step("malformed Content-Type → E3020", () => {
+    const spec = new StubSpec({ "/users": { post: OP } });
+    spec.bodySchema = {
+      schema: { type: "object" },
+      schemaPath:
+        "#/paths/~1users/post/requestBody/content/application~1json/schema",
+      required: true,
+    };
+    spec.acceptedContentTypes = ["application/json"];
+    const engine = createEngine(spec);
+
+    const result = engine.analyze({
+      path: "/users",
+      method: "post",
+      headers: { "content-type": "; utf-8" },
+      body: {},
+    });
+
+    const e3020 = result.find((d) => d.code === "E3020");
+    assertEquals(e3020 !== undefined, true);
+    assertEquals(e3020?.category, "sdk-issue");
+    assertEquals(e3020?.severity, "error");
+  });
+
+  await t.step(
+    "malformed Content-Type without requestBody in spec → E3020",
+    () => {
+      const spec = new StubSpec({ "/users": { post: OP } });
+      // No acceptedContentTypes set (null) - E3020 fires regardless
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/users",
+        method: "post",
+        headers: { "content-type": "; utf-8" },
+        body: {},
+      });
+
+      const e3020 = result.find((d) => d.code === "E3020");
+      assertEquals(e3020 !== undefined, true);
+    },
+  );
+
+  await t.step("valid Content-Type → no E3020", () => {
+    const spec = new StubSpec({ "/users": { post: OP } });
+    spec.acceptedContentTypes = ["application/json"];
+    const engine = createEngine(spec);
+
+    const result = engine.analyze({
+      path: "/users",
+      method: "post",
+      headers: { "content-type": "application/json" },
+      body: {},
+    });
+
+    assertEquals(result.filter((d) => d.code === "E3020").length, 0);
+  });
+
+  await t.step("no Content-Type header → no E3020", () => {
+    const spec = new StubSpec({ "/users": { post: OP } });
+    const engine = createEngine(spec);
+
+    const result = engine.analyze({
+      path: "/users",
+      method: "post",
+      body: {},
+    });
+
+    assertEquals(result.filter((d) => d.code === "E3020").length, 0);
+  });
+
+  // ── Malformed Accept header ───────────────────────────────────────
+
+  await t.step("fully malformed Accept header → E3022", () => {
+    const spec = new StubSpec({ "/users": { get: OP } });
+    const engine = createEngine(spec);
+
+    const result = engine.analyze({
+      path: "/users",
+      method: "get",
+      headers: { "accept": ";;;" },
+    });
+
+    const e3022 = result.find((d) => d.code === "E3022");
+    assertEquals(e3022 !== undefined, true);
+    assertEquals(e3022?.category, "sdk-issue");
+    assertEquals(e3022?.severity, "warning");
+  });
+
+  await t.step("Accept with one valid entry → no E3022", () => {
+    const spec = new StubSpec({ "/users": { get: OP } });
+    const engine = createEngine(spec);
+
+    const result = engine.analyze({
+      path: "/users",
+      method: "get",
+      headers: { "accept": "garbage, application/json" },
+    });
+
+    assertEquals(result.filter((d) => d.code === "E3022").length, 0);
+  });
+
+  await t.step("no Accept header → no E3022", () => {
+    const spec = new StubSpec({ "/users": { get: OP } });
+    const engine = createEngine(spec);
+
+    const result = engine.analyze({
+      path: "/users",
+      method: "get",
+    });
+
+    assertEquals(result.filter((d) => d.code === "E3022").length, 0);
+  });
+
   // ── Unknown query parameter detection ──────────────────────────
 
   await t.step("bracket param when spec defines base name → E3014", () => {

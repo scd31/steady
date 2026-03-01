@@ -107,7 +107,10 @@ export function walkSpec(
         ? {
           schema: bodySchema.schema,
           required: bodySchema.required,
-          contentTypes: (contentTypes ?? []).map((ct) => getMediaType(ct)),
+          contentTypes: (contentTypes ?? []).flatMap((ct) => {
+            const e = getMediaType(ct);
+            return e ? [e] : [];
+          }),
         }
         : null;
 

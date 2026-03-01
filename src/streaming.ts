@@ -44,7 +44,7 @@ export interface SSEEvent {
 /** Check if a raw Content-Type header value is a streaming type. */
 export function isStreamingContentType(contentType: string): boolean {
   const essence = getMediaType(contentType);
-  return isStreamingMediaType(essence);
+  return essence !== null && isStreamingMediaType(essence);
 }
 
 /** Get the streaming format from a raw Content-Type header value. */
@@ -52,6 +52,7 @@ export function getStreamFormat(
   contentType: string,
 ): "ndjson" | "sse" | null {
   const essence = getMediaType(contentType);
+  if (!essence) return null;
   return getStreamingFormat(essence);
 }
 

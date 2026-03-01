@@ -54,13 +54,9 @@ export function parseAcceptHeader(
       }
     }
 
-    try {
-      const essence = getMediaType(trimmed);
-      entries.push({ type: essence, q });
-    } catch {
-      // Skip malformed media types in Accept header
-      continue;
-    }
+    const essence = getMediaType(trimmed);
+    if (!essence) continue;
+    entries.push({ type: essence, q });
   }
 
   entries.sort((a, b) => b.q - a.q);
@@ -114,7 +110,18 @@ export function generateResponseFromObject(
   const acceptTypes = parseAcceptHeader(requestAcceptHeader);
 
   if (responseObj.content) {
-    const contentKeys = Object.keys(responseObj.content);
+    // Build parallel arrays of raw keys and parsed essences, skipping
+    // entries where the content type key is unparseable.
+    const contentKeys: string[] = [];
+    const contentEssences: MediaTypeEssence[] = [];
+    for (const k of Object.keys(responseObj.content)) {
+      const e = getMediaType(k);
+      if (e) {
+        contentKeys.push(k);
+        contentEssences.push(e);
+      }
+    }
+
     if (contentKeys.length === 0) {
       // Content object exists but is empty - this is unusual and likely a spec issue
       logger.warning(
@@ -124,8 +131,6 @@ export function generateResponseFromObject(
 
     // Select content type based on Accept header
     // Priority: Accept header match > first content type in spec
-    // Normalize spec keys to essences for case-insensitive comparison
-    const contentEssences = contentKeys.map((k) => getMediaType(k));
     let selectedContentType: string | undefined;
     for (const acceptType of acceptTypes) {
       const matchIndex = contentEssences.indexOf(acceptType);

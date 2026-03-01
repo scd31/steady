@@ -12,6 +12,7 @@ import { escapeSegment, resolve } from "@steady/json-pointer";
 import { JsonSchemaProcessor } from "@steady/json-schema";
 import type { Diagnostic, DiagnosticDisplay } from "../diagnostic.ts";
 import { type ECode, getCode, hasCode } from "../codes/registry.ts";
+import { getMediaType } from "../media-type.ts";
 import type { PipelineTimer } from "../timing.ts";
 import { HTTP_METHODS } from "../types.ts";
 
@@ -72,6 +73,7 @@ export function analyzeSpec(
   diagnostics.push(...checkNullBodyWithContent(spec));
   diagnostics.push(...checkNoSuccessResponse(spec));
   diagnostics.push(...checkUnconventionalRequestBody(spec));
+  diagnostics.push(...checkInvalidContentTypeKeys(spec));
   timer?.stop("structural");
 
   // Single tree walk collects $ref info and schema pointers
@@ -741,6 +743,95 @@ function checkUnconventionalRequestBody(spec: OpenAPIRaw): Diagnostic[] {
           },
         ),
       );
+    }
+  }
+
+  return diagnostics;
+}
+
+// ── E1022: Invalid content type key ─────────────────────────────────
+
+function checkInvalidContentTypeKeys(spec: OpenAPIRaw): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  for (const [path, pathItem] of Object.entries(spec.paths)) {
+    if (!pathItem) continue;
+
+    for (const method of HTTP_METHODS) {
+      const operation = pathItem[method];
+      if (!operation) continue;
+
+      const escapedPath = escapeSegment(path);
+
+      // Check requestBody.content keys
+      if (operation.requestBody) {
+        const rb = isObject(operation.requestBody) &&
+            "$ref" in operation.requestBody &&
+            typeof operation.requestBody.$ref === "string"
+          ? resolveLocalRef(spec, operation.requestBody.$ref)
+          : operation.requestBody;
+
+        if (isObject(rb) && isObject(rb.content)) {
+          for (const key of Object.keys(rb.content)) {
+            if (getMediaType(key) === null) {
+              diagnostics.push(
+                specDiagnostic(
+                  "E1022",
+                  `#/paths/${escapedPath}/${method}/requestBody/content/${
+                    escapeSegment(key)
+                  }`,
+                  `Invalid content type key ${
+                    JSON.stringify(key)
+                  } in request body for ${method.toUpperCase()} ${path}`,
+                  {
+                    suggestion:
+                      'Replace with a valid media type like "application/json". The schema under this key is unreachable until fixed',
+                  },
+                ),
+              );
+            }
+          }
+        }
+      }
+
+      // Check responses.*.content keys
+      if (operation.responses) {
+        for (
+          const [statusCode, responseOrRef] of Object.entries(
+            operation.responses,
+          )
+        ) {
+          const responseObj = isObject(responseOrRef) &&
+              "$ref" in responseOrRef &&
+              typeof responseOrRef.$ref === "string"
+            ? resolveLocalRef(spec, responseOrRef.$ref)
+            : responseOrRef;
+          if (!isObject(responseObj)) continue;
+
+          const content = responseObj.content;
+          if (!isObject(content)) continue;
+
+          for (const key of Object.keys(content)) {
+            if (getMediaType(key) === null) {
+              diagnostics.push(
+                specDiagnostic(
+                  "E1022",
+                  `#/paths/${escapedPath}/${method}/responses/${statusCode}/content/${
+                    escapeSegment(key)
+                  }`,
+                  `Invalid content type key ${
+                    JSON.stringify(key)
+                  } in ${statusCode} response for ${method.toUpperCase()} ${path}`,
+                  {
+                    suggestion:
+                      'Replace with a valid media type like "application/json". The schema under this key is unreachable until fixed',
+                  },
+                ),
+              );
+            }
+          }
+        }
+      }
     }
   }
 

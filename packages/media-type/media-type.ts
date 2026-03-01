@@ -47,13 +47,15 @@ export type StreamingMediaType = NdjsonMediaType | SseMediaType;
 /**
  * Parse a Content-Type header value into its media type essence.
  * Strips parameters (charset, boundary, etc.) using the WHATWG MIME type parser.
+ * Returns null if the input cannot be parsed.
  */
-export function getMediaType(contentType: string): MediaTypeEssence {
-  const [essence] = parseMediaType(contentType);
-  if (!essence) {
-    throw new TypeError(`Invalid media type: "${contentType}"`);
+export function getMediaType(contentType: string): MediaTypeEssence | null {
+  try {
+    const [essence] = parseMediaType(contentType);
+    return essence ? essence as MediaTypeEssence : null;
+  } catch {
+    return null;
   }
-  return essence as MediaTypeEssence;
 }
 
 /**

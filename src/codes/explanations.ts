@@ -469,6 +469,32 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
     seeAlso: ["E1013"],
   },
 
+  E1022: {
+    description:
+      "A content map key in requestBody.content or responses.*.content\n" +
+      "is not a valid media type. Common cases include empty strings\n" +
+      "and values missing the type/subtype slash separator.",
+    reasoning:
+      "This is a spec issue. OpenAPI content maps are keyed by media\n" +
+      'type (RFC 6838), e.g. "application/json". Invalid keys cannot\n' +
+      "be matched during content negotiation or Content-Type validation.\n" +
+      "Steady filters them out at runtime, so any schema defined under\n" +
+      "an invalid key will never be used for validation or response\n" +
+      "generation.",
+    example: "  /users/{id}/meal-plan:\n" +
+      "    post:\n" +
+      "      requestBody:\n" +
+      "        content:\n" +
+      '          "":                        # Empty string, invalid\n' +
+      "            schema:\n" +
+      "              type: object",
+    fix: "Replace the invalid key with a valid media type like\n" +
+      '"application/json". Until fixed, the schema under this key is\n' +
+      "unreachable: request body validation and response generation\n" +
+      "will not use it.",
+    seeAlso: ["E3020"],
+  },
+
   // ── E2xxx: Routing ──────────────────────────────────────────────────
 
   E2001: {
@@ -851,6 +877,24 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
     seeAlso: ["E3005", "E3006"],
   },
 
+  E3020: {
+    description:
+      "The Content-Type header could not be parsed as a valid media type.\n" +
+      "The header value is malformed and does not conform to RFC 6838.",
+    reasoning:
+      "This is an SDK issue. The SDK (or its HTTP client library) sets\n" +
+      "the Content-Type header. A malformed value means the server\n" +
+      "cannot determine how to interpret the request body.",
+    example: "  # SDK sends: Content-Type: ; utf-8\n" +
+      "  # SDK sends: Content-Type: (empty)\n" +
+      "  # Should be: Content-Type: application/json",
+    fix: "Check the SDK's Content-Type header construction. Most HTTP\n" +
+      "libraries set this automatically based on the body type. If the\n" +
+      "SDK sets it manually, ensure it follows the type/subtype format\n" +
+      "(e.g. application/json, text/plain).",
+    seeAlso: ["E3006", "E3019"],
+  },
+
   E3021: {
     description: "The request body could not be parsed. Either the JSON is\n" +
       "malformed (syntax error) or the body stream could not be read.",
@@ -866,6 +910,27 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
       "JSON.stringify (or equivalent) is called before sending. If the\n" +
       "error is a stream failure, check the HTTP client's encoding.",
     seeAlso: ["E3005", "E3006"],
+  },
+
+  E3022: {
+    description:
+      "The Accept header could not be parsed. None of the entries are\n" +
+      "valid media types. The server cannot determine what response\n" +
+      "format the client expects.",
+    reasoning:
+      "This is an SDK issue. The SDK (or its HTTP client library) sets\n" +
+      "the Accept header to indicate which response formats it can\n" +
+      "handle. A completely malformed Accept header means content\n" +
+      "negotiation cannot work. The server will fall back to its\n" +
+      "default response format.",
+    example: "  # SDK sends: Accept: ;;;\n" +
+      "  # SDK sends: Accept: (empty)\n" +
+      "  # Should be: Accept: application/json",
+    fix: "Check the SDK's Accept header construction. Most HTTP client\n" +
+      "libraries set a sensible default. If the SDK overrides Accept,\n" +
+      "ensure values follow the type/subtype format (e.g.\n" +
+      "application/json, text/html, */* for any type).",
+    seeAlso: ["E3006", "E3020"],
   },
 
   // ── E4xxx: Content Validation Notes ─────────────────────────────────

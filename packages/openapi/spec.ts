@@ -19,6 +19,7 @@ import {
   isFragmentPointer,
   isPlainObject,
 } from "@steady/json-pointer";
+import { getMediaType } from "@steady/media-type";
 import type {
   OpenAPIRaw,
   OperationObject,
@@ -276,7 +277,9 @@ export class OpenAPISpec {
       requestBody = operation.requestBody;
     }
 
-    const keys = Object.keys(requestBody.content);
+    const keys = Object.keys(requestBody.content).filter((k) =>
+      getMediaType(k) !== null
+    );
     return keys.length > 0 ? keys : null;
   }
 
