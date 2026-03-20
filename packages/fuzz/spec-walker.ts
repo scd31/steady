@@ -100,8 +100,13 @@ export function walkSpec(
         }
       }
 
-      const bodySchema = doc.getBodySchema(pathPattern, method);
       const contentTypes = doc.getAcceptedContentTypes(pathPattern, method);
+      const bodyContentType = contentTypes?.[0] ?? "application/json";
+      const bodySchema = doc.getBodySchema(
+        pathPattern,
+        method,
+        bodyContentType,
+      );
 
       const bodyInfo = bodySchema
         ? {

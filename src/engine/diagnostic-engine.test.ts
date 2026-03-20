@@ -48,6 +48,7 @@ class StubSpec implements Spec {
   getBodySchema(
     _pathPattern: string,
     _method: string,
+    _contentType: string,
   ): BodySchemaInfo | null {
     return this.bodySchema;
   }

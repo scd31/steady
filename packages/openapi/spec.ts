@@ -195,10 +195,14 @@ export class OpenAPISpec {
   }
 
   /**
-   * Body schema for an operation. null if no requestBody defined.
-   * Currently supports application/json content type.
+   * Body schema for an operation at a specific content type.
+   * null if no requestBody or no matching content type entry.
    */
-  getBodySchema(pathPattern: string, method: string): BodySchemaInfo | null {
+  getBodySchema(
+    pathPattern: string,
+    method: string,
+    contentType: string,
+  ): BodySchemaInfo | null {
     const pathItem = this.spec.paths[pathPattern];
     if (!pathItem) return null;
 
@@ -217,16 +221,17 @@ export class OpenAPISpec {
       requestBody = operation.requestBody;
     }
 
-    // Find application/json content
-    const jsonContent = requestBody.content["application/json"];
-    if (!jsonContent?.schema) return null;
+    const mediaContent = requestBody.content[contentType];
+    if (!mediaContent?.schema) return null;
 
     const escapedPath = escapeSegment(pathPattern);
     const inlinePointer: FragmentPointer =
-      `#/paths/${escapedPath}/${method}/requestBody/content/application~1json/schema`;
+      `#/paths/${escapedPath}/${method}/requestBody/content/${
+        escapeSegment(contentType)
+      }/schema`;
 
     const { schema, schemaPath } = this.resolveSchemaRef(
-      jsonContent.schema,
+      mediaContent.schema,
       inlinePointer,
     );
     if (!schema) return null;

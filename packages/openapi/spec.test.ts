@@ -291,7 +291,7 @@ Deno.test("OpenAPISpec", async (t) => {
       },
     });
     const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
-    const body = doc.getBodySchema("/users", "post");
+    const body = doc.getBodySchema("/users", "post", "application/json");
 
     assertEquals(body !== null, true);
     assertEquals(body!.schema.type, "object");
@@ -310,7 +310,7 @@ Deno.test("OpenAPISpec", async (t) => {
     });
     const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
 
-    assertEquals(doc.getBodySchema("/users", "get"), null);
+    assertEquals(doc.getBodySchema("/users", "get", "application/json"), null);
   });
 
   await t.step("$ref requestBody is resolved", () => {
@@ -336,7 +336,7 @@ Deno.test("OpenAPISpec", async (t) => {
       },
     });
     const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
-    const body = doc.getBodySchema("/users", "post");
+    const body = doc.getBodySchema("/users", "post", "application/json");
 
     assertEquals(body !== null, true);
     assertEquals(body!.schema.type, "object");
@@ -360,10 +360,64 @@ Deno.test("OpenAPISpec", async (t) => {
       },
     });
     const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
-    const body = doc.getBodySchema("/search", "query");
+    const body = doc.getBodySchema("/search", "query", "application/json");
 
     assertEquals(body !== null, true);
     assertEquals(body!.schema.type, "object");
+  });
+
+  await t.step("returns body schema for multipart/form-data", () => {
+    const spec = createSpec({
+      paths: {
+        "/uploads": {
+          post: {
+            requestBody: {
+              content: {
+                "multipart/form-data": {
+                  schema: { type: "object", required: ["file"] },
+                },
+              },
+            },
+            responses: { "200": { description: "OK" } },
+          },
+        },
+      },
+    });
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+    const body = doc.getBodySchema(
+      "/uploads",
+      "post",
+      "multipart/form-data",
+    );
+
+    assertEquals(body !== null, true);
+    assertEquals(body!.schema.type, "object");
+    assertEquals(body!.schema.required, ["file"]);
+  });
+
+  await t.step("returns null for unmatched content type", () => {
+    const spec = createSpec({
+      paths: {
+        "/uploads": {
+          post: {
+            requestBody: {
+              content: {
+                "multipart/form-data": {
+                  schema: { type: "object" },
+                },
+              },
+            },
+            responses: { "200": { description: "OK" } },
+          },
+        },
+      },
+    });
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+
+    assertEquals(
+      doc.getBodySchema("/uploads", "post", "application/json"),
+      null,
+    );
   });
 
   // ── hasResponses ─────────────────────────────────────────────────

@@ -43,10 +43,15 @@ export interface Spec {
   getParameters(pathPattern: string, method: string): ResolvedParameter[];
 
   /**
-   * Body schema for a matched route. null if no request body defined.
+   * Body schema for a matched route at a specific content type.
+   * null if no requestBody or no matching content type entry.
    * Resolves $refs in the request body.
    */
-  getBodySchema(pathPattern: string, method: string): BodySchemaInfo | null;
+  getBodySchema(
+    pathPattern: string,
+    method: string,
+    contentType: string,
+  ): BodySchemaInfo | null;
 
   /**
    * Whether the operation has response definitions.
@@ -313,8 +318,8 @@ export class DiagnosticEngine {
 
     // 4. Content-Type validation
     const contentType = getHeaderValue(request.headers, "content-type");
+    const essence = contentType ? getMediaType(contentType) : null;
     if (contentType) {
-      const essence = getMediaType(contentType);
       if (!essence) {
         diagnostics.push(
           createMalformedContentTypeDiagnostic(contentType),
@@ -358,7 +363,11 @@ export class DiagnosticEngine {
     }
 
     // 5. Body validation
-    const bodyInfo = this.spec.getBodySchema(pathPattern, method);
+    const bodyInfo = this.spec.getBodySchema(
+      pathPattern,
+      method,
+      essence ?? "application/json",
+    );
     if (bodyInfo) {
       if (request.body === undefined) {
         // Body not provided. E3005 if required, skip validation otherwise
