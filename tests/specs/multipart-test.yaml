@@ -1,0 +1,129 @@
+openapi: 3.1.0
+info:
+  title: Multipart test
+  version: 1.0.0
+paths:
+  /skills/{skill_id}/versions:
+    post:
+      operationId: CreateSkillVersion
+      parameters:
+        - in: path
+          name: skill_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CreateSkillVersionBody"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSkillVersionBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required:
+                  - ok
+              example:
+                ok: true
+  /uploads/{upload_id}/parts:
+    post:
+      operationId: UploadParts
+      parameters:
+        - in: path
+          name: upload_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UploadPartsBody"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadPartsBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required:
+                  - ok
+              example:
+                ok: true
+  /items:
+    post:
+      operationId: CreateItem
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CreateItemBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required:
+                  - ok
+              example:
+                ok: true
+components:
+  schemas:
+    CreateSkillVersionBody:
+      type: object
+      properties:
+        files:
+          anyOf:
+            - type: array
+              items:
+                type: string
+                format: binary
+            - type: string
+              format: binary
+        default:
+          type: boolean
+    UploadPartsBody:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+      required:
+        - files
+    CreateItemBody:
+      type: object
+      properties:
+        name:
+          type: string
+        count:
+          type: integer
+        active:
+          type: boolean
+      required:
+        - name
+        - count

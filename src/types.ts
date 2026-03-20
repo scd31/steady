@@ -3,6 +3,10 @@
 import type { Diagnostic, IssueCategory } from "./diagnostic.ts";
 import type { LogLevel } from "./logging/mod.ts";
 import { isPlainObject } from "@steady/json-pointer";
+import type {
+  ConcreteArrayFormat,
+  ConcreteObjectFormat,
+} from "./param-format.ts";
 
 export { VERSION } from "./version.ts";
 
@@ -145,6 +149,22 @@ export function isValidObjectFormat(
   value: string | null,
 ): value is QueryObjectFormat {
   return value !== null && VALID_OBJECT_FORMATS_SET.has(value);
+}
+
+/** Type guard for form array format strings (excludes "auto"). */
+export function isValidFormArrayFormat(
+  value: string | null,
+): value is ConcreteArrayFormat {
+  return value !== null && value !== "auto" &&
+    VALID_ARRAY_FORMATS_SET.has(value);
+}
+
+/** Type guard for form object format strings (excludes "auto"). */
+export function isValidFormObjectFormat(
+  value: string | null,
+): value is ConcreteObjectFormat {
+  return value !== null && value !== "auto" &&
+    VALID_OBJECT_FORMATS_SET.has(value);
 }
 
 export interface ValidatorConfig {

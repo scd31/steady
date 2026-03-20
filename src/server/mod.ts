@@ -14,7 +14,10 @@ import type { PipelineTimer } from "../timing.ts";
 import {
   HEADERS,
   isHttpMethod,
+  isReference,
   isValidArrayFormat,
+  isValidFormArrayFormat,
+  isValidFormObjectFormat,
   isValidObjectFormat,
   VERSION,
 } from "../types.ts";
@@ -28,8 +31,10 @@ import { JsonLogger } from "../logging/json-logger.ts";
 import { CILogger } from "../logging/ci-logger.ts";
 import { getStatusText } from "../logging/colors.ts";
 import { isParseError, parseRequestBody } from "../body-parser.ts";
+import type { FormParserOptions } from "../form-parser.ts";
 import { OpenAPISpec } from "@steady/openapi";
-import { TreeValidator } from "@steady/json-schema";
+import { isSchema, TreeValidator } from "@steady/json-schema";
+import { getMediaType, isFormMediaType } from "../media-type.ts";
 import {
   type AnalyzeRequest,
   DiagnosticEngine,
@@ -313,8 +318,55 @@ export class MockServer {
     } = routeResult;
 
     try {
+      // Build form parsing options only for form content types
+      const rawContentType = req.headers.get("content-type");
+      const essence = rawContentType ? getMediaType(rawContentType) : null;
+      let formOptions: FormParserOptions | undefined;
+
+      if (essence && isFormMediaType(essence)) {
+        // Merge form format: per-request header > config
+        const headerFormArrayFmt = req.headers.get(HEADERS.FORM_ARRAY_FORMAT);
+        const headerFormObjectFmt = req.headers.get(HEADERS.FORM_OBJECT_FORMAT);
+
+        const configFormArrayFmt = this.config.validator?.formArrayFormat ??
+          null;
+        const configFormObjectFmt = this.config.validator?.formObjectFormat ??
+          null;
+        const formArrayFormat = isValidFormArrayFormat(headerFormArrayFmt)
+          ? headerFormArrayFmt
+          : isValidFormArrayFormat(configFormArrayFmt)
+          ? configFormArrayFmt
+          : undefined;
+        const formObjectFormat = isValidFormObjectFormat(headerFormObjectFmt)
+          ? headerFormObjectFmt
+          : isValidFormObjectFormat(configFormObjectFmt)
+          ? configFormObjectFmt
+          : undefined;
+
+        // Resolve body schema for type coercion
+        const bodyInfo = this.specDoc.getBodySchema(
+          pathPattern,
+          method,
+          essence,
+        );
+
+        formOptions = {
+          formArrayFormat,
+          formObjectFormat,
+          schema: bodyInfo?.schema,
+          resolveSchema: (schema) => {
+            if (isReference(schema)) {
+              const resolved = this.specDoc.resolveRef(schema.$ref);
+              if (isSchema(resolved)) return resolved;
+              return undefined;
+            }
+            return schema;
+          },
+        };
+      }
+
       // Parse request body
-      const parseResult = await parseRequestBody(req, null);
+      const parseResult = await parseRequestBody(req, null, formOptions);
       let parseDiags: Diagnostic[] = [];
       let body: unknown;
       if (isParseError(parseResult)) {

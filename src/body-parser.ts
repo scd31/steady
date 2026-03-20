@@ -11,7 +11,11 @@
 
 import type { Diagnostic } from "./diagnostic.ts";
 import { getCode } from "./codes/registry.ts";
-import { parseFormData, parseUrlEncoded } from "./form-parser.ts";
+import {
+  type FormParserOptions,
+  parseFormData,
+  parseUrlEncoded,
+} from "./form-parser.ts";
 import {
   getMediaType,
   isFormMediaType,
@@ -40,10 +44,12 @@ export function isParseError(r: ParseResult): r is BodyParseError {
  *
  * @param req - The incoming Request
  * @param _acceptedContentTypes - Content types the operation accepts, or null to skip content-type checking
+ * @param formOptions - Options for form data parsing (format, schema for coercion)
  */
 export async function parseRequestBody(
   req: Request,
   _acceptedContentTypes: string[] | null,
+  formOptions?: FormParserOptions,
 ): Promise<ParseResult> {
   // No Content-Type means no body to parse. Deno's HTTP server may set
   // req.body to an empty ReadableStream even for bodyless requests, so we
@@ -91,7 +97,11 @@ export async function parseRequestBody(
     let parsedBody: unknown;
 
     if (maybeMediaType && isFormMediaType(maybeMediaType)) {
-      parsedBody = await parseFormBody(req.clone(), maybeMediaType);
+      parsedBody = await parseFormBody(
+        req.clone(),
+        maybeMediaType,
+        formOptions,
+      );
     } else if (maybeMediaType && isJsonMediaType(maybeMediaType)) {
       const body = await readBody(req.clone());
       if (body === "") {
@@ -165,26 +175,27 @@ async function readBody(req: Request): Promise<string> {
 
 /**
  * Parse form data body (multipart/form-data or application/x-www-form-urlencoded).
- * Uses simple defaults for array/object formats since the engine handles schema validation.
  */
 async function parseFormBody(
   req: Request,
   mediaType: MultipartFormData | UrlEncoded,
+  options?: FormParserOptions,
 ): Promise<unknown> {
+  const parserOptions: FormParserOptions = {
+    formArrayFormat: options?.formArrayFormat ?? "repeat",
+    formObjectFormat: options?.formObjectFormat ?? "flat",
+    schema: options?.schema,
+    resolveSchema: options?.resolveSchema,
+  };
+
   if (isMultipartFormData(mediaType)) {
     const formData = await req.formData();
-    const parsed = parseFormData(formData, {
-      formArrayFormat: "repeat",
-      formObjectFormat: "flat",
-    });
+    const parsed = parseFormData(formData, parserOptions);
     return parsed.data;
   }
 
   // application/x-www-form-urlencoded
   const body = await readBody(req);
-  const parsed = parseUrlEncoded(body, {
-    formArrayFormat: "repeat",
-    formObjectFormat: "flat",
-  });
+  const parsed = parseUrlEncoded(body, parserOptions);
   return parsed.data;
 }
