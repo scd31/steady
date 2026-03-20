@@ -710,3 +710,257 @@ Deno.test("RegistryResponseGenerator - allOf with nullable should return valid v
     }`,
   );
 });
+
+// --- Invalid example type-mismatch tests ---
+// When `example` or `examples` values don't match the schema's declared type,
+// the generator should skip them and fall through to type-based generation.
+
+Deno.test("RegistryResponseGenerator - array schema with object in examples falls back to generation", () => {
+  // Spec author put item-level examples in the field-level `examples` array.
+  // Each entry should itself be an array, but they put bare objects instead.
+  const schema: Schema = {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        primary: { type: "boolean", default: false },
+      },
+      required: ["name"],
+    },
+    examples: [
+      { primary: true, name: "Tag 1" },
+      { primary: false, name: "Tag 2" },
+    ],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(
+    Array.isArray(result),
+    true,
+    `should be an array, got: ${JSON.stringify(result)}`,
+  );
+});
+
+Deno.test("RegistryResponseGenerator - array schema with object in example (singular) falls back to generation", () => {
+  const schema: Schema = {
+    type: "array",
+    items: { type: "string" },
+    example: { not: "an array" },
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(
+    Array.isArray(result),
+    true,
+    `should be an array, got: ${JSON.stringify(result)}`,
+  );
+});
+
+Deno.test("RegistryResponseGenerator - object schema with string example falls back to generation", () => {
+  const schema: Schema = {
+    type: "object",
+    properties: { name: { type: "string" } },
+    example: "not an object",
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(
+    typeof result === "object" && result !== null && !Array.isArray(result),
+    true,
+    `should be an object, got: ${JSON.stringify(result)}`,
+  );
+});
+
+Deno.test("RegistryResponseGenerator - object schema with array example falls back to generation", () => {
+  const schema: Schema = {
+    type: "object",
+    properties: { id: { type: "integer" } },
+    example: [1, 2, 3],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(
+    typeof result === "object" && result !== null && !Array.isArray(result),
+    true,
+    `should be an object, got: ${JSON.stringify(result)}`,
+  );
+});
+
+Deno.test("RegistryResponseGenerator - string schema with object example falls back to generation", () => {
+  const schema: Schema = {
+    type: "string",
+    example: { wrong: true },
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(
+    typeof result,
+    "string",
+    `should be a string, got: ${JSON.stringify(result)}`,
+  );
+});
+
+Deno.test("RegistryResponseGenerator - integer schema with string example falls back to generation", () => {
+  const schema: Schema = {
+    type: "integer",
+    minimum: 0,
+    maximum: 100,
+    example: "not a number",
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(
+    typeof result,
+    "number",
+    `should be a number, got: ${JSON.stringify(result)}`,
+  );
+});
+
+Deno.test("RegistryResponseGenerator - boolean schema with string example falls back to generation", () => {
+  const schema: Schema = {
+    type: "boolean",
+    example: "true",
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(
+    typeof result,
+    "boolean",
+    `should be a boolean, got: ${JSON.stringify(result)}`,
+  );
+});
+
+Deno.test("RegistryResponseGenerator - number schema with array in examples falls back to generation", () => {
+  const schema: Schema = {
+    type: "number",
+    examples: [["not", "a", "number"], [1, 2]],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(
+    typeof result,
+    "number",
+    `should be a number, got: ${JSON.stringify(result)}`,
+  );
+});
+
+// --- Valid examples should still be used ---
+
+Deno.test("RegistryResponseGenerator - valid array example is used as-is", () => {
+  const schema: Schema = {
+    type: "array",
+    items: { type: "string" },
+    example: ["a", "b", "c"],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(result, ["a", "b", "c"]);
+});
+
+Deno.test("RegistryResponseGenerator - valid array in examples array is used as-is", () => {
+  const schema: Schema = {
+    type: "array",
+    items: { type: "number" },
+    examples: [[1, 2, 3], [4, 5, 6]],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(result, [1, 2, 3]);
+});
+
+Deno.test("RegistryResponseGenerator - valid object example is used as-is", () => {
+  const schema: Schema = {
+    type: "object",
+    properties: { name: { type: "string" } },
+    example: { name: "Alice" },
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(result, { name: "Alice" });
+});
+
+Deno.test("RegistryResponseGenerator - valid string example is used as-is", () => {
+  const schema: Schema = {
+    type: "string",
+    examples: ["hello", "world"],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(result, "hello");
+});
+
+Deno.test("RegistryResponseGenerator - null example for nullable schema is used as-is", () => {
+  const schema: Schema = {
+    type: "null",
+    example: null,
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+  assertEquals(result, null);
+});
+
+Deno.test("RegistryResponseGenerator - type-mismatched example nested inside object property", () => {
+  // The original bug: array property with object examples inside a parent object.
+  const schema: Schema = {
+    type: "object",
+    properties: {
+      tags: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            primary: { type: "boolean", default: false },
+          },
+          required: ["name"],
+        },
+        examples: [
+          { primary: true, name: "Tag 1" },
+          { primary: false, name: "Tag 2" },
+        ],
+      },
+    },
+    required: ["tags"],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#") as Record<
+    string,
+    unknown
+  >;
+  const tags = result.tags;
+
+  assertEquals(
+    Array.isArray(tags),
+    true,
+    `tags should be an array, got: ${JSON.stringify(tags)}`,
+  );
+});

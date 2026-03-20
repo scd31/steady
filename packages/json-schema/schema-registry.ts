@@ -361,14 +361,19 @@ export class RegistryResponseGenerator {
       return result;
     }
 
-    // Priority 1: Use explicit example
+    // Priority 1: Use explicit example (skip if type doesn't match schema)
     if (schema.example !== undefined && this.options.useExamples !== false) {
-      return schema.example;
+      if (this.exampleMatchesType(schema.example, schema)) {
+        return schema.example;
+      }
     }
 
-    // Priority 2: Use first example from examples array
+    // Priority 2: Use first example from examples array (skip if type doesn't match)
     if (schema.examples?.length && this.options.useExamples !== false) {
-      return schema.examples[0];
+      const first = schema.examples[0];
+      if (this.exampleMatchesType(first, schema)) {
+        return first;
+      }
     }
 
     // Priority 3: Use default
@@ -517,6 +522,37 @@ export class RegistryResponseGenerator {
       return "number";
     }
     return null;
+  }
+
+  /**
+   * Check whether a candidate example value is type-compatible with the schema.
+   * Returns true when the schema has no declared type (permissive) or when
+   * the JS runtime type of the value matches the JSON Schema type.
+   * This prevents returning e.g. a plain object for an array-typed schema
+   * when the spec author put item-level examples in the `examples` array.
+   */
+  private exampleMatchesType(value: unknown, schema: Schema): boolean {
+    const type = this.inferType(schema);
+    if (type === null) return true;
+
+    switch (type) {
+      case "array":
+        return Array.isArray(value);
+      case "object":
+        return typeof value === "object" && value !== null &&
+          !Array.isArray(value);
+      case "string":
+        return typeof value === "string";
+      case "number":
+      case "integer":
+        return typeof value === "number";
+      case "boolean":
+        return typeof value === "boolean";
+      case "null":
+        return value === null;
+      default:
+        return true;
+    }
   }
 
   private generateInteger(schema: Schema): number {
