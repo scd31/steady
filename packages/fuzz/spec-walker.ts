@@ -101,11 +101,11 @@ export function walkSpec(
       }
 
       const contentTypes = doc.getAcceptedContentTypes(pathPattern, method);
-      const bodyContentType = contentTypes?.[0] ?? "application/json";
+      // The fuzzer generates JSON bodies, so always look up the JSON schema.
       const bodySchema = doc.getBodySchema(
         pathPattern,
         method,
-        bodyContentType,
+        "application/json",
       );
 
       const bodyInfo = bodySchema
