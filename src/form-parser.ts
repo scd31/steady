@@ -101,16 +101,18 @@ export function parseFormData(
 
     // Handle file fields
     if (fileValues.length > 0) {
+      const isExplicitArray = explicitArrayFields.has(key);
+      const treatAsArray = isExplicitArray || fileValues.length > 1;
       const firstFile = fileValues[0];
-      if (fileValues.length === 1 && firstFile !== undefined) {
-        files.set(key, firstFile);
-      } else {
+      if (treatAsArray) {
         files.set(key, fileValues);
+      } else if (firstFile !== undefined) {
+        files.set(key, firstFile);
       }
       // Also set a placeholder in the data for schema validation
-      const filePlaceholder = fileValues.length === 1
-        ? "[File]"
-        : fileValues.map(() => "[File]");
+      const filePlaceholder = treatAsArray
+        ? fileValues.map(() => "[File]")
+        : "[File]";
       const path = parseKeyToPath(key, formObjectFormat);
       setNestedValue(result, path, filePlaceholder);
       continue;
