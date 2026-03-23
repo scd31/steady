@@ -6,7 +6,13 @@
  * invalid variants.
  */
 
-import { isSchema } from "@steady/json-schema";
+import {
+  effectiveItems,
+  effectiveProperties,
+  effectiveRequired,
+  effectiveType,
+  isSchema,
+} from "@steady/json-schema";
 import type { Schema } from "@steady/json-schema";
 import type { FuzzRequest, OperationInfo, ParameterInfo } from "./types.ts";
 
@@ -88,7 +94,7 @@ function generateScalar(schema: Schema): string | number | boolean {
   if (schema.default !== undefined) return primitiveToScalar(schema.default);
   if (schema.example !== undefined) return primitiveToScalar(schema.example);
 
-  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  const type = effectiveType(schema);
 
   switch (type) {
     case "integer":
@@ -138,9 +144,9 @@ function generateString(schema: Schema): string {
  */
 export function generateFromSchema(schema: Schema): unknown {
   // Handle boolean schemas at the call site; this function only handles objects.
-  const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  const type = effectiveType(schema);
 
-  if (type === "object" || schema.properties) {
+  if (type === "object" || effectiveProperties(schema)) {
     return generateObject(schema);
   }
 
@@ -154,8 +160,8 @@ export function generateFromSchema(schema: Schema): unknown {
 
 function generateObject(schema: Schema): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  const properties = schema.properties ?? {};
-  const required = new Set(schema.required ?? []);
+  const properties = effectiveProperties(schema) ?? {};
+  const required = new Set(effectiveRequired(schema));
 
   for (const [name, propSchemaRaw] of Object.entries(properties)) {
     // Only populate required fields (keeps baseline minimal)
@@ -175,7 +181,7 @@ function generateObject(schema: Schema): Record<string, unknown> {
 }
 
 function generateArray(schema: Schema): unknown[] {
-  const itemSchema = schema.items;
+  const itemSchema = effectiveItems(schema);
   if (isSchema(itemSchema)) {
     return [generateFromSchema(itemSchema)];
   }

@@ -9,8 +9,8 @@ import { assertEquals } from "@std/assert";
 import { wrapURLSearchParams } from "../param-format.ts";
 import type { ResolvedParameter } from "./diagnostic-engine.ts";
 import {
+  coerceDeep,
   coerceScalar,
-  deepCoerce,
   deserializeNonQueryParam,
   getExpectedQueryKeys,
   isArraySchema,
@@ -130,6 +130,32 @@ Deno.test("coerceScalar: string schema returns raw", () => {
   assertEquals(coerceScalar("hello", { type: "string" }), "hello");
 });
 
+Deno.test("coerceScalar: walks allOf to find integer type", () => {
+  assertEquals(coerceScalar("0", { allOf: [{ type: "integer" }] }), 0);
+});
+
+Deno.test("coerceScalar: walks allOf to find number type", () => {
+  assertEquals(coerceScalar("3.14", { allOf: [{ type: "number" }] }), 3.14);
+});
+
+Deno.test("coerceScalar: walks allOf to find boolean type", () => {
+  assertEquals(coerceScalar("true", { allOf: [{ type: "boolean" }] }), true);
+});
+
+Deno.test("coerceScalar: walks anyOf to find integer type", () => {
+  assertEquals(
+    coerceScalar("5", { anyOf: [{ type: "integer" }, { type: "null" }] }),
+    5,
+  );
+});
+
+Deno.test("coerceScalar: walks oneOf to find integer type", () => {
+  assertEquals(
+    coerceScalar("7", { oneOf: [{ type: "integer" }, { type: "string" }] }),
+    7,
+  );
+});
+
 Deno.test("parseQueryParam: boolean true schema returns raw string", () => {
   const source = sourceFromQuery("name=sam");
   const param = makeParam({ name: "name", schema: true as unknown as null });
@@ -146,7 +172,7 @@ Deno.test("deepCoerce: coerces array items", () => {
     type: "array" as const,
     items: { type: "integer" as const },
   };
-  assertEquals(deepCoerce(["1", "2", "3"], schema), [1, 2, 3]);
+  assertEquals(coerceDeep(["1", "2", "3"], schema), [1, 2, 3]);
 });
 
 Deno.test("deepCoerce: coerces object properties", () => {
@@ -158,7 +184,7 @@ Deno.test("deepCoerce: coerces object properties", () => {
       name: { type: "string" as const },
     },
   };
-  assertEquals(deepCoerce({ age: "30", active: "true", name: "sam" }, schema), {
+  assertEquals(coerceDeep({ age: "30", active: "true", name: "sam" }, schema), {
     age: 30,
     active: true,
     name: "sam",
@@ -167,12 +193,12 @@ Deno.test("deepCoerce: coerces object properties", () => {
 
 Deno.test("deepCoerce: passes through non-string leaf values", () => {
   const schema = { type: "integer" as const };
-  assertEquals(deepCoerce(42, schema), 42);
+  assertEquals(coerceDeep(42, schema), 42);
 });
 
 Deno.test("deepCoerce: handles missing items schema gracefully", () => {
   const schema = { type: "array" as const };
-  assertEquals(deepCoerce(["a", "b"], schema), ["a", "b"]);
+  assertEquals(coerceDeep(["a", "b"], schema), ["a", "b"]);
 });
 
 // ── parseQueryParam: scalar ────────────────────────────────────────
@@ -293,6 +319,23 @@ Deno.test("parseQueryParam: auto format uses style/explode from param", () => {
 });
 
 // ── parseQueryParam: objects ───────────────────────────────────────
+
+Deno.test("parseQueryParam: allOf object with integer property coerces via brackets", () => {
+  const source = sourceFromQuery("foo_and_bar[bar]=0&foo_and_bar[foo]=foo");
+  const param = makeParam({
+    name: "foo_and_bar",
+    schema: {
+      allOf: [
+        { type: "object", properties: { foo: { type: "string" } } },
+        { type: "object", properties: { bar: { type: "integer" } } },
+      ],
+    },
+  });
+
+  const result = parseQueryParam(source, param, "auto", "brackets");
+  assertEquals(result.present, true);
+  assertEquals(result.value, { foo: "foo", bar: 0 });
+});
 
 Deno.test("parseQueryParam: brackets object format", () => {
   const source = sourceFromQuery("user[name]=sam&user[age]=30");

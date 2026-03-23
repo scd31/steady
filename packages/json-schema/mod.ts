@@ -39,3 +39,15 @@ export { isSchema } from "./types.ts";
 
 // Core processing components
 export { JsonSchemaProcessor } from "./processor.ts";
+
+// Schema inspection and coercion utilities
+export {
+  coerceDeep,
+  coerceScalar,
+  effectiveItems,
+  effectiveProperties,
+  effectiveRequired,
+  effectiveType,
+  isArraySchema,
+  isObjectSchema,
+} from "./schema-utils.ts";

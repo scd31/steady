@@ -13,6 +13,13 @@
  */
 
 import type { ReferenceObject, SchemaObject } from "@steady/openapi";
+import {
+  coerceScalar,
+  effectiveItems,
+  effectiveProperties,
+  effectiveType,
+  isArraySchema,
+} from "@steady/json-schema";
 import { isReference } from "./types.ts";
 import {
   type ConcreteArrayFormat,
@@ -132,22 +139,21 @@ export function parseFormData(
     // Determine if this should be an array
     const isExplicitArray = explicitArrayFields.has(key);
     const isArrayField = isExplicitArray ||
-      shouldBeArray(propertySchema, stringValues.length);
+      (propertySchema ? isArraySchema(propertySchema) : false) ||
+      stringValues.length > 1;
 
     // Handle comma format: split single value into array if schema expects array
     if (
       formArrayFormat === "comma" && stringValues.length === 1 &&
-      propertySchema?.type === "array"
+      propertySchema && effectiveType(propertySchema) === "array"
     ) {
       const first = stringValues[0];
       if (first === undefined) continue;
       const parts = first.split(",");
-      const rawItems = propertySchema.items;
-      const itemSchema =
-        rawItems && !Array.isArray(rawItems) && !isReference(rawItems)
-          ? rawItems
-          : undefined;
-      const finalValue = parts.map((v) => coerceValue(v.trim(), itemSchema));
+      const itemSchema = propertySchema ? effectiveItems(propertySchema) : null;
+      const finalValue = parts.map((v) =>
+        itemSchema ? coerceScalar(v.trim(), itemSchema) : v.trim()
+      );
       const path = parseKeyToPath(key, formObjectFormat);
       setNestedValue(result, path, finalValue);
       continue;
@@ -156,11 +162,21 @@ export function parseFormData(
     // Coerce values based on schema
     let finalValue: unknown;
     if (isArrayField) {
-      finalValue = stringValues.map((v) => coerceValue(v, propertySchema));
+      // When the schema describes an array, coerce each value using the
+      // items schema (not the array schema itself, which would resolve to
+      // type "array" and skip coercion).
+      const itemSchema = propertySchema && isArraySchema(propertySchema)
+        ? effectiveItems(propertySchema)
+        : propertySchema;
+      finalValue = stringValues.map((v) =>
+        itemSchema ? coerceScalar(v, itemSchema) : v
+      );
     } else {
       const firstValue = stringValues[0];
       finalValue = firstValue !== undefined
-        ? coerceValue(firstValue, propertySchema)
+        ? (propertySchema
+          ? coerceScalar(firstValue, propertySchema)
+          : firstValue)
         : undefined;
     }
 
@@ -211,15 +227,23 @@ export function parseUrlEncoded(
     );
     const isExplicitArray = explicitArrays.has(key);
     const isArrayField = isExplicitArray ||
-      shouldBeArray(propertySchema, values.length);
+      (propertySchema ? isArraySchema(propertySchema) : false) ||
+      values.length > 1;
 
     let finalValue: unknown;
     if (isArrayField) {
-      finalValue = values.map((v) => coerceValue(v, propertySchema));
+      const itemSchema = propertySchema && isArraySchema(propertySchema)
+        ? effectiveItems(propertySchema)
+        : propertySchema;
+      finalValue = values.map((v) =>
+        itemSchema ? coerceScalar(v, itemSchema) : v
+      );
     } else {
       const firstValue = values[0];
       finalValue = firstValue !== undefined
-        ? coerceValue(firstValue, propertySchema)
+        ? (propertySchema
+          ? coerceScalar(firstValue, propertySchema)
+          : firstValue)
         : undefined;
     }
 
@@ -262,131 +286,29 @@ function getPropertySchema(
   for (const segment of path) {
     if (!current) return undefined;
 
-    if (current.type === "array" && isNumericString(segment)) {
+    if (effectiveType(current) === "array" && isNumericString(segment)) {
       // Array index - get items schema
-      const rawItems: SchemaObject | SchemaObject[] | undefined = current.items;
-      if (!rawItems || Array.isArray(rawItems)) return undefined;
-      if (isReference(rawItems)) {
-        current = resolveSchema?.(rawItems);
+      const itemSchema = effectiveItems(current);
+      if (!itemSchema || typeof itemSchema === "boolean") {
+        current = undefined;
+      } else if (isReference(itemSchema)) {
+        current = resolveSchema?.(itemSchema);
       } else {
-        current = rawItems;
+        current = itemSchema;
       }
-    } else if (current.properties) {
-      // Object property
-      const prop = current.properties[segment];
+    } else {
+      // Object property - walk through effective properties
+      const props = effectiveProperties(current);
+      if (!props) return undefined;
+      const prop = props[segment];
       if (!prop) return undefined;
       if (isReference(prop)) {
         current = resolveSchema?.(prop);
       } else {
         current = prop;
       }
-    } else {
-      return undefined;
     }
   }
 
   return current;
-}
-
-/**
- * Determine if a field should be an array based on schema or value count
- */
-function shouldBeArray(
-  schema: SchemaObject | undefined,
-  valueCount: number,
-): boolean {
-  // If schema says it's an array, it's an array
-  if (schema?.type === "array") return true;
-
-  // Multiple values without explicit schema → probably an array
-  if (valueCount > 1) return true;
-
-  return false;
-}
-
-/**
- * Get the primary type from a schema, handling anyOf/oneOf compositions.
- * Returns the first non-null type found.
- */
-function getPrimaryType(schema: SchemaObject | undefined): string {
-  if (!schema) return "string";
-
-  // Direct type check
-  if (schema.type) {
-    const types = Array.isArray(schema.type) ? schema.type : [schema.type];
-    for (const t of types) {
-      if (t !== "null") return t;
-    }
-  }
-
-  // Check anyOf/oneOf for a type (commonly used for nullable types)
-  if (schema.anyOf) {
-    for (const sub of schema.anyOf) {
-      if (!isReference(sub)) {
-        const subType = getPrimaryType(sub);
-        if (subType !== "string") return subType;
-      }
-    }
-  }
-  if (schema.oneOf) {
-    for (const sub of schema.oneOf) {
-      if (!isReference(sub)) {
-        const subType = getPrimaryType(sub);
-        if (subType !== "string") return subType;
-      }
-    }
-  }
-
-  return "string";
-}
-
-/**
- * Coerce a string value to the appropriate type based on schema
- */
-function coerceValue(
-  value: string,
-  schema: SchemaObject | undefined,
-): unknown {
-  if (!schema) return value;
-
-  const primaryType = getPrimaryType(schema);
-
-  switch (primaryType) {
-    case "integer":
-      return parseInt(value, 10);
-
-    case "number":
-      return parseFloat(value);
-
-    case "boolean":
-      if (value === "true") return true;
-      if (value === "false") return false;
-      // Invalid boolean - return as string, let schema validation catch it
-      return value;
-
-    case "array":
-      // If the schema expects an array but we got a single string,
-      // it might be comma-separated - split and coerce each item
-      if (value.includes(",")) {
-        const items = schema.items;
-        return value.split(",").map((v) =>
-          items && !Array.isArray(items) && !isReference(items)
-            ? coerceValue(v.trim(), items)
-            : v.trim()
-        );
-      }
-      // Don't auto-wrap single values - caller handles array structure
-      return value;
-
-    case "object":
-      // Try to parse as JSON
-      try {
-        return JSON.parse(value);
-      } catch {
-        return value;
-      }
-
-    default:
-      return value;
-  }
 }

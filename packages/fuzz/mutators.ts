@@ -7,7 +7,12 @@
  * If the mutator doesn't apply, it returns [].
  */
 
-import { isSchema } from "@steady/json-schema";
+import {
+  effectiveProperties,
+  effectiveRequired,
+  isSchema,
+} from "@steady/json-schema";
+import type { Schema } from "@steady/json-schema";
 import { isPlainObject } from "@steady/json-pointer";
 import { getMediaType } from "@steady/media-type";
 import type { FuzzRequest, MutatedCase, Mutator } from "./types.ts";
@@ -140,8 +145,8 @@ export const omitRequiredBodyField: Mutator = {
     if (!op.bodyInfo) return [];
     if (BODY_STRIPPED_METHODS.has(op.method)) return [];
     const schema = op.bodyInfo.schema;
-    const requiredFields = schema.required;
-    if (!requiredFields || requiredFields.length === 0) return [];
+    const requiredFields = effectiveRequired(schema);
+    if (requiredFields.length === 0) return [];
     if (!isPlainObject(baseline.body)) return [];
 
     const cases: MutatedCase[] = [];
@@ -169,6 +174,10 @@ export const wrongBodyFieldType: Mutator = {
   apply(op, baseline) {
     if (!op.bodyInfo) return [];
     if (BODY_STRIPPED_METHODS.has(op.method)) return [];
+    // Use direct schema.properties (not effectiveProperties) because
+    // properties found through oneOf/anyOf composition are variant-specific.
+    // The "wrong type" value may match a different variant, producing
+    // false positives. Direct properties are unambiguously typed.
     const properties = op.bodyInfo.schema.properties;
     if (!properties) return [];
     if (!isPlainObject(baseline.body)) return [];
@@ -176,6 +185,9 @@ export const wrongBodyFieldType: Mutator = {
     const cases: MutatedCase[] = [];
     for (const [field, propSchemaRaw] of Object.entries(properties)) {
       if (!isSchema(propSchemaRaw)) continue;
+      // Use direct type for the same reason: effectiveType on a property
+      // with anyOf/oneOf may resolve to a type from one variant, but the
+      // "wrong" value for that type could be valid in another variant.
       const type = Array.isArray(propSchemaRaw.type)
         ? propSchemaRaw.type[0]
         : propSchemaRaw.type;
@@ -228,6 +240,8 @@ export const wrongEnumValue: Mutator = {
   apply(op, baseline) {
     if (!op.bodyInfo) return [];
     if (BODY_STRIPPED_METHODS.has(op.method)) return [];
+    // Same reasoning as wrongBodyFieldType: only target properties
+    // with unambiguous enum constraints at the root level.
     const properties = op.bodyInfo.schema.properties;
     if (!properties) return [];
     if (!isPlainObject(baseline.body)) return [];
@@ -269,14 +283,14 @@ export const ALL_MUTATORS: Mutator[] = [
 
 /** Check if a field in a schema is marked readOnly. */
 function isReadOnlyField(
-  schema: { properties?: unknown },
+  schema: Schema,
   field: string,
 ): boolean {
-  const props = schema.properties;
-  if (!props || typeof props !== "object") return false;
-  const propSchema = (props as Record<string, unknown>)[field];
-  if (!propSchema || typeof propSchema !== "object") return false;
-  return (propSchema as Record<string, unknown>).readOnly === true;
+  const props = effectiveProperties(schema);
+  if (!props) return false;
+  const propSchema = props[field];
+  if (!propSchema || typeof propSchema === "boolean") return false;
+  return propSchema.readOnly === true;
 }
 
 function getWrongTypeValue(

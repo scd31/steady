@@ -18,8 +18,9 @@ import {
   isPlainObject,
   resolve as resolvePointer,
 } from "@steady/json-pointer";
+import { effectiveType } from "./schema-utils.ts";
 import { isSchema } from "./types.ts";
-import type { GenerateOptions, Schema, SchemaType } from "./types.ts";
+import type { GenerateOptions, Schema } from "./types.ts";
 
 /** Index built from a single walk of the spec. All consumers share this. */
 export interface DocIndex {
@@ -418,7 +419,7 @@ export class RegistryResponseGenerator {
     }
 
     // Priority 7: Generate based on type
-    const type = this.inferType(schema);
+    const type = effectiveType(schema);
 
     switch (type) {
       case "null":
@@ -492,38 +493,6 @@ export class RegistryResponseGenerator {
     }
   }
 
-  private inferType(schema: Schema): SchemaType | null {
-    if (schema.type) {
-      if (Array.isArray(schema.type)) {
-        const nonNull = schema.type.filter((t) => t !== "null");
-        return nonNull[0] ?? null;
-      }
-      return schema.type;
-    }
-    if (
-      schema.properties || schema.patternProperties ||
-      schema.additionalProperties
-    ) {
-      return "object";
-    }
-    if (schema.items || schema.prefixItems || schema.contains) {
-      return "array";
-    }
-    if (
-      schema.pattern || schema.minLength !== undefined ||
-      schema.maxLength !== undefined
-    ) {
-      return "string";
-    }
-    if (
-      schema.minimum !== undefined || schema.maximum !== undefined ||
-      schema.multipleOf !== undefined
-    ) {
-      return "number";
-    }
-    return null;
-  }
-
   /**
    * Check whether a candidate example value is type-compatible with the schema.
    * Returns true when the schema has no declared type (permissive) or when
@@ -532,7 +501,7 @@ export class RegistryResponseGenerator {
    * when the spec author put item-level examples in the `examples` array.
    */
   private exampleMatchesType(value: unknown, schema: Schema): boolean {
-    const type = this.inferType(schema);
+    const type = effectiveType(schema);
     if (type === null) return true;
 
     switch (type) {

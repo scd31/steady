@@ -459,6 +459,56 @@ Deno.test("parseUrlEncoded: coerces number with oneOf schema", () => {
   assertEquals(typeof result.data.value, "number");
 });
 
+Deno.test("parseUrlEncoded: coerces integer with allOf property schema", () => {
+  // Property-level allOf: the property itself is described via allOf
+  const result = parseUrlEncoded("count=42", {
+    schema: {
+      type: "object",
+      properties: {
+        count: {
+          allOf: [{ type: "integer" }],
+        },
+      },
+    },
+  });
+
+  assertEquals(result.data, { count: 42 });
+  assertEquals(typeof result.data.count, "number");
+});
+
+Deno.test("parseUrlEncoded: coerces through allOf on root schema", () => {
+  // Root-level allOf: properties spread across allOf members.
+  // getPropertySchema uses effectiveProperties to find "bar" across members.
+  const result = parseUrlEncoded("foo=hello&bar=0", {
+    schema: {
+      allOf: [
+        { type: "object", properties: { foo: { type: "string" } } },
+        { type: "object", properties: { bar: { type: "integer" } } },
+      ],
+    },
+  });
+
+  assertEquals(result.data.bar, 0);
+  assertEquals(typeof result.data.bar, "number");
+  assertEquals(result.data.foo, "hello");
+});
+
+Deno.test("parseUrlEncoded: coerces boolean with allOf schema", () => {
+  const result = parseUrlEncoded("active=true", {
+    schema: {
+      type: "object",
+      properties: {
+        active: {
+          allOf: [{ type: "boolean" }],
+        },
+      },
+    },
+  });
+
+  assertEquals(result.data, { active: true });
+  assertEquals(typeof result.data.active, "boolean");
+});
+
 // =============================================================================
 // Form array formats (formArrayFormat option)
 // =============================================================================

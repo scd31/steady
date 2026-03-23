@@ -8,8 +8,16 @@
  * - Deep coercion (string -> number/boolean at leaf level)
  *
  * The engine stays as orchestrator; this module does the parsing work.
+ * Schema inspection and coercion are delegated to @steady/json-schema.
  */
 
+import {
+  coerceDeep,
+  coerceScalar,
+  effectiveProperties,
+  isArraySchema,
+  isObjectSchema,
+} from "@steady/json-schema";
 import type { Schema } from "@steady/json-schema";
 import type { KeyValueSource } from "../param-format.ts";
 import {
@@ -23,74 +31,19 @@ import type { ConcreteObjectFormat } from "../param-format.ts";
 import type { QueryArrayFormat, QueryObjectFormat } from "../types.ts";
 import type { ResolvedParameter } from "./diagnostic-engine.ts";
 
+// Re-export for consumers that import from this module
+export {
+  coerceDeep,
+  coerceScalar,
+  isArraySchema,
+  isObjectSchema,
+} from "@steady/json-schema";
+
 // ── Public types ───────────────────────────────────────────────────
 
 export interface ParsedParam {
   present: boolean;
   value?: unknown;
-}
-
-// ── Schema inspection ──────────────────────────────────────────────
-
-/** Check if a schema describes an array type. Walks anyOf/oneOf/allOf. */
-export function isArraySchema(schema: Schema): boolean {
-  if (typeof schema === "boolean") return false;
-  if (schema.type === "array") return true;
-  for (const key of ["anyOf", "oneOf", "allOf"] as const) {
-    const variants = schema[key];
-    if (variants) {
-      for (const variant of variants) {
-        if (isArraySchema(variant)) return true;
-      }
-    }
-  }
-  return false;
-}
-
-/** Check if a schema describes an object type. Walks anyOf/oneOf/allOf. */
-export function isObjectSchema(schema: Schema): boolean {
-  if (typeof schema === "boolean") return false;
-  if (schema.type === "object") return true;
-  if (schema.properties !== undefined) return true;
-  if (schema.additionalProperties !== undefined) return true;
-  for (const key of ["anyOf", "oneOf", "allOf"] as const) {
-    const variants = schema[key];
-    if (variants) {
-      for (const variant of variants) {
-        if (isObjectSchema(variant)) return true;
-      }
-    }
-  }
-  return false;
-}
-
-// ── Scalar coercion ────────────────────────────────────────────────
-
-/**
- * Coerce a raw HTTP string to the type expected by the schema.
- * Returns the raw string if coercion fails (validator will catch the mismatch).
- */
-export function coerceScalar(raw: string, schema: Schema): unknown {
-  if (typeof schema === "boolean") return raw;
-
-  const schemaType = schema.type;
-
-  if (schemaType === "integer" || schemaType === "number") {
-    const num = Number(raw);
-    if (!Number.isNaN(num)) {
-      if (schemaType === "integer" && Number.isInteger(num)) return num;
-      if (schemaType === "number") return num;
-    }
-    return raw;
-  }
-
-  if (schemaType === "boolean") {
-    if (raw === "true") return true;
-    if (raw === "false") return false;
-    return raw;
-  }
-
-  return raw;
 }
 
 // ── Non-query parameter deserialization ────────────────────────────
@@ -140,7 +93,7 @@ export function deserializeNonQueryParam(
 
   if (isArray) {
     const values = raw.split(",").map((s) => s.trim());
-    return deepCoerce(values, schema);
+    return coerceDeep(values, schema);
   }
 
   // Object: explode=true means "R=100,G=200,B=150"
@@ -152,7 +105,7 @@ export function deserializeNonQueryParam(
         obj[segment.slice(0, eqIdx).trim()] = segment.slice(eqIdx + 1).trim();
       }
     }
-    return deepCoerce(obj, schema);
+    return coerceDeep(obj, schema);
   }
 
   // Object: explode=false means "R,100,G,200,B,150" (alternating key,value)
@@ -165,55 +118,7 @@ export function deserializeNonQueryParam(
       obj[key] = val;
     }
   }
-  return deepCoerce(obj, schema);
-}
-
-// ── Deep coercion ──────────────────────────────────────────────────
-
-/**
- * Recursively coerce leaf values through array items and object properties.
- * Non-string values pass through unchanged.
- */
-export function deepCoerce(value: unknown, schema: Schema): unknown {
-  if (typeof schema === "boolean") return value;
-
-  // Array: coerce each item via schema.items
-  if (Array.isArray(value)) {
-    const itemSchema = schema.items;
-    if (!itemSchema || typeof itemSchema === "boolean") return value;
-    // schema.items can be Schema | Schema[] per the type definition
-    if (Array.isArray(itemSchema)) return value;
-    return value.map((item) =>
-      typeof item === "string"
-        ? coerceScalar(item, itemSchema)
-        : deepCoerce(item, itemSchema)
-    );
-  }
-
-  // Object: coerce each property via schema.properties
-  if (typeof value === "object" && value !== null) {
-    const props = schema.properties;
-    if (!props) return value;
-    const result: Record<string, unknown> = Object.create(null);
-    for (const [k, v] of Object.entries(value)) {
-      const propSchema = props[k];
-      if (propSchema && typeof v === "string") {
-        result[k] = coerceScalar(v, propSchema);
-      } else if (propSchema && typeof v === "object" && v !== null) {
-        result[k] = deepCoerce(v, propSchema);
-      } else {
-        result[k] = v;
-      }
-    }
-    return result;
-  }
-
-  // Scalar leaf
-  if (typeof value === "string") {
-    return coerceScalar(value, schema);
-  }
-
-  return value;
+  return coerceDeep(obj, schema);
 }
 
 // ── Main parse function ────────────────────────────────────────────
@@ -253,7 +158,7 @@ export function parseQueryParam(
     const value = parseObjectParam(source, param.name, schema, objectFmt);
     const hasKeys = Object.keys(value).length > 0;
     if (!hasKeys) return { present: false };
-    return { present: true, value: deepCoerce(value, schema) };
+    return { present: true, value: coerceDeep(value, schema) };
   }
 
   // Check presence using format-aware logic
@@ -270,12 +175,12 @@ export function parseQueryParam(
   // Parse based on detected type
   if (isArray) {
     const raw = getArrayValues(source, param.name, arrayFmt);
-    return { present: true, value: deepCoerce(raw, schema) };
+    return { present: true, value: coerceDeep(raw, schema) };
   }
 
   if (isObject) {
     const value = parseObjectParam(source, param.name, schema, objectFmt);
-    return { present: true, value: deepCoerce(value, schema) };
+    return { present: true, value: coerceDeep(value, schema) };
   }
 
   // Scalar
@@ -300,9 +205,9 @@ function parseObjectParam(
     return parseObjectValue(source, name, objectFmt);
   }
 
-  // Flat format: iterate schema.properties and pull each key from source
+  // Flat format: iterate schema properties and pull each key from source
   if (typeof schema === "boolean") return {};
-  const props = schema.properties;
+  const props = effectiveProperties(schema);
   if (!props) {
     // No properties defined; try the single value
     const raw = source.get(name);
@@ -375,7 +280,7 @@ export function getExpectedQueryKeys(
           break;
         case "flat": {
           // In flat format, individual property names appear as top-level keys
-          const props = schema.properties;
+          const props = effectiveProperties(schema);
           if (props) {
             for (const key of Object.keys(props)) {
               known.add(key);
