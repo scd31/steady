@@ -83,6 +83,9 @@ const SDKS: SDK[] = [
     repo: "groq/groq-python",
     name: "groq-python",
     language: "python",
+    validatorFlags: [
+      "--validator-form-array-format=brackets",
+    ],
   },
   {
     repo: "Cerebras/cerebras-cloud-sdk-python",
@@ -171,11 +174,23 @@ const SDKS: SDK[] = [
     repo: "stainless-sdks/sink-python-public",
     name: "sink-python",
     language: "python",
+    validatorFlags: [
+      "--validator-query-array-format=brackets",
+      "--validator-query-object-format=brackets",
+      "--validator-form-array-format=brackets",
+      "--validator-form-object-format=brackets",
+    ],
   },
   {
     repo: "stainless-sdks/sink-typescript-public",
     name: "sink-typescript",
     language: "typescript",
+    validatorFlags: [
+      "--validator-query-array-format=brackets",
+      "--validator-query-object-format=brackets",
+      "--validator-form-array-format=brackets",
+      "--validator-form-object-format=brackets",
+    ],
   },
 ];
 
