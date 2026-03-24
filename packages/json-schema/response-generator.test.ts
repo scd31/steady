@@ -238,6 +238,58 @@ Deno.test("RegistryResponseGenerator - allOf with $ref resolves referenced schem
   );
 });
 
+Deno.test("RegistryResponseGenerator - allOf member examples do not shadow $ref properties", () => {
+  // Lithic pattern: pci_card_response = allOf[non_pci_card_response, {pan, cvv}]
+  // The inline member has a schema-level `examples` with only pan/cvv.
+  // That partial example must not be used as the complete response;
+  // required fields from the $ref'd member must still appear.
+  const document = {
+    components: {
+      schemas: {
+        non_pci_card_response: {
+          type: "object",
+          properties: {
+            token: { type: "string", example: "card-token-123" },
+            state: { type: "string", example: "OPEN" },
+          },
+          required: ["token", "state"],
+        },
+        pci_card_response: {
+          allOf: [
+            { $ref: "#/components/schemas/non_pci_card_response" },
+            {
+              type: "object",
+              properties: {
+                pan: { type: "string", example: "4111111289144142" },
+                cvv: { type: "string", example: "776" },
+              },
+              examples: [
+                { pan: "4111111289144142", cvv: "776" },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  };
+
+  const registry = SchemaRegistry.fromSpec(document);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generate(
+    "#/components/schemas/pci_card_response",
+  );
+
+  // Before the fix, this returned {pan: "411...", cvv: "776"} because the
+  // partial examples array from the inline member shadowed everything.
+  // After the fix, allOf merges properties from both members and generates
+  // required fields using their property-level examples.
+  assertEquals(result, {
+    token: "card-token-123",
+    state: "OPEN",
+  });
+});
+
 Deno.test("RegistryResponseGenerator - allOf with nested $ref-to-allOf flattens recursively", () => {
   // Pattern: FinancialTransaction.allOf -> $ref BaseTransaction,
   // where BaseTransaction is itself allOf[CoreFields, TimestampFields]

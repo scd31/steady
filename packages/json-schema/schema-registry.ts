@@ -473,8 +473,19 @@ export class RegistryResponseGenerator {
         }
       }
 
-      // Destructure special-cased fields, merge the rest directly
-      const { allOf, properties, required, ...rest } = resolved;
+      // Destructure fields that need special handling.
+      // - allOf/properties/required: merged with union semantics
+      // - example/examples: member-scoped, not whole-schema-scoped;
+      //   copying them would let a partial example from one member
+      //   shadow properties contributed by other members
+      const {
+        allOf,
+        properties,
+        required,
+        example: _example,
+        examples: _examples,
+        ...rest
+      } = resolved;
       Object.assign(merged, rest);
 
       if (allOf) {
