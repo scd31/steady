@@ -937,6 +937,35 @@ Deno.test("DiagnosticEngine", async (t) => {
     assertEquals(result.filter((d) => d.code === "E3006").length, 0);
   });
 
+  await t.step(
+    "wildcard */* in spec accepts any Content-Type → no E3006",
+    () => {
+      const spec = new StubSpec({ "/kv": { put: OP } });
+      spec.bodySchema = {
+        schema: { type: "string" },
+        schemaPath: "#/paths/~1kv/put/requestBody/content/*~1*/schema",
+        required: true,
+      };
+      spec.acceptedContentTypes = ["*/*", "multipart/form-data"];
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/kv",
+        method: "put",
+        headers: { "content-type": "application/json" },
+        body: "value",
+      });
+
+      assertEquals(
+        result.filter((d) => d.code === "E3006").length,
+        0,
+        `Should accept application/json when spec declares */*. Got: ${
+          JSON.stringify(result.filter((d) => d.code === "E3006"))
+        }`,
+      );
+    },
+  );
+
   await t.step("no requestBody in spec → no E3006", () => {
     const spec = new StubSpec({ "/users": { get: OP } });
     // acceptedContentTypes is null by default (no requestBody)
