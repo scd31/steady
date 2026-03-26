@@ -149,64 +149,90 @@ Deno.test("getArrayValues: returns empty array if key not found", () => {
 // hasParamValue
 // =============================================================================
 
-Deno.test("hasParamValue: detects simple param", () => {
-  const params = new URLSearchParams("name=sam");
-  const source = wrapURLSearchParams(params);
+Deno.test("hasParamValue: scalar encoding", () => {
+  const source = wrapURLSearchParams(new URLSearchParams("name=sam"));
+
+  assertEquals(hasParamValue(source, "name", { kind: "scalar" }), true);
+  assertEquals(hasParamValue(source, "other", { kind: "scalar" }), false);
+});
+
+Deno.test("hasParamValue: flat-array repeat format", () => {
+  const source = wrapURLSearchParams(new URLSearchParams("tags=a&tags=b"));
 
   assertEquals(
-    hasParamValue(source, "name", false, false, "repeat", "flat"),
+    hasParamValue(source, "tags", { kind: "flat-array", arrayFmt: "repeat" }),
+    true,
+  );
+});
+
+Deno.test("hasParamValue: flat-array brackets format", () => {
+  const source = wrapURLSearchParams(
+    new URLSearchParams("tags[]=a&tags[]=b"),
+  );
+
+  assertEquals(
+    hasParamValue(source, "tags", {
+      kind: "flat-array",
+      arrayFmt: "brackets",
+    }),
+    true,
+  );
+});
+
+Deno.test("hasParamValue: nested brackets format", () => {
+  const source = wrapURLSearchParams(new URLSearchParams("user[name]=sam"));
+
+  assertEquals(
+    hasParamValue(source, "user", { kind: "nested", objectFmt: "brackets" }),
     true,
   );
   assertEquals(
-    hasParamValue(source, "other", false, false, "repeat", "flat"),
+    hasParamValue(source, "other", { kind: "nested", objectFmt: "brackets" }),
     false,
   );
 });
 
-Deno.test("hasParamValue: detects array with repeat format", () => {
-  const params = new URLSearchParams("tags=a&tags=b");
-  const source = wrapURLSearchParams(params);
+Deno.test("hasParamValue: nested dots format", () => {
+  const source = wrapURLSearchParams(new URLSearchParams("user.name=sam"));
 
   assertEquals(
-    hasParamValue(source, "tags", true, false, "repeat", "flat"),
-    true,
-  );
-});
-
-Deno.test("hasParamValue: detects array with brackets format", () => {
-  const params = new URLSearchParams("tags[]=a&tags[]=b");
-  const source = wrapURLSearchParams(params);
-
-  assertEquals(
-    hasParamValue(source, "tags", true, false, "brackets", "flat"),
-    true,
-  );
-});
-
-Deno.test("hasParamValue: detects object with brackets format", () => {
-  const params = new URLSearchParams("user[name]=sam");
-  const source = wrapURLSearchParams(params);
-
-  assertEquals(
-    hasParamValue(source, "user", false, true, "repeat", "brackets"),
+    hasParamValue(source, "user", { kind: "nested", objectFmt: "dots" }),
     true,
   );
   assertEquals(
-    hasParamValue(source, "other", false, true, "repeat", "brackets"),
+    hasParamValue(source, "other", { kind: "nested", objectFmt: "dots" }),
     false,
   );
 });
 
-Deno.test("hasParamValue: detects object with dots format", () => {
-  const params = new URLSearchParams("user.name=sam");
-  const source = wrapURLSearchParams(params);
+Deno.test("hasParamValue: flat-object flat format", () => {
+  const source = wrapURLSearchParams(new URLSearchParams("user=sam"));
 
   assertEquals(
-    hasParamValue(source, "user", false, true, "repeat", "dots"),
+    hasParamValue(source, "user", { kind: "flat-object", objectFmt: "flat" }),
     true,
   );
+});
+
+Deno.test("hasParamValue: flat-object flat-comma format", () => {
+  const source = wrapURLSearchParams(
+    new URLSearchParams("user=name,sam,age,30"),
+  );
+
   assertEquals(
-    hasParamValue(source, "other", false, true, "repeat", "dots"),
+    hasParamValue(source, "user", {
+      kind: "flat-object",
+      objectFmt: "flat-comma",
+    }),
+    true,
+  );
+  // No comma = not detected as flat-comma
+  const source2 = wrapURLSearchParams(new URLSearchParams("user=sam"));
+  assertEquals(
+    hasParamValue(source2, "user", {
+      kind: "flat-object",
+      objectFmt: "flat-comma",
+    }),
     false,
   );
 });

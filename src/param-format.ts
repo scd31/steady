@@ -18,6 +18,19 @@ export type ConcreteArrayFormat = Exclude<QueryArrayFormat, "auto">;
 export type ConcreteObjectFormat = Exclude<QueryObjectFormat, "auto">;
 
 /**
+ * A parameter's wire encoding, determined by (schema type + format flags).
+ *
+ * This is the single decision point for how a parameter appears on the wire.
+ * All consumers (presence detection, parsing, expected-key registration) use
+ * this instead of independently branching on isArray/isObject + format.
+ */
+export type ParamEncoding =
+  | { kind: "scalar" }
+  | { kind: "flat-array"; arrayFmt: ConcreteArrayFormat }
+  | { kind: "flat-object"; objectFmt: "flat" | "flat-comma" }
+  | { kind: "nested"; objectFmt: "dots" | "brackets" };
+
+/**
  * Interface for key-value pair sources (URLSearchParams, FormData entries, etc.)
  */
 export interface KeyValueSource {
@@ -161,41 +174,157 @@ export function getArrayValues(
 export function hasParamValue(
   source: KeyValueSource,
   name: string,
-  isArray: boolean,
-  isObject: boolean,
-  arrayFormat: ConcreteArrayFormat,
-  objectFormat: ConcreteObjectFormat,
+  encoding: ParamEncoding,
 ): boolean {
-  if (isObject) {
-    switch (objectFormat) {
-      case "flat":
+  switch (encoding.kind) {
+    case "scalar":
+      return source.get(name) !== null;
+
+    case "flat-array":
+      return getArrayValues(source, name, encoding.arrayFmt).length > 0;
+
+    case "flat-object":
+      if (encoding.objectFmt === "flat") {
         return source.get(name) !== null;
-      case "flat-comma": {
+      }
+      // flat-comma: value must contain a comma
+      {
         const value = source.get(name);
         return value !== null && value.includes(",");
       }
-      case "brackets": {
-        const prefix = `${name}[`;
-        for (const [key] of source.entries()) {
-          if (key.startsWith(prefix)) return true;
-        }
-        return false;
+
+    case "nested": {
+      const prefix = encoding.objectFmt === "dots" ? `${name}.` : `${name}[`;
+      for (const [key] of source.entries()) {
+        if (key.startsWith(prefix)) return true;
       }
-      case "dots": {
-        const prefix = `${name}.`;
-        for (const [key] of source.entries()) {
-          if (key.startsWith(prefix)) return true;
-        }
-        return false;
+      return false;
+    }
+  }
+}
+
+// =============================================================================
+// Nested Array Parsing
+// =============================================================================
+
+/**
+ * Parse an array of objects from prefixed query keys.
+ *
+ * Handles two encoding patterns:
+ *
+ * 1. Repeated keys (repeat + dots/brackets):
+ *    search.field=a&search.op=eq&search.field=b&search.op=ne
+ *    -> [{field: "a", op: "eq"}, {field: "b", op: "ne"}]
+ *
+ *    Keys repeat for each array item. Items are reconstructed by grouping
+ *    values positionally: the Nth occurrence of each key belongs to item N.
+ *
+ * 2. Single item (same encoding, single occurrence):
+ *    search.field=a&search.op=eq
+ *    -> [{field: "a", op: "eq"}]
+ *
+ * Returns an empty array if no prefixed keys are found.
+ */
+export function parseNestedArrayValues(
+  source: KeyValueSource,
+  name: string,
+  format: "dots" | "brackets",
+): Record<string, unknown>[] {
+  const prefix = format === "dots" ? `${name}.` : `${name}[`;
+
+  // Collect all prefixed entries in order, extracting the sub-path
+  const entries: { path: string[]; value: string }[] = [];
+  for (const [key, value] of source.entries()) {
+    if (!key.startsWith(prefix)) continue;
+
+    if (format === "dots") {
+      const path = key.slice(prefix.length).split(".");
+      entries.push({ path, value });
+    } else {
+      const path = parseBracketPath(key, name);
+      if (path.length > 0) {
+        entries.push({ path, value });
       }
     }
   }
 
-  if (isArray) {
-    return getArrayValues(source, name, arrayFormat).length > 0;
+  if (entries.length === 0) return [];
+
+  // Check if the first path segment is numeric (indexed encoding).
+  // Indexed: search.0.field=a  -> path ["0", "field"]
+  // Flat:    search.field=a    -> path ["field"]
+  const firstSegment = entries[0]?.path[0];
+  if (firstSegment !== undefined && isNumericString(firstSegment)) {
+    return parseIndexedEntries(entries);
   }
 
-  return source.get(name) !== null;
+  return parseRepeatedEntries(entries);
+}
+
+/**
+ * Parse indexed entries: search.0.field=a&search.0.op=eq&search.1.field=b
+ * Path segments start with a numeric index.
+ */
+function parseIndexedEntries(
+  entries: { path: string[]; value: string }[],
+): Record<string, unknown>[] {
+  const byIndex = new Map<number, { path: string[]; value: string }[]>();
+  for (const entry of entries) {
+    const indexStr = entry.path[0];
+    if (indexStr === undefined) continue;
+    const index = parseInt(indexStr, 10);
+    if (isNaN(index) || index < 0) continue;
+    const group = byIndex.get(index) ?? [];
+    group.push({ path: entry.path.slice(1), value: entry.value });
+    byIndex.set(index, group);
+  }
+
+  const result: Record<string, unknown>[] = [];
+  for (const idx of [...byIndex.keys()].sort((a, b) => a - b)) {
+    const group = byIndex.get(idx);
+    if (!group) continue;
+    const obj: Record<string, unknown> = Object.create(null);
+    for (const entry of group) {
+      setNestedValue(obj, entry.path, entry.value);
+    }
+    result.push(obj);
+  }
+  return result;
+}
+
+/**
+ * Parse repeated entries: search.field=a&search.op=eq&search.field=b&search.op=ne
+ * Same property keys repeat for each item. Group by position.
+ */
+function parseRepeatedEntries(
+  entries: { path: string[]; value: string }[],
+): Record<string, unknown>[] {
+  // Track occurrence count per top-level key to assign items by position
+  const keyCounts = new Map<string, number>();
+  const itemEntries = new Map<number, { path: string[]; value: string }[]>();
+
+  for (const entry of entries) {
+    const topKey = entry.path[0];
+    if (topKey === undefined) continue;
+    const count = keyCounts.get(topKey) ?? 0;
+    keyCounts.set(topKey, count + 1);
+
+    const group = itemEntries.get(count) ?? [];
+    group.push(entry);
+    itemEntries.set(count, group);
+  }
+
+  const result: Record<string, unknown>[] = [];
+  for (const idx of [...itemEntries.keys()].sort((a, b) => a - b)) {
+    const group = itemEntries.get(idx);
+    if (!group) continue;
+    const obj: Record<string, unknown> = Object.create(null);
+    for (const entry of group) {
+      setNestedValue(obj, entry.path, entry.value);
+    }
+    result.push(obj);
+  }
+  return result;
 }
 
 // =============================================================================

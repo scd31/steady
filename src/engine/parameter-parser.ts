@@ -3,8 +3,8 @@
  *
  * Called by the diagnostic engine per-parameter. Handles:
  * - Format resolution (auto -> concrete via style/explode)
- * - Schema-aware type detection (array vs object vs scalar)
- * - Structural parsing (getArrayValues, parseObjectValue from param-format.ts)
+ * - Wire encoding resolution (schema + formats -> encoding kind)
+ * - Structural parsing (getArrayValues, parseObjectValue, parseNestedArrayValues)
  * - Deep coercion (string -> number/boolean at leaf level)
  *
  * The engine stays as orchestrator; this module does the parsing work.
@@ -14,20 +14,26 @@
 import {
   coerceDeep,
   coerceScalar,
+  effectiveItems,
   effectiveProperties,
   isArraySchema,
   isObjectSchema,
 } from "@steady/json-schema";
 import type { Schema } from "@steady/json-schema";
-import type { KeyValueSource } from "../param-format.ts";
+import type {
+  ConcreteArrayFormat,
+  ConcreteObjectFormat,
+  KeyValueSource,
+  ParamEncoding,
+} from "../param-format.ts";
 import {
   getArrayValues,
   hasParamValue,
+  parseNestedArrayValues,
   parseObjectValue,
   resolveArrayFormat,
   resolveObjectFormat,
 } from "../param-format.ts";
-import type { ConcreteObjectFormat } from "../param-format.ts";
 import type { QueryArrayFormat, QueryObjectFormat } from "../types.ts";
 import type { ResolvedParameter } from "./diagnostic-engine.ts";
 
@@ -44,6 +50,52 @@ export {
 export interface ParsedParam {
   present: boolean;
   value?: unknown;
+}
+
+// ── Wire encoding resolution ──────────────────────────────────────
+
+/**
+ * Determine how a parameter is encoded on the wire.
+ *
+ * This is the single decision point that combines schema type and format
+ * flags into an encoding kind. All consumers (presence detection, parsing,
+ * expected-key registration) use this instead of independently branching
+ * on isArray/isObject + format.
+ */
+function resolveParamEncoding(
+  schema: Schema | null,
+  arrayFmt: ConcreteArrayFormat,
+  objectFmt: ConcreteObjectFormat,
+): ParamEncoding {
+  if (!schema || typeof schema === "boolean") return { kind: "scalar" };
+
+  const isArray = isArraySchema(schema);
+  const isObject = isObjectSchema(schema);
+
+  // Nested formats (dots, brackets) produce prefixed keys for objects
+  // and arrays of objects. Arrays of scalars use flat array encoding.
+  const nestedFmt = objectFmt === "dots" || objectFmt === "brackets";
+  if (nestedFmt && isObject) {
+    return { kind: "nested", objectFmt };
+  }
+  if (nestedFmt && isArray) {
+    const items = effectiveItems(schema);
+    if (items && typeof items !== "boolean" && isObjectSchema(items)) {
+      return { kind: "nested", objectFmt };
+    }
+  }
+
+  // Flat object formats
+  if (isObject && (objectFmt === "flat" || objectFmt === "flat-comma")) {
+    return { kind: "flat-object", objectFmt };
+  }
+
+  // Flat array formats
+  if (isArray) {
+    return { kind: "flat-array", arrayFmt };
+  }
+
+  return { kind: "scalar" };
 }
 
 // ── Non-query parameter deserialization ────────────────────────────
@@ -139,9 +191,6 @@ export function parseQueryParam(
     return { present: true, value: raw };
   }
 
-  const isArray = isArraySchema(schema);
-  const isObject = isObjectSchema(schema);
-
   const arrayFmt = resolveArrayFormat(
     queryArrayFormat,
     param.style,
@@ -152,60 +201,66 @@ export function parseQueryParam(
     param.style,
     param.explode,
   );
+  const encoding = resolveParamEncoding(schema, arrayFmt, objectFmt);
 
-  // For flat objects, presence must check schema property keys
-  if (isObject && objectFmt === "flat") {
-    const value = parseObjectParam(source, param.name, schema, objectFmt);
+  // Flat objects need schema-aware presence checking (iterate property names)
+  if (encoding.kind === "flat-object" && encoding.objectFmt === "flat") {
+    const value = parseFlatObject(source, param.name, schema);
     const hasKeys = Object.keys(value).length > 0;
     if (!hasKeys) return { present: false };
     return { present: true, value: coerceDeep(value, schema) };
   }
 
-  // Check presence using format-aware logic
-  const present = hasParamValue(
-    source,
-    param.name,
-    isArray,
-    isObject,
-    arrayFmt,
-    objectFmt,
-  );
-  if (!present) return { present: false };
-
-  // Parse based on detected type
-  if (isArray) {
-    const raw = getArrayValues(source, param.name, arrayFmt);
-    return { present: true, value: coerceDeep(raw, schema) };
+  if (!hasParamValue(source, param.name, encoding)) {
+    return { present: false };
   }
 
-  if (isObject) {
-    const value = parseObjectParam(source, param.name, schema, objectFmt);
-    return { present: true, value: coerceDeep(value, schema) };
-  }
+  switch (encoding.kind) {
+    case "scalar": {
+      const raw = source.get(param.name);
+      if (raw === null) return { present: false };
+      return { present: true, value: coerceScalar(raw, schema) };
+    }
 
-  // Scalar
-  const raw = source.get(param.name);
-  if (raw === null) return { present: false };
-  return { present: true, value: coerceScalar(raw, schema) };
+    case "flat-array": {
+      const raw = getArrayValues(source, param.name, encoding.arrayFmt);
+      return { present: true, value: coerceDeep(raw, schema) };
+    }
+
+    case "flat-object": {
+      // flat-comma (flat is handled above)
+      const value = parseObjectValue(source, param.name, encoding.objectFmt);
+      return { present: true, value: coerceDeep(value, schema) };
+    }
+
+    case "nested": {
+      if (isArraySchema(schema)) {
+        const items = parseNestedArrayValues(
+          source,
+          param.name,
+          encoding.objectFmt,
+        );
+        return { present: true, value: coerceDeep(items, schema) };
+      }
+      const value = parseObjectValue(source, param.name, encoding.objectFmt);
+      return { present: true, value: coerceDeep(value, schema) };
+    }
+  }
 }
 
-// ── Object param helper ────────────────────────────────────────────
+// ── Flat object helper ────────────────────────────────────────────
 
 /**
- * Parse an object query parameter. For "flat" format, we need schema
- * properties to know which top-level keys belong to this param.
+ * Parse a flat-format object query parameter. Flat format encodes each
+ * object property as a separate top-level query key (e.g., name=sam&age=30
+ * for parameter "user" with properties {name, age}). Requires schema
+ * properties to know which keys belong to this parameter.
  */
-function parseObjectParam(
+function parseFlatObject(
   source: KeyValueSource,
   name: string,
   schema: Schema,
-  objectFmt: ConcreteObjectFormat,
 ): Record<string, unknown> {
-  if (objectFmt !== "flat") {
-    return parseObjectValue(source, name, objectFmt);
-  }
-
-  // Flat format: iterate schema properties and pull each key from source
   if (typeof schema === "boolean") return {};
   const props = effectiveProperties(schema);
   if (!props) {
@@ -251,47 +306,44 @@ export function getExpectedQueryKeys(
     const schema = param.schema;
     if (!schema || typeof schema === "boolean") continue;
 
-    const isArray = isArraySchema(schema);
-    const isObj = isObjectSchema(schema);
+    const arrayFmt = resolveArrayFormat(
+      queryArrayFormat,
+      param.style,
+      param.explode,
+    );
+    const objectFmt = resolveObjectFormat(
+      queryObjectFormat,
+      param.style,
+      param.explode,
+    );
+    const encoding = resolveParamEncoding(schema, arrayFmt, objectFmt);
 
-    if (isArray) {
-      const arrayFmt = resolveArrayFormat(
-        queryArrayFormat,
-        param.style,
-        param.explode,
-      );
-      if (arrayFmt === "brackets") {
-        known.add(`${param.name}[]`);
-      }
-    }
+    switch (encoding.kind) {
+      case "flat-array":
+        if (encoding.arrayFmt === "brackets") {
+          known.add(`${param.name}[]`);
+        }
+        break;
 
-    if (isObj) {
-      const objectFmt = resolveObjectFormat(
-        queryObjectFormat,
-        param.style,
-        param.explode,
-      );
-      switch (objectFmt) {
-        case "brackets":
-          dynamicPrefixes.add(`${param.name}[`);
-          break;
-        case "dots":
-          dynamicPrefixes.add(`${param.name}.`);
-          break;
-        case "flat": {
-          // In flat format, individual property names appear as top-level keys
+      case "flat-object":
+        if (encoding.objectFmt === "flat") {
           const props = effectiveProperties(schema);
           if (props) {
             for (const key of Object.keys(props)) {
               known.add(key);
             }
           }
-          break;
         }
-        case "flat-comma":
-          // flat-comma uses the param name itself (already added)
-          break;
-      }
+        // flat-comma uses param name itself (already added)
+        break;
+
+      case "nested":
+        if (encoding.objectFmt === "dots") {
+          dynamicPrefixes.add(`${param.name}.`);
+        } else {
+          dynamicPrefixes.add(`${param.name}[`);
+        }
+        break;
     }
   }
 

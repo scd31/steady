@@ -112,6 +112,9 @@ const SDKS: SDK[] = [
     name: "cloudflare-python",
     language: "python",
     ciSkip: true, // ~20min, too slow for CI
+    validatorFlags: [
+      "--validator-query-object-format=dots",
+    ],
   },
   {
     repo: "browserbase/sdk-python",

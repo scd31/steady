@@ -292,6 +292,18 @@ Deno.test("parseQueryParam: brackets array format", () => {
   assertEquals(result.value, ["red", "green"]);
 });
 
+Deno.test("parseQueryParam: string array with dots object format uses flat array format", () => {
+  const source = sourceFromQuery("names=alice&names=bob");
+  const param = makeParam({
+    name: "names",
+    schema: { type: "array", items: { type: "string" } },
+  });
+
+  const result = parseQueryParam(source, param, "auto", "dots");
+  assertEquals(result.present, true);
+  assertEquals(result.value, ["alice", "bob"]);
+});
+
 Deno.test("parseQueryParam: array with integer items coerces", () => {
   const source = sourceFromQuery("ids=1&ids=2&ids=3");
   const param = makeParam({
@@ -316,6 +328,137 @@ Deno.test("parseQueryParam: auto format uses style/explode from param", () => {
   const result = parseQueryParam(source, param, "auto", "auto");
   assertEquals(result.present, true);
   assertEquals(result.value, ["red", "green", "blue"]);
+});
+
+// ── parseQueryParam: array of objects via nested format ────────────
+
+Deno.test("parseQueryParam: single array item via dots format", () => {
+  const source = sourceFromQuery(
+    "search.field=attackerCountry&search.op=equals&search.value=usa",
+  );
+  const param = makeParam({
+    name: "search",
+    schema: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          field: { type: "string" },
+          op: { type: "string" },
+          value: { type: "string" },
+        },
+      },
+    },
+  });
+
+  const result = parseQueryParam(source, param, "auto", "dots");
+  assertEquals(result.present, true);
+  assertEquals(result.value, [
+    { field: "attackerCountry", op: "equals", value: "usa" },
+  ]);
+});
+
+Deno.test("parseQueryParam: multiple array items via dots format", () => {
+  const source = sourceFromQuery(
+    "search.field=country&search.op=equals&search.field=type&search.op=like",
+  );
+  const param = makeParam({
+    name: "search",
+    schema: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          field: { type: "string" },
+          op: { type: "string" },
+        },
+      },
+    },
+  });
+
+  const result = parseQueryParam(source, param, "auto", "dots");
+  assertEquals(result.present, true);
+  assertEquals(result.value, [
+    { field: "country", op: "equals" },
+    { field: "type", op: "like" },
+  ]);
+});
+
+Deno.test("parseQueryParam: single array item via brackets format", () => {
+  const source = sourceFromQuery(
+    "filters[key]=id&filters[operator]=eq&filters[value]=string",
+  );
+  const param = makeParam({
+    name: "filters",
+    schema: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          key: { type: "string" },
+          operator: { type: "string" },
+          value: { type: "string" },
+        },
+      },
+    },
+  });
+
+  const result = parseQueryParam(source, param, "auto", "brackets");
+  assertEquals(result.present, true);
+  assertEquals(result.value, [
+    { key: "id", operator: "eq", value: "string" },
+  ]);
+});
+
+Deno.test("parseQueryParam: multiple array items via brackets format", () => {
+  const source = sourceFromQuery(
+    "filters[key]=id&filters[operator]=eq&filters[key]=type&filters[operator]=contains",
+  );
+  const param = makeParam({
+    name: "filters",
+    schema: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          key: { type: "string" },
+          operator: { type: "string" },
+        },
+      },
+    },
+  });
+
+  const result = parseQueryParam(source, param, "auto", "brackets");
+  assertEquals(result.present, true);
+  assertEquals(result.value, [
+    { key: "id", operator: "eq" },
+    { key: "type", operator: "contains" },
+  ]);
+});
+
+Deno.test("parseQueryParam: array of objects via dots with integer coercion", () => {
+  const source = sourceFromQuery(
+    "filters.field=count&filters.value=42",
+  );
+  const param = makeParam({
+    name: "filters",
+    schema: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          field: { type: "string" },
+          value: { type: "integer" },
+        },
+      },
+    },
+  });
+
+  const result = parseQueryParam(source, param, "auto", "dots");
+  assertEquals(result.present, true);
+  assertEquals(result.value, [
+    { field: "count", value: 42 },
+  ]);
 });
 
 // ── parseQueryParam: objects ───────────────────────────────────────
