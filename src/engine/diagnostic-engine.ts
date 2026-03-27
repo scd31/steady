@@ -22,7 +22,7 @@ import type { QueryArrayFormat, QueryObjectFormat } from "../types.ts";
 import { wrapURLSearchParams } from "../param-format.ts";
 import type { SpecResolver, ValidationNode } from "./types.ts";
 import { type ECode, getCode } from "../codes/registry.ts";
-import { getMediaType, isWildcard } from "../media-type.ts";
+import { essenceMatches, getMediaType } from "../media-type.ts";
 import type { Router } from "../router.ts";
 import { interpret } from "./interpreter.ts";
 import {
@@ -335,8 +335,7 @@ export class DiagnosticEngine {
             return e ? [e] : [];
           });
           if (
-            !acceptedEssences.includes(essence) &&
-            !acceptedEssences.some(isWildcard)
+            !acceptedEssences.some((a) => essenceMatches(essence, a))
           ) {
             diagnostics.push(
               createWrongContentTypeDiagnostic(

@@ -420,6 +420,41 @@ Deno.test("OpenAPISpec", async (t) => {
     );
   });
 
+  await t.step("*/* content type matches any request content type", () => {
+    const spec = createSpec({
+      paths: {
+        "/kv": {
+          put: {
+            requestBody: {
+              content: {
+                "*/*": {
+                  schema: { type: "string" },
+                },
+                "multipart/form-data": {
+                  schema: {
+                    type: "object",
+                    properties: { value: { type: "string" } },
+                  },
+                },
+              },
+            },
+            responses: { "200": { description: "OK" } },
+          },
+        },
+      },
+    });
+    const doc = new OpenAPISpec(SchemaRegistry.fromSpec(spec));
+
+    const body = doc.getBodySchema("/kv", "put", "application/json");
+    assertEquals(body !== null, true, "Should match */* for application/json");
+    assertEquals(body!.schema.type, "string");
+
+    // Exact match takes priority over wildcard
+    const formBody = doc.getBodySchema("/kv", "put", "multipart/form-data");
+    assertEquals(formBody !== null, true, "Exact match should take priority");
+    assertEquals(formBody!.schema.type, "object");
+  });
+
   // ── hasResponses ─────────────────────────────────────────────────
 
   await t.step("returns true when responses exist", () => {

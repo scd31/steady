@@ -23,7 +23,12 @@ import {
   isStreamingContentType,
   type StreamingOptions,
 } from "../streaming.ts";
-import { getMediaType, isJsonMediaType, isWildcard } from "../media-type.ts";
+import {
+  essenceMatches,
+  getMediaType,
+  isJsonMediaType,
+  isWildcard,
+} from "../media-type.ts";
 import type { MediaTypeEssence } from "../media-type.ts";
 
 /** Status codes that MUST NOT have a response body (101, 204, 205, 304). */
@@ -123,29 +128,37 @@ export function generateResponseFromObject(
     }
 
     if (contentKeys.length === 0) {
-      // Content object exists but is empty - this is unusual and likely a spec issue
       logger.warning(
-        `Response for ${method.toUpperCase()} ${path} has empty content object. Using default application/json with no body.`,
+        `Response for ${method.toUpperCase()} ${path} has no parseable content types.`,
       );
     }
 
-    // Select content type based on Accept header
-    // Priority: Accept header match > first content type in spec
-    let selectedContentType: string | undefined;
+    // Select content type based on Accept header.
+    // Priority: exact Accept match > wildcard match > first content type in spec.
+    // When no parseable keys exist, selectedContentType stays undefined and we
+    // default to application/json below (mock server must always return something).
+    let selectedContentType: string | undefined = contentKeys[0];
+    let responseContentType: string | undefined;
     for (const acceptType of acceptTypes) {
-      const matchIndex = contentEssences.indexOf(acceptType);
+      // Prefer exact match over wildcard
+      let matchIndex = contentEssences.indexOf(acceptType);
+      if (matchIndex === -1) {
+        matchIndex = contentEssences.findIndex((e) =>
+          essenceMatches(acceptType, e)
+        );
+      }
       if (matchIndex !== -1) {
-        selectedContentType = contentKeys[matchIndex];
+        selectedContentType = contentKeys[matchIndex]!;
+        // When the spec key is */* but the client asked for a specific type,
+        // respond with the client's preferred type, not */*.
+        if (isWildcard(contentEssences[matchIndex]!)) {
+          responseContentType = acceptType;
+        }
         break;
       }
       if (isWildcard(acceptType)) {
-        selectedContentType = contentKeys[0];
         break;
       }
-    }
-    // Default to first content type in spec
-    if (!selectedContentType) {
-      selectedContentType = contentKeys[0];
     }
 
     // Check if selected content type is streaming
@@ -175,14 +188,13 @@ export function generateResponseFromObject(
       }
     }
 
-    // Use selected content type or fall back to JSON
     const mediaType = selectedContentType
       ? responseObj.content[selectedContentType]
-      : responseObj.content["application/json"] ||
-        Object.values(responseObj.content)[0];
+      : Object.values(responseObj.content)[0];
 
     if (mediaType) {
-      contentType = selectedContentType ?? "application/json";
+      contentType = responseContentType ?? selectedContentType ??
+        "application/json";
 
       // Priority 1: Explicit example
       if (mediaType.example !== undefined) {

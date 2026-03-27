@@ -76,6 +76,14 @@ export function isWildcard(
   return essence === "*/*";
 }
 
+/** Check if a candidate essence matches a pattern. Wildcards match any candidate. */
+export function essenceMatches(
+  candidate: MediaTypeEssence,
+  pattern: MediaTypeEssence,
+): boolean {
+  return candidate === pattern || isWildcard(pattern);
+}
+
 /** Type guard for multipart/form-data. */
 export function isMultipartFormData(
   essence: MediaTypeEssence,

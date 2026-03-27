@@ -2,6 +2,7 @@
  * Re-export from @steady/media-type package.
  */
 export {
+  essenceMatches,
   getMediaType,
   getStreamingFormat,
   isBinaryMediaType,

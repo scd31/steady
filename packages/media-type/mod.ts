@@ -1,4 +1,5 @@
 export {
+  essenceMatches,
   getMediaType,
   getStreamingFormat,
   isBinaryMediaType,

@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
 import {
+  essenceMatches,
   getMediaType,
   getStreamingFormat,
   isBinaryMediaType,
@@ -68,6 +69,42 @@ Deno.test("isWildcard: matches */*", () => {
 Deno.test("isWildcard: rejects non-wildcard", () => {
   assertEquals(isWildcard(essence("application/json")), false);
   assertEquals(isWildcard(essence("text/plain")), false);
+});
+
+// =============================================================================
+// essenceMatches
+// =============================================================================
+
+Deno.test("essenceMatches: exact match", () => {
+  assertEquals(
+    essenceMatches(essence("application/json"), essence("application/json")),
+    true,
+  );
+});
+
+Deno.test("essenceMatches: wildcard pattern matches any candidate", () => {
+  assertEquals(
+    essenceMatches(essence("application/json"), essence("*/*")),
+    true,
+  );
+  assertEquals(
+    essenceMatches(essence("text/plain"), essence("*/*")),
+    true,
+  );
+});
+
+Deno.test("essenceMatches: non-wildcard mismatch", () => {
+  assertEquals(
+    essenceMatches(essence("application/json"), essence("text/plain")),
+    false,
+  );
+});
+
+Deno.test("essenceMatches: wildcard candidate does not match non-wildcard pattern", () => {
+  assertEquals(
+    essenceMatches(essence("*/*"), essence("application/json")),
+    false,
+  );
 });
 
 // =============================================================================

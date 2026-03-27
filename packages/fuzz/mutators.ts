@@ -14,7 +14,7 @@ import {
 } from "@steady/json-schema";
 import type { Schema } from "@steady/json-schema";
 import { isPlainObject } from "@steady/json-pointer";
-import { getMediaType } from "@steady/media-type";
+import { essenceMatches, getMediaType } from "@steady/media-type";
 import type { FuzzRequest, MutatedCase, Mutator } from "./types.ts";
 
 function cloneRequest(req: FuzzRequest): FuzzRequest {
@@ -101,9 +101,9 @@ export const wrongContentType: Mutator = {
     if (BODY_STRIPPED_METHODS.has(op.method)) return [];
     if (op.bodyInfo.contentTypes.length === 0) return [];
 
-    const accepted = new Set(op.bodyInfo.contentTypes);
+    const accepted = op.bodyInfo.contentTypes;
     const wrong = getMediaType("text/plain");
-    if (!wrong || accepted.has(wrong)) return [];
+    if (!wrong || accepted.some((a) => essenceMatches(wrong, a))) return [];
 
     const req = cloneRequest(baseline);
     req.headers["content-type"] = wrong;

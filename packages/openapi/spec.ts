@@ -19,7 +19,7 @@ import {
   isFragmentPointer,
   isPlainObject,
 } from "@steady/json-pointer";
-import { getMediaType } from "@steady/media-type";
+import { essenceMatches, getMediaType } from "@steady/media-type";
 import type {
   OpenAPIRaw,
   OperationObject,
@@ -221,13 +221,33 @@ export class OpenAPISpec {
       requestBody = operation.requestBody;
     }
 
-    const mediaContent = requestBody.content[contentType];
+    // Parse the request content type and match against spec keys using
+    // essence matching, so a spec key of */* correctly matches any request type.
+    // Exact matches take priority over wildcards.
+    const requestEssence = getMediaType(contentType);
+    if (!requestEssence) return null;
+
+    let matchedKey: string | null = null;
+    for (const key of Object.keys(requestBody.content)) {
+      const keyEssence = getMediaType(key);
+      if (!keyEssence) continue;
+      if (keyEssence === requestEssence) {
+        matchedKey = key;
+        break;
+      }
+      if (!matchedKey && essenceMatches(requestEssence, keyEssence)) {
+        matchedKey = key;
+      }
+    }
+    if (!matchedKey) return null;
+
+    const mediaContent = requestBody.content[matchedKey];
     if (!mediaContent?.schema) return null;
 
     const escapedPath = escapeSegment(pathPattern);
     const inlinePointer: FragmentPointer =
       `#/paths/${escapedPath}/${method}/requestBody/content/${
-        escapeSegment(contentType)
+        escapeSegment(matchedKey)
       }/schema`;
 
     const { schema, schemaPath } = this.resolveSchemaRef(
