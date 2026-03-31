@@ -10,7 +10,7 @@
 
 - **ci:** retry artifact downloads in SDK test report job
 - use essence matching for wildcard content types across the codebase
-- accept any Content-Type when spec declares */* wildcard
+- accept any Content-Type when spec declares `*/*` wildcard
 
 ### Chores
 

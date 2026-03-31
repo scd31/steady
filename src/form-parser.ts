@@ -20,8 +20,10 @@ import {
   effectiveType,
   isArraySchema,
 } from "@steady/json-schema";
+import { isPlainObject } from "@steady/json-pointer";
 import { isReference } from "./types.ts";
 import {
+  buildBracketObject,
   type ConcreteArrayFormat,
   type ConcreteObjectFormat,
   groupFormEntries,
@@ -76,6 +78,16 @@ export function parseFormData(
     formObjectFormat = "flat",
     resolveSchema,
   } = options;
+
+  // When both formats are brackets, use the stateful tree builder that
+  // correctly handles array-of-objects notation like field[][prop].
+  if (formArrayFormat === "brackets" && formObjectFormat === "brackets") {
+    const data = buildBracketObject(formData.entries());
+    const files = extractFiles(data);
+    coerceTree(data, schema, resolveSchema);
+    return { data, files };
+  }
+
   const result: Record<string, unknown> = Object.create(null);
   const files = new Map<string, File | File[]>();
 
@@ -205,6 +217,13 @@ export function parseUrlEncoded(
     resolveSchema,
   } = options;
   const params = new URLSearchParams(body);
+
+  if (formArrayFormat === "brackets" && formObjectFormat === "brackets") {
+    const data = buildBracketObject(params.entries());
+    coerceTree(data, schema, resolveSchema);
+    return { data, files: new Map() };
+  }
+
   const result: Record<string, unknown> = Object.create(null);
 
   // Use shared groupFormEntries for array format normalization
@@ -311,4 +330,127 @@ function getPropertySchema(
   }
 
   return current;
+}
+
+// =============================================================================
+// Post-processing for bracket tree builder
+// =============================================================================
+
+/**
+ * Walk a tree built by buildBracketObject, replacing File instances with
+ * "[File]" placeholders and collecting them into a files Map.
+ */
+function extractFiles(
+  data: Record<string, unknown>,
+  prefix = "",
+): Map<string, File | File[]> {
+  const files = new Map<string, File | File[]>();
+
+  for (const key of Object.keys(data)) {
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    const value = data[key];
+
+    if (value instanceof File) {
+      files.set(fullKey, value);
+      data[key] = "[File]";
+    } else if (Array.isArray(value)) {
+      const fileItems = value.filter((v): v is File => v instanceof File);
+      if (fileItems.length > 0 && fileItems.length === value.length) {
+        // All items are files
+        files.set(fullKey, fileItems);
+        data[key] = fileItems.map(() => "[File]");
+      } else {
+        // Recurse into array elements that are objects
+        for (const item of value) {
+          if (!(item instanceof File) && isPlainObject(item)) {
+            const subFiles = extractFiles(item, fullKey);
+            for (const [k, v] of subFiles) {
+              files.set(k, v);
+            }
+          }
+        }
+      }
+    } else if (!(value instanceof File) && isPlainObject(value)) {
+      const subFiles = extractFiles(value, fullKey);
+      for (const [k, v] of subFiles) {
+        files.set(k, v);
+      }
+    }
+  }
+
+  return files;
+}
+
+/**
+ * Walk a tree built by buildBracketObject, coercing string values to
+ * their schema-declared types using the existing coerceScalar logic.
+ */
+function coerceTree(
+  data: Record<string, unknown>,
+  schema: SchemaObject | ReferenceObject | undefined,
+  resolveSchema?: (
+    schema: SchemaObject | ReferenceObject,
+  ) => SchemaObject | undefined,
+): void {
+  if (!schema) return;
+
+  let resolved: SchemaObject | undefined;
+  if (isReference(schema)) {
+    resolved = resolveSchema?.(schema);
+  } else {
+    resolved = schema;
+  }
+  if (!resolved) return;
+
+  const props = effectiveProperties(resolved);
+  if (!props) return;
+
+  for (const key of Object.keys(data)) {
+    const propSchemaRaw = props[key];
+    if (!propSchemaRaw) continue;
+
+    let propSchema: SchemaObject | undefined;
+    if (isReference(propSchemaRaw)) {
+      propSchema = resolveSchema?.(propSchemaRaw);
+    } else {
+      propSchema = propSchemaRaw;
+    }
+    if (!propSchema) continue;
+
+    const value = data[key];
+    const propType = effectiveType(propSchema);
+
+    if (propType === "array" && Array.isArray(value)) {
+      const itemSchemaRaw = effectiveItems(propSchema);
+      if (!itemSchemaRaw || typeof itemSchemaRaw === "boolean") continue;
+      let itemSchema: SchemaObject | undefined;
+      if (isReference(itemSchemaRaw)) {
+        itemSchema = resolveSchema?.(itemSchemaRaw);
+      } else {
+        itemSchema = itemSchemaRaw;
+      }
+      if (!itemSchema) continue;
+
+      const itemType = effectiveType(itemSchema);
+      if (itemType === "object") {
+        for (const item of value) {
+          if (isPlainObject(item)) {
+            coerceTree(item, itemSchema, resolveSchema);
+          }
+        }
+      } else {
+        // Coerce scalar array items
+        for (let i = 0; i < value.length; i++) {
+          const item = value[i];
+          if (typeof item === "string") {
+            value[i] = coerceScalar(item, itemSchema);
+          }
+        }
+      }
+    } else if (propType === "object" && isPlainObject(value)) {
+      coerceTree(value, propSchema, resolveSchema);
+    } else if (typeof value === "string") {
+      data[key] = coerceScalar(value, propSchema);
+    }
+  }
 }

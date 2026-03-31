@@ -594,3 +594,135 @@ export function groupFormEntries(
 
   return { groups, explicitArrays };
 }
+
+// =============================================================================
+// Bracket Notation: Stateful Tree Builder
+// =============================================================================
+
+/** A single segment in a bracket-notation path. */
+export type BracketSegment =
+  | { type: "key"; name: string }
+  | { type: "index"; index: number }
+  | { type: "append" };
+
+/**
+ * Parse a bracket-notation key into typed segments.
+ *
+ * "name"           -> [key("name")]
+ * "tags[]"         -> [key("tags"), append]
+ * "assoc[][id]"    -> [key("assoc"), append, key("id")]
+ * "items[0][name]" -> [key("items"), index(0), key("name")]
+ * "a[][b][c]"      -> [key("a"), append, key("b"), key("c")]
+ */
+export function parseBracketSegments(rawKey: string): BracketSegment[] {
+  const match = rawKey.match(/^([^[]+)(.*)/);
+  if (!match || match[1] === undefined) {
+    return rawKey.length > 0 ? [{ type: "key", name: rawKey }] : [];
+  }
+
+  const segments: BracketSegment[] = [{ type: "key", name: match[1] }];
+  const rest = match[2] ?? "";
+  const bracketRegex = /\[([^\]]*)\]/g;
+  let bracketMatch: RegExpExecArray | null;
+
+  while ((bracketMatch = bracketRegex.exec(rest)) !== null) {
+    const content = bracketMatch[1];
+    if (content === undefined) continue;
+
+    if (content === "") {
+      segments.push({ type: "append" });
+    } else if (isNumericString(content)) {
+      segments.push({ type: "index", index: parseInt(content, 10) });
+    } else {
+      segments.push({ type: "key", name: content });
+    }
+  }
+
+  return segments;
+}
+
+/**
+ * Build a nested object from an ordered list of bracket-notation entries.
+ *
+ * Handles the full bracket grammar: key, key[], key[prop], key[][prop],
+ * key[0][prop], and arbitrary nesting depth.
+ *
+ * The [] (append) semantics are stateful: a new array element starts when
+ * the next property to be set already exists on the current last element.
+ */
+export function buildBracketObject(
+  entries: Iterable<[string, string | File]>,
+): Record<string, unknown> {
+  const root: Record<string, unknown> = Object.create(null);
+
+  for (const [rawKey, value] of entries) {
+    const segments = parseBracketSegments(rawKey);
+    if (segments.length === 0) continue;
+
+    let current: unknown = root;
+
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (seg === undefined) break;
+      const isLast = i === segments.length - 1;
+      const nextSeg = segments[i + 1];
+
+      if (seg.type === "key") {
+        if (!isPlainObject(current)) break;
+        if (isLast) {
+          current[seg.name] = value;
+        } else {
+          if (!(seg.name in current)) {
+            current[seg.name] = createContainer(nextSeg);
+          }
+          current = current[seg.name];
+        }
+      } else if (seg.type === "index") {
+        if (!Array.isArray(current)) break;
+        if (isLast) {
+          current[seg.index] = value;
+        } else {
+          if (current[seg.index] === undefined) {
+            current[seg.index] = createContainer(nextSeg);
+          }
+          current = current[seg.index];
+        }
+      } else {
+        // seg.type === "append"
+        if (!Array.isArray(current)) break;
+        if (isLast) {
+          // Terminal append: tags[]=a -> push value
+          current.push(value);
+        } else {
+          // Non-terminal append: assoc[][id]=1
+          // Continue last element or start a new one?
+          const lastEl = current.length > 0
+            ? current[current.length - 1]
+            : undefined;
+          const shouldStartNew = lastEl === undefined ||
+            (nextSeg !== undefined && nextSeg.type === "key" &&
+              isPlainObject(lastEl) && nextSeg.name in lastEl);
+
+          if (shouldStartNew) {
+            const newEl = createContainer(nextSeg);
+            current.push(newEl);
+            current = newEl;
+          } else {
+            current = lastEl;
+          }
+        }
+      }
+    }
+  }
+
+  return root;
+}
+
+/** Create the right container type based on what the next segment expects. */
+function createContainer(
+  nextSeg: BracketSegment | undefined,
+): unknown[] | Record<string, unknown> {
+  if (!nextSeg || nextSeg.type === "key") return Object.create(null);
+  // "index" and "append" both navigate into arrays
+  return [];
+}

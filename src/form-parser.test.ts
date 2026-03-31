@@ -10,7 +10,7 @@
  * - Media type utilities
  */
 
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import { parseFormData, parseUrlEncoded } from "./form-parser.ts";
 
 // =============================================================================
@@ -735,6 +735,238 @@ Deno.test("parseFormData: PHP-style brackets with array schema should not double
   assertEquals(result.data, {
     include: ["logprobs"],
     model: "gpt-4o-transcribe",
+  });
+});
+
+// =============================================================================
+// Bracket array-of-objects: field[][prop] notation (PHP/Rails convention)
+// =============================================================================
+
+Deno.test("parseUrlEncoded: brackets array-of-objects with one element", () => {
+  const result = parseUrlEncoded(
+    "associations[][id]=1&associations[][type]=foo",
+    {
+      formArrayFormat: "brackets",
+      formObjectFormat: "brackets",
+    },
+  );
+
+  assertEquals(result.data, {
+    associations: [{ id: "1", type: "foo" }],
+  });
+});
+
+Deno.test("parseUrlEncoded: brackets array-of-objects with multiple elements", () => {
+  const result = parseUrlEncoded(
+    "tags[][name]=a&tags[][color]=red&tags[][name]=b&tags[][color]=blue",
+    {
+      formArrayFormat: "brackets",
+      formObjectFormat: "brackets",
+    },
+  );
+
+  assertEquals(result.data, {
+    tags: [{ name: "a", color: "red" }, { name: "b", color: "blue" }],
+  });
+});
+
+Deno.test("parseFormData: brackets array-of-objects with one element", () => {
+  const formData = new FormData();
+  formData.append("associations[][id]", "1");
+  formData.append("associations[][type]", "foo");
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+  });
+
+  assertEquals(result.data, {
+    associations: [{ id: "1", type: "foo" }],
+  });
+});
+
+Deno.test("parseFormData: brackets array-of-objects with multiple elements", () => {
+  const formData = new FormData();
+  formData.append("items[][name]", "a");
+  formData.append("items[][value]", "1");
+  formData.append("items[][name]", "b");
+  formData.append("items[][value]", "2");
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+  });
+
+  assertEquals(result.data, {
+    items: [{ name: "a", value: "1" }, { name: "b", value: "2" }],
+  });
+});
+
+// =============================================================================
+// Bracket path: file handling
+// =============================================================================
+
+Deno.test("parseFormData: brackets+brackets handles single file", () => {
+  const file = new File(["data"], "doc.txt", { type: "text/plain" });
+  const formData = new FormData();
+  formData.append("name", "report");
+  formData.append("file", file);
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+  });
+
+  assertEquals(result.data.name, "report");
+  assertEquals(result.data.file, "[File]");
+  assertEquals(result.files.size, 1);
+  assertEquals(result.files.get("file"), file);
+});
+
+Deno.test("parseFormData: brackets+brackets handles array of files", () => {
+  const f1 = new File(["a"], "a.txt", { type: "text/plain" });
+  const f2 = new File(["b"], "b.txt", { type: "text/plain" });
+  const formData = new FormData();
+  formData.append("files[]", f1);
+  formData.append("files[]", f2);
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+  });
+
+  assertEquals(result.data.files, ["[File]", "[File]"]);
+  assertEquals(result.files.size, 1);
+  const uploaded = result.files.get("files");
+  assert(Array.isArray(uploaded));
+  assertEquals(uploaded.length, 2);
+});
+
+// =============================================================================
+// Bracket path: schema coercion
+// =============================================================================
+
+Deno.test("parseFormData: brackets+brackets coerces integer with schema", () => {
+  const schema = {
+    type: "object" as const,
+    properties: {
+      count: { type: "integer" as const },
+    },
+  };
+  const formData = new FormData();
+  formData.append("count", "42");
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+    schema,
+  });
+
+  assertEquals(result.data.count, 42);
+});
+
+Deno.test("parseFormData: brackets+brackets coerces boolean with schema", () => {
+  const schema = {
+    type: "object" as const,
+    properties: {
+      active: { type: "boolean" as const },
+    },
+  };
+  const formData = new FormData();
+  formData.append("active", "true");
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+    schema,
+  });
+
+  assertEquals(result.data.active, true);
+});
+
+Deno.test("parseFormData: brackets+brackets coerces nested object with schema", () => {
+  const schema = {
+    type: "object" as const,
+    properties: {
+      config: {
+        type: "object" as const,
+        properties: {
+          timeout: { type: "integer" as const },
+        },
+      },
+    },
+  };
+  const formData = new FormData();
+  formData.append("config[timeout]", "30");
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+    schema,
+  });
+
+  assertEquals(result.data, { config: { timeout: 30 } });
+});
+
+Deno.test("parseFormData: brackets+brackets coerces array of objects with schema", () => {
+  const schema = {
+    type: "object" as const,
+    properties: {
+      items: {
+        type: "array" as const,
+        items: {
+          type: "object" as const,
+          properties: {
+            count: { type: "integer" as const },
+            active: { type: "boolean" as const },
+          },
+        },
+      },
+    },
+  };
+  const formData = new FormData();
+  formData.append("items[][count]", "5");
+  formData.append("items[][active]", "true");
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+    schema,
+  });
+
+  assertEquals(result.data, { items: [{ count: 5, active: true }] });
+});
+
+// =============================================================================
+// Bracket path: deep nesting
+// =============================================================================
+
+Deno.test("parseFormData: brackets+brackets deep nested array-of-objects", () => {
+  const formData = new FormData();
+  formData.append("deep[][a][b]", "1");
+  formData.append("deep[][a][b]", "2");
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+  });
+
+  assertEquals(result.data, {
+    deep: [{ a: { b: "1" } }, { a: { b: "2" } }],
+  });
+});
+
+Deno.test("parseUrlEncoded: brackets+brackets deep nested array-of-objects", () => {
+  const result = parseUrlEncoded(
+    "deep[][a][b]=1&deep[][a][b]=2",
+    {
+      formArrayFormat: "brackets",
+      formObjectFormat: "brackets",
+    },
+  );
+
+  assertEquals(result.data, {
+    deep: [{ a: { b: "1" } }, { a: { b: "2" } }],
   });
 });
 
