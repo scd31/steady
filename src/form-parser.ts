@@ -23,11 +23,11 @@ import {
 import { isPlainObject } from "@steady/json-pointer";
 import { isReference } from "./types.ts";
 import {
-  buildBracketObject,
   type ConcreteArrayFormat,
   type ConcreteObjectFormat,
   groupFormEntries,
   isNumericString,
+  parseBracketEntries,
   parseKeyToPath,
   setNestedValue,
 } from "./param-format.ts";
@@ -79,12 +79,14 @@ export function parseFormData(
     resolveSchema,
   } = options;
 
-  // When both formats are brackets, use the stateful tree builder that
-  // correctly handles array-of-objects notation like field[][prop].
+  // When both formats are brackets, use schema-driven bracket parser.
   if (formArrayFormat === "brackets" && formObjectFormat === "brackets") {
-    const data = buildBracketObject(formData.entries());
+    const data = parseBracketEntries(
+      formData.entries(),
+      schema ?? null,
+      resolveSchema,
+    );
     const files = extractFiles(data);
-    coerceTree(data, schema, resolveSchema);
     return { data, files };
   }
 
@@ -219,8 +221,11 @@ export function parseUrlEncoded(
   const params = new URLSearchParams(body);
 
   if (formArrayFormat === "brackets" && formObjectFormat === "brackets") {
-    const data = buildBracketObject(params.entries());
-    coerceTree(data, schema, resolveSchema);
+    const data = parseBracketEntries(
+      params.entries(),
+      schema ?? null,
+      resolveSchema,
+    );
     return { data, files: new Map() };
   }
 
@@ -337,8 +342,8 @@ function getPropertySchema(
 // =============================================================================
 
 /**
- * Walk a tree built by buildBracketObject, replacing File instances with
- * "[File]" placeholders and collecting them into a files Map.
+ * Walk a parsed bracket tree, replacing File instances with "[File]"
+ * placeholders and collecting them into a files Map.
  */
 function extractFiles(
   data: Record<string, unknown>,
@@ -379,78 +384,4 @@ function extractFiles(
   }
 
   return files;
-}
-
-/**
- * Walk a tree built by buildBracketObject, coercing string values to
- * their schema-declared types using the existing coerceScalar logic.
- */
-function coerceTree(
-  data: Record<string, unknown>,
-  schema: SchemaObject | ReferenceObject | undefined,
-  resolveSchema?: (
-    schema: SchemaObject | ReferenceObject,
-  ) => SchemaObject | undefined,
-): void {
-  if (!schema) return;
-
-  let resolved: SchemaObject | undefined;
-  if (isReference(schema)) {
-    resolved = resolveSchema?.(schema);
-  } else {
-    resolved = schema;
-  }
-  if (!resolved) return;
-
-  const props = effectiveProperties(resolved);
-  if (!props) return;
-
-  for (const key of Object.keys(data)) {
-    const propSchemaRaw = props[key];
-    if (!propSchemaRaw) continue;
-
-    let propSchema: SchemaObject | undefined;
-    if (isReference(propSchemaRaw)) {
-      propSchema = resolveSchema?.(propSchemaRaw);
-    } else {
-      propSchema = propSchemaRaw;
-    }
-    if (!propSchema) continue;
-
-    const value = data[key];
-    const propType = effectiveType(propSchema);
-
-    if (propType === "array" && Array.isArray(value)) {
-      const itemSchemaRaw = effectiveItems(propSchema);
-      if (!itemSchemaRaw || typeof itemSchemaRaw === "boolean") continue;
-      let itemSchema: SchemaObject | undefined;
-      if (isReference(itemSchemaRaw)) {
-        itemSchema = resolveSchema?.(itemSchemaRaw);
-      } else {
-        itemSchema = itemSchemaRaw;
-      }
-      if (!itemSchema) continue;
-
-      const itemType = effectiveType(itemSchema);
-      if (itemType === "object") {
-        for (const item of value) {
-          if (isPlainObject(item)) {
-            coerceTree(item, itemSchema, resolveSchema);
-          }
-        }
-      } else {
-        // Coerce scalar array items
-        for (let i = 0; i < value.length; i++) {
-          const item = value[i];
-          if (typeof item === "string") {
-            value[i] = coerceScalar(item, itemSchema);
-          }
-        }
-      }
-    } else if (propType === "object" && isPlainObject(value)) {
-      coerceTree(value, propSchema, resolveSchema);
-    } else if (typeof value === "string") {
-      data[key] = coerceScalar(value, propSchema);
-    }
-  }
 }

@@ -7,6 +7,13 @@
 
 import type { QueryArrayFormat, QueryObjectFormat } from "./types.ts";
 import { isPlainObject } from "@steady/json-pointer";
+import {
+  coerceScalar,
+  effectiveItems,
+  effectiveProperties,
+  effectiveType,
+} from "@steady/json-schema";
+import type { Schema } from "@steady/json-schema";
 
 // Re-export types for convenience
 export type { QueryArrayFormat, QueryObjectFormat };
@@ -228,24 +235,15 @@ export function hasParamValue(
 export function parseNestedArrayValues(
   source: KeyValueSource,
   name: string,
-  format: "dots" | "brackets",
 ): Record<string, unknown>[] {
-  const prefix = format === "dots" ? `${name}.` : `${name}[`;
+  const prefix = `${name}.`;
 
   // Collect all prefixed entries in order, extracting the sub-path
   const entries: { path: string[]; value: string }[] = [];
   for (const [key, value] of source.entries()) {
     if (!key.startsWith(prefix)) continue;
-
-    if (format === "dots") {
-      const path = key.slice(prefix.length).split(".");
-      entries.push({ path, value });
-    } else {
-      const path = parseBracketPath(key, name);
-      if (path.length > 0) {
-        entries.push({ path, value });
-      }
-    }
+    const path = key.slice(prefix.length).split(".");
+    entries.push({ path, value });
   }
 
   if (entries.length === 0) return [];
@@ -330,29 +328,6 @@ function parseRepeatedEntries(
 // =============================================================================
 // Object Parsing
 // =============================================================================
-
-/**
- * Parse bracket notation path: filter[meta][level] -> ["meta", "level"]
- */
-export function parseBracketPath(key: string, baseName: string): string[] {
-  const path: string[] = [];
-  const prefix = `${baseName}[`;
-
-  if (!key.startsWith(prefix)) return path;
-
-  const rest = key.slice(baseName.length);
-  const bracketRegex = /\[([^\]]*)\]/g;
-  let match: RegExpExecArray | null;
-
-  while ((match = bracketRegex.exec(rest)) !== null) {
-    const segment = match[1];
-    if (segment !== undefined) {
-      path.push(segment);
-    }
-  }
-
-  return path;
-}
 
 /**
  * Set a value at a nested path in an object.
@@ -465,21 +440,6 @@ export function parseObjectValue(
       return result;
     }
 
-    case "brackets": {
-      // id[role]=admin&id[firstName]=Alex -> {role: "admin", firstName: "Alex"}
-      const prefix = `${name}[`;
-
-      for (const [key, value] of source.entries()) {
-        if (key.startsWith(prefix)) {
-          const path = parseBracketPath(key, name);
-          if (path.length > 0) {
-            setNestedValue(result, path, value);
-          }
-        }
-      }
-      return result;
-    }
-
     case "dots": {
       // id.role=admin&id.firstName=Alex -> {role: "admin", firstName: "Alex"}
       const prefix = `${name}.`;
@@ -494,6 +454,10 @@ export function parseObjectValue(
       }
       return result;
     }
+
+    case "brackets":
+      // Brackets format is handled by parseBracketEntries
+      return result;
   }
 }
 
@@ -641,88 +605,246 @@ export function parseBracketSegments(rawKey: string): BracketSegment[] {
   return segments;
 }
 
-/**
- * Build a nested object from an ordered list of bracket-notation entries.
- *
- * Handles the full bracket grammar: key, key[], key[prop], key[][prop],
- * key[0][prop], and arbitrary nesting depth.
- *
- * The [] (append) semantics are stateful: a new array element starts when
- * the next property to be set already exists on the current last element.
- */
-export function buildBracketObject(
-  entries: Iterable<[string, string | File]>,
-): Record<string, unknown> {
-  const root: Record<string, unknown> = Object.create(null);
+// =============================================================================
+// Schema-Driven Bracket Parser
+// =============================================================================
 
-  for (const [rawKey, value] of entries) {
-    const segments = parseBracketSegments(rawKey);
-    if (segments.length === 0) continue;
-
-    let current: unknown = root;
-
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i];
-      if (seg === undefined) break;
-      const isLast = i === segments.length - 1;
-      const nextSeg = segments[i + 1];
-
-      if (seg.type === "key") {
-        if (!isPlainObject(current)) break;
-        if (isLast) {
-          current[seg.name] = value;
-        } else {
-          if (!(seg.name in current)) {
-            current[seg.name] = createContainer(nextSeg);
-          }
-          current = current[seg.name];
-        }
-      } else if (seg.type === "index") {
-        if (!Array.isArray(current)) break;
-        if (isLast) {
-          current[seg.index] = value;
-        } else {
-          if (current[seg.index] === undefined) {
-            current[seg.index] = createContainer(nextSeg);
-          }
-          current = current[seg.index];
-        }
-      } else {
-        // seg.type === "append"
-        if (!Array.isArray(current)) break;
-        if (isLast) {
-          // Terminal append: tags[]=a -> push value
-          current.push(value);
-        } else {
-          // Non-terminal append: assoc[][id]=1
-          // Continue last element or start a new one?
-          const lastEl = current.length > 0
-            ? current[current.length - 1]
-            : undefined;
-          const shouldStartNew = lastEl === undefined ||
-            (nextSeg !== undefined && nextSeg.type === "key" &&
-              isPlainObject(lastEl) && nextSeg.name in lastEl);
-
-          if (shouldStartNew) {
-            const newEl = createContainer(nextSeg);
-            current.push(newEl);
-            current = newEl;
-          } else {
-            current = lastEl;
-          }
-        }
-      }
-    }
-  }
-
-  return root;
+/** A bracket entry with parsed segments and its raw value. */
+export interface BracketEntry {
+  segments: BracketSegment[];
+  value: string | File;
 }
 
-/** Create the right container type based on what the next segment expects. */
-function createContainer(
-  nextSeg: BracketSegment | undefined,
-): unknown[] | Record<string, unknown> {
-  if (!nextSeg || nextSeg.type === "key") return Object.create(null);
-  // "index" and "append" both navigate into arrays
+/** Callback to resolve $ref schemas. */
+export type RefResolver = (schema: Schema) => Schema | undefined;
+
+/** Resolve a schema, following $ref if present. */
+function resolve(
+  schema: Schema | null | undefined,
+  resolver?: RefResolver,
+): Schema | undefined {
+  if (schema === null || schema === undefined) return undefined;
+  if (typeof schema === "boolean") return undefined;
+  if ("$ref" in schema && typeof schema.$ref === "string" && resolver) {
+    return resolver(schema) ?? undefined;
+  }
+  return schema;
+}
+
+/** Coerce a terminal value using the schema, or return as-is. */
+function coerceLeaf(value: string | File, schema: Schema | null): unknown {
+  if (value instanceof File) return value;
+  if (!schema || typeof schema === "boolean") return value;
+  return coerceScalar(value, schema);
+}
+
+/**
+ * Parse bracket-notation entries into a structured object tree, guided by
+ * schema. Single entry point for all bracket-notation parsing: query
+ * parameters, multipart form data, and URL-encoded bodies.
+ */
+export function parseBracketEntries(
+  rawEntries: Iterable<[string, string | File]>,
+  schema: Schema | null,
+  resolver?: RefResolver,
+): Record<string, unknown> {
+  const entries: BracketEntry[] = [];
+  for (const [rawKey, value] of rawEntries) {
+    const segments = parseBracketSegments(rawKey);
+    if (segments.length > 0) {
+      entries.push({ segments, value });
+    }
+  }
+  return assembleObject(entries, schema, resolver);
+}
+
+/**
+ * Recursive core: assemble a value from bracket entries guided by schema.
+ */
+function assembleValue(
+  entries: BracketEntry[],
+  schema: Schema | null,
+  resolver?: RefResolver,
+): unknown {
+  if (entries.length === 0) return undefined;
+
+  const resolved = resolve(schema, resolver) ?? null;
+  const schemaType = resolved ? effectiveType(resolved) : null;
+
+  // Terminal: all entries have no remaining segments
+  if (entries.every((e) => e.segments.length === 0)) {
+    if (schemaType === "array") {
+      const items = resolved ? effectiveItems(resolved) : null;
+      const resolvedItems = resolve(items, resolver) ?? null;
+      return entries.map((e) => coerceLeaf(e.value, resolvedItems));
+    }
+    if (entries.length === 1) {
+      const entry = entries[0];
+      if (entry) return coerceLeaf(entry.value, resolved);
+    }
+    // Multiple terminals without array schema: last wins
+    const last = entries[entries.length - 1];
+    if (last) return coerceLeaf(last.value, resolved);
+    return undefined;
+  }
+
+  if (schemaType === "array") {
+    const items = resolved ? effectiveItems(resolved) : null;
+    const resolvedItems = resolve(items, resolver) ?? null;
+    return assembleArray(entries, resolvedItems, resolver);
+  }
+
+  // Object or no schema: default to object
+  return assembleObject(entries, resolved, resolver);
+}
+
+/**
+ * Assemble an array value. Handles three conventions:
+ * - Indexed: items[0][name]=a
+ * - Append: items[][name]=a
+ * - Repeated keys: items[name]=a&items[name]=b (schema says array)
+ */
+function assembleArray(
+  entries: BracketEntry[],
+  itemSchema: Schema | null,
+  resolver?: RefResolver,
+): unknown[] {
+  if (entries.length === 0) return [];
+
+  const first = entries[0]?.segments[0];
+  if (!first) return entries.map((e) => coerceLeaf(e.value, itemSchema));
+
+  if (first.type === "index") {
+    return assembleIndexedArray(entries, itemSchema, resolver);
+  }
+
+  if (first.type === "append") {
+    const stripped = entries.map((e) => ({
+      segments: e.segments.slice(1),
+      value: e.value,
+    }));
+    if (stripped.every((e) => e.segments.length === 0)) {
+      return stripped.map((e) => coerceLeaf(e.value, itemSchema));
+    }
+    return groupAppendEntries(stripped, itemSchema, resolver);
+  }
+
+  // Repeated keys: schema said array, but keys are property names
+  if (first.type === "key") {
+    return groupRepeatedKeyEntries(entries, itemSchema, resolver);
+  }
+
   return [];
+}
+
+/** Group entries by explicit numeric index. */
+function assembleIndexedArray(
+  entries: BracketEntry[],
+  itemSchema: Schema | null,
+  resolver?: RefResolver,
+): unknown[] {
+  const byIndex = new Map<number, BracketEntry[]>();
+  for (const entry of entries) {
+    const seg = entry.segments[0];
+    if (!seg || seg.type !== "index") continue;
+    const group = byIndex.get(seg.index) ?? [];
+    group.push({ segments: entry.segments.slice(1), value: entry.value });
+    byIndex.set(seg.index, group);
+  }
+
+  const result: unknown[] = [];
+  for (const idx of [...byIndex.keys()].sort((a, b) => a - b)) {
+    const group = byIndex.get(idx);
+    if (group) result.push(assembleValue(group, itemSchema, resolver));
+  }
+  return result;
+}
+
+/**
+ * Group append entries into array elements by detecting property boundaries.
+ * A new element starts when a property name that was already set on the
+ * current element appears again.
+ */
+function groupAppendEntries(
+  entries: BracketEntry[],
+  itemSchema: Schema | null,
+  resolver?: RefResolver,
+): unknown[] {
+  const elements: BracketEntry[][] = [[]];
+  const seen = new Set<string>();
+
+  for (const entry of entries) {
+    const seg = entry.segments[0];
+    if (!seg || seg.type !== "key") continue;
+    const key = seg.name;
+
+    if (seen.has(key)) {
+      elements.push([]);
+      seen.clear();
+    }
+    seen.add(key);
+    const current = elements[elements.length - 1];
+    if (current) current.push(entry);
+  }
+
+  return elements
+    .filter((g) => g.length > 0)
+    .map((group) => assembleValue(group, itemSchema, resolver));
+}
+
+/**
+ * Group entries by positional occurrence of each top-level key.
+ * Same algorithm as parseRepeatedEntries: first occurrence of "key" goes
+ * to item 0, second occurrence goes to item 1, etc.
+ */
+function groupRepeatedKeyEntries(
+  entries: BracketEntry[],
+  itemSchema: Schema | null,
+  resolver?: RefResolver,
+): unknown[] {
+  const keyCounts = new Map<string, number>();
+  const itemEntries = new Map<number, BracketEntry[]>();
+
+  for (const entry of entries) {
+    const seg = entry.segments[0];
+    if (!seg || seg.type !== "key") continue;
+    const count = keyCounts.get(seg.name) ?? 0;
+    keyCounts.set(seg.name, count + 1);
+    const group = itemEntries.get(count) ?? [];
+    group.push(entry);
+    itemEntries.set(count, group);
+  }
+
+  const result: unknown[] = [];
+  for (const idx of [...itemEntries.keys()].sort((a, b) => a - b)) {
+    const group = itemEntries.get(idx);
+    if (group) result.push(assembleValue(group, itemSchema, resolver));
+  }
+  return result;
+}
+
+/** Assemble an object by grouping entries by first key segment. */
+function assembleObject(
+  entries: BracketEntry[],
+  schema: Schema | null,
+  resolver?: RefResolver,
+): Record<string, unknown> {
+  const resolved = (schema && typeof schema !== "boolean") ? schema : null;
+  const props = resolved ? effectiveProperties(resolved) : null;
+
+  const groups = new Map<string, BracketEntry[]>();
+  for (const entry of entries) {
+    const seg = entry.segments[0];
+    if (!seg || seg.type !== "key") continue;
+    const group = groups.get(seg.name) ?? [];
+    group.push({ segments: entry.segments.slice(1), value: entry.value });
+    groups.set(seg.name, group);
+  }
+
+  const result: Record<string, unknown> = Object.create(null);
+  for (const [key, subEntries] of groups) {
+    const propSchema = resolve(props?.[key] ?? null, resolver) ?? null;
+    result[key] = assembleValue(subEntries, propSchema, resolver);
+  }
+  return result;
 }

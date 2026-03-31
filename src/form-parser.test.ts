@@ -609,6 +609,13 @@ Deno.test("parseFormData: brackets for both arrays and objects", () => {
   const result = parseFormData(formData, {
     formArrayFormat: "brackets",
     formObjectFormat: "brackets",
+    schema: {
+      type: "object",
+      properties: {
+        user: { type: "object", properties: { name: { type: "string" } } },
+        tags: { type: "array", items: { type: "string" } },
+      },
+    },
   });
 
   assertEquals(result.data, {
@@ -642,6 +649,13 @@ Deno.test("parseFormData: indexed brackets should create flat array", () => {
   const result = parseFormData(formData, {
     formArrayFormat: "brackets",
     formObjectFormat: "brackets",
+    schema: {
+      type: "object",
+      properties: {
+        include: { type: "array", items: { type: "string" } },
+        model: { type: "string" },
+      },
+    },
   });
 
   // Should be flat array, NOT nested [["logprobs"]]
@@ -660,6 +674,12 @@ Deno.test("parseFormData: multiple indexed brackets", () => {
   const result = parseFormData(formData, {
     formArrayFormat: "brackets",
     formObjectFormat: "brackets",
+    schema: {
+      type: "object",
+      properties: {
+        tags: { type: "array", items: { type: "string" } },
+      },
+    },
   });
 
   assertEquals(result.data, {
@@ -671,6 +691,12 @@ Deno.test("parseUrlEncoded: indexed brackets should create flat array", () => {
   const result = parseUrlEncoded("include[0]=logprobs&include[1]=timestamps", {
     formArrayFormat: "brackets",
     formObjectFormat: "brackets",
+    schema: {
+      type: "object",
+      properties: {
+        include: { type: "array", items: { type: "string" } },
+      },
+    },
   });
 
   assertEquals(result.data, {
@@ -748,6 +774,18 @@ Deno.test("parseUrlEncoded: brackets array-of-objects with one element", () => {
     {
       formArrayFormat: "brackets",
       formObjectFormat: "brackets",
+      schema: {
+        type: "object",
+        properties: {
+          associations: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { id: { type: "string" }, type: { type: "string" } },
+            },
+          },
+        },
+      },
     },
   );
 
@@ -762,6 +800,21 @@ Deno.test("parseUrlEncoded: brackets array-of-objects with multiple elements", (
     {
       formArrayFormat: "brackets",
       formObjectFormat: "brackets",
+      schema: {
+        type: "object",
+        properties: {
+          tags: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                color: { type: "string" },
+              },
+            },
+          },
+        },
+      },
     },
   );
 
@@ -778,6 +831,18 @@ Deno.test("parseFormData: brackets array-of-objects with one element", () => {
   const result = parseFormData(formData, {
     formArrayFormat: "brackets",
     formObjectFormat: "brackets",
+    schema: {
+      type: "object",
+      properties: {
+        associations: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { id: { type: "string" }, type: { type: "string" } },
+          },
+        },
+      },
+    },
   });
 
   assertEquals(result.data, {
@@ -795,6 +860,21 @@ Deno.test("parseFormData: brackets array-of-objects with multiple elements", () 
   const result = parseFormData(formData, {
     formArrayFormat: "brackets",
     formObjectFormat: "brackets",
+    schema: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              value: { type: "string" },
+            },
+          },
+        },
+      },
+    },
   });
 
   assertEquals(result.data, {
@@ -833,6 +913,12 @@ Deno.test("parseFormData: brackets+brackets handles array of files", () => {
   const result = parseFormData(formData, {
     formArrayFormat: "brackets",
     formObjectFormat: "brackets",
+    schema: {
+      type: "object",
+      properties: {
+        files: { type: "array", items: { type: "string", format: "binary" } },
+      },
+    },
   });
 
   assertEquals(result.data.files, ["[File]", "[File]"]);
@@ -942,6 +1028,23 @@ Deno.test("parseFormData: brackets+brackets coerces array of objects with schema
 // =============================================================================
 
 Deno.test("parseFormData: brackets+brackets deep nested array-of-objects", () => {
+  const deepSchema = {
+    type: "object" as const,
+    properties: {
+      deep: {
+        type: "array" as const,
+        items: {
+          type: "object" as const,
+          properties: {
+            a: {
+              type: "object" as const,
+              properties: { b: { type: "string" as const } },
+            },
+          },
+        },
+      },
+    },
+  };
   const formData = new FormData();
   formData.append("deep[][a][b]", "1");
   formData.append("deep[][a][b]", "2");
@@ -949,6 +1052,7 @@ Deno.test("parseFormData: brackets+brackets deep nested array-of-objects", () =>
   const result = parseFormData(formData, {
     formArrayFormat: "brackets",
     formObjectFormat: "brackets",
+    schema: deepSchema,
   });
 
   assertEquals(result.data, {
@@ -957,11 +1061,29 @@ Deno.test("parseFormData: brackets+brackets deep nested array-of-objects", () =>
 });
 
 Deno.test("parseUrlEncoded: brackets+brackets deep nested array-of-objects", () => {
+  const deepSchema = {
+    type: "object" as const,
+    properties: {
+      deep: {
+        type: "array" as const,
+        items: {
+          type: "object" as const,
+          properties: {
+            a: {
+              type: "object" as const,
+              properties: { b: { type: "string" as const } },
+            },
+          },
+        },
+      },
+    },
+  };
   const result = parseUrlEncoded(
     "deep[][a][b]=1&deep[][a][b]=2",
     {
       formArrayFormat: "brackets",
       formObjectFormat: "brackets",
+      schema: deepSchema,
     },
   );
 

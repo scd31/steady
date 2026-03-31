@@ -10,7 +10,7 @@ import {
   getArrayValues,
   groupFormEntries,
   hasParamValue,
-  parseBracketPath,
+  parseBracketEntries,
   parseKeyToPath,
   parseObjectValue,
   resolveArrayFormat,
@@ -18,6 +18,7 @@ import {
   setNestedValue,
   wrapURLSearchParams,
 } from "./param-format.ts";
+import type { Schema } from "@steady/json-schema";
 
 // =============================================================================
 // resolveArrayFormat
@@ -238,34 +239,6 @@ Deno.test("hasParamValue: flat-object flat-comma format", () => {
 });
 
 // =============================================================================
-// parseBracketPath
-// =============================================================================
-
-Deno.test("parseBracketPath: extracts single segment", () => {
-  assertEquals(parseBracketPath("user[name]", "user"), ["name"]);
-});
-
-Deno.test("parseBracketPath: extracts multiple segments", () => {
-  assertEquals(parseBracketPath("user[address][city]", "user"), [
-    "address",
-    "city",
-  ]);
-});
-
-Deno.test("parseBracketPath: handles numeric indices", () => {
-  assertEquals(parseBracketPath("items[0]", "items"), ["0"]);
-  assertEquals(parseBracketPath("items[0][name]", "items"), ["0", "name"]);
-});
-
-Deno.test("parseBracketPath: returns empty for non-matching base", () => {
-  assertEquals(parseBracketPath("other[name]", "user"), []);
-});
-
-Deno.test("parseBracketPath: handles empty brackets", () => {
-  assertEquals(parseBracketPath("tags[]", "tags"), [""]);
-});
-
-// =============================================================================
 // setNestedValue
 // =============================================================================
 
@@ -323,27 +296,6 @@ Deno.test("parseObjectValue: flat-comma format parses key-value pairs", () => {
   assertEquals(parseObjectValue(source, "id", "flat-comma"), {
     role: "admin",
     firstName: "Alex",
-  });
-});
-
-Deno.test("parseObjectValue: brackets format parses nested keys", () => {
-  const params = new URLSearchParams("id[role]=admin&id[firstName]=Alex");
-  const source = wrapURLSearchParams(params);
-
-  assertEquals(parseObjectValue(source, "id", "brackets"), {
-    role: "admin",
-    firstName: "Alex",
-  });
-});
-
-Deno.test("parseObjectValue: brackets format handles deeply nested", () => {
-  const params = new URLSearchParams(
-    "user[address][city]=NYC&user[address][zip]=10001",
-  );
-  const source = wrapURLSearchParams(params);
-
-  assertEquals(parseObjectValue(source, "user", "brackets"), {
-    address: { city: "NYC", zip: "10001" },
   });
 });
 
@@ -458,6 +410,212 @@ Deno.test("parseKeyToPath: dots format splits by dots", () => {
     "address",
     "city",
   ]);
+});
+
+// =============================================================================
+// parseBracketEntries: schema-driven bracket parsing
+// =============================================================================
+
+const filterSchema: Schema = {
+  type: "object",
+  properties: {
+    item_id: {
+      type: "object",
+      properties: { eq: { type: "string" } },
+    },
+    type: {
+      type: "object",
+      properties: {
+        in: {
+          type: "array",
+          items: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
+const arrayOfObjectsSchema: Schema = {
+  type: "array",
+  items: {
+    type: "object",
+    properties: {
+      key: { type: "string" },
+      operator: { type: "string" },
+      value: { type: "string" },
+      name: { type: "string" },
+      id: { type: "string" },
+      type: { type: "string" },
+      color: { type: "string" },
+    },
+  },
+};
+
+Deno.test("parseBracketEntries: nested object with array-append property", () => {
+  const entries: [string, string][] = [
+    ["filter[type][in][]", "activity/call_occurred"],
+  ];
+  const wrapperSchema: Schema = {
+    type: "object",
+    properties: { filter: filterSchema },
+  };
+
+  const result = parseBracketEntries(entries, wrapperSchema);
+  assertEquals(result, {
+    filter: { type: { in: ["activity/call_occurred"] } },
+  });
+});
+
+Deno.test("parseBracketEntries: multiple array-append values", () => {
+  const entries: [string, string][] = [
+    ["filter[type][in][]", "call"],
+    ["filter[type][in][]", "email"],
+  ];
+  const wrapperSchema: Schema = {
+    type: "object",
+    properties: { filter: filterSchema },
+  };
+
+  const result = parseBracketEntries(entries, wrapperSchema);
+  assertEquals(result, {
+    filter: { type: { in: ["call", "email"] } },
+  });
+});
+
+Deno.test("parseBracketEntries: mixed object and array-append", () => {
+  const entries: [string, string][] = [
+    ["filter[item_id][eq]", "eq"],
+    ["filter[type][in][]", "activity/call_occurred"],
+  ];
+  const wrapperSchema: Schema = {
+    type: "object",
+    properties: { filter: filterSchema },
+  };
+
+  const result = parseBracketEntries(entries, wrapperSchema);
+  assertEquals(result, {
+    filter: {
+      item_id: { eq: "eq" },
+      type: { in: ["activity/call_occurred"] },
+    },
+  });
+});
+
+Deno.test("parseBracketEntries: array-of-objects with append notation", () => {
+  const entries: [string, string][] = [
+    ["items[][name]", "a"],
+    ["items[][value]", "1"],
+    ["items[][name]", "b"],
+    ["items[][value]", "2"],
+  ];
+  const wrapperSchema: Schema = {
+    type: "object",
+    properties: { items: arrayOfObjectsSchema },
+  };
+
+  const result = parseBracketEntries(entries, wrapperSchema);
+  assertEquals(result, {
+    items: [{ name: "a", value: "1" }, { name: "b", value: "2" }],
+  });
+});
+
+Deno.test("parseBracketEntries: array-of-objects with repeated keys (no [])", () => {
+  const entries: [string, string][] = [
+    ["filters[key]", "id"],
+    ["filters[operator]", "eq"],
+    ["filters[key]", "type"],
+    ["filters[operator]", "contains"],
+  ];
+  const wrapperSchema: Schema = {
+    type: "object",
+    properties: { filters: arrayOfObjectsSchema },
+  };
+
+  const result = parseBracketEntries(entries, wrapperSchema);
+  assertEquals(result, {
+    filters: [
+      { key: "id", operator: "eq" },
+      { key: "type", operator: "contains" },
+    ],
+  });
+});
+
+Deno.test("parseBracketEntries: single array-of-objects element with repeated keys", () => {
+  const entries: [string, string][] = [
+    ["filters[key]", "id"],
+    ["filters[operator]", "eq"],
+    ["filters[value]", "string"],
+  ];
+  const wrapperSchema: Schema = {
+    type: "object",
+    properties: { filters: arrayOfObjectsSchema },
+  };
+
+  const result = parseBracketEntries(entries, wrapperSchema);
+  assertEquals(result, {
+    filters: [{ key: "id", operator: "eq", value: "string" }],
+  });
+});
+
+Deno.test("parseBracketEntries: deep nested array-of-objects", () => {
+  const entries: [string, string][] = [
+    ["deep[][a][b]", "1"],
+    ["deep[][a][b]", "2"],
+  ];
+  const deepSchema: Schema = {
+    type: "object",
+    properties: {
+      deep: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            a: {
+              type: "object",
+              properties: { b: { type: "string" } },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const result = parseBracketEntries(entries, deepSchema);
+  assertEquals(result, {
+    deep: [{ a: { b: "1" } }, { a: { b: "2" } }],
+  });
+});
+
+Deno.test("parseBracketEntries: coerces integer leaf values", () => {
+  const entries: [string, string][] = [["count", "42"]];
+  const schema: Schema = {
+    type: "object",
+    properties: { count: { type: "integer" } },
+  };
+
+  const result = parseBracketEntries(entries, schema);
+  assertEquals(result, { count: 42 });
+});
+
+Deno.test("parseBracketEntries: coerces boolean leaf values", () => {
+  const entries: [string, string][] = [["active", "true"]];
+  const schema: Schema = {
+    type: "object",
+    properties: { active: { type: "boolean" } },
+  };
+
+  const result = parseBracketEntries(entries, schema);
+  assertEquals(result, { active: true });
+});
+
+Deno.test("parseBracketEntries: no schema defaults to object", () => {
+  const entries: [string, string][] = [
+    ["name", "test"],
+    ["count", "42"],
+  ];
+
+  const result = parseBracketEntries(entries, null);
+  assertEquals(result, { name: "test", count: "42" });
 });
 
 console.log("param-format tests loaded");

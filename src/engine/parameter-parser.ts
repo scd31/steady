@@ -29,6 +29,7 @@ import type {
 import {
   getArrayValues,
   hasParamValue,
+  parseBracketEntries,
   parseNestedArrayValues,
   parseObjectValue,
   resolveArrayFormat,
@@ -234,11 +235,25 @@ export function parseQueryParam(
     }
 
     case "nested": {
+      if (encoding.objectFmt === "brackets") {
+        const paramEntries: [string, string][] = [];
+        const prefix = `${param.name}[`;
+        for (const [key, value] of source.entries()) {
+          if (key.startsWith(prefix)) paramEntries.push([key, value]);
+        }
+        if (paramEntries.length === 0) return { present: false };
+        const wrapperSchema = {
+          type: "object" as const,
+          properties: { [param.name]: schema },
+        };
+        const tree = parseBracketEntries(paramEntries, wrapperSchema);
+        return { present: true, value: tree[param.name] };
+      }
+      // Dots format: existing logic
       if (isArraySchema(schema)) {
         const items = parseNestedArrayValues(
           source,
           param.name,
-          encoding.objectFmt,
         );
         return { present: true, value: coerceDeep(items, schema) };
       }
