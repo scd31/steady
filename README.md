@@ -5,7 +5,7 @@ _Pronounced /ˈstiːdi/, like "steed-y"_
 OpenAPI 3.0/3.1 mock server built to be fast and reliable. Validates requests
 against specs and generates responses from schemas or examples.
 
-![](./assets/logo.png)
+![steady logo](./assets/logo.png)
 
 _Note from the artist: the sword is to fight off bugs in your sdks_
 
