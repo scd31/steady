@@ -14,18 +14,12 @@
 import {
   coerceDeep,
   coerceScalar,
-  effectiveItems,
   effectiveProperties,
   isArraySchema,
   isObjectSchema,
 } from "@steady/json-schema";
 import type { Schema } from "@steady/json-schema";
-import type {
-  ConcreteArrayFormat,
-  ConcreteObjectFormat,
-  KeyValueSource,
-  ParamEncoding,
-} from "../param-format.ts";
+import type { KeyValueSource } from "../param-format.ts";
 import {
   getArrayValues,
   hasParamValue,
@@ -34,6 +28,7 @@ import {
   parseObjectValue,
   resolveArrayFormat,
   resolveObjectFormat,
+  resolveParamEncoding,
 } from "../param-format.ts";
 import type { QueryArrayFormat, QueryObjectFormat } from "../types.ts";
 import type { ResolvedParameter } from "./diagnostic-engine.ts";
@@ -51,52 +46,6 @@ export {
 export interface ParsedParam {
   present: boolean;
   value?: unknown;
-}
-
-// ── Wire encoding resolution ──────────────────────────────────────
-
-/**
- * Determine how a parameter is encoded on the wire.
- *
- * This is the single decision point that combines schema type and format
- * flags into an encoding kind. All consumers (presence detection, parsing,
- * expected-key registration) use this instead of independently branching
- * on isArray/isObject + format.
- */
-function resolveParamEncoding(
-  schema: Schema | null,
-  arrayFmt: ConcreteArrayFormat,
-  objectFmt: ConcreteObjectFormat,
-): ParamEncoding {
-  if (!schema || typeof schema === "boolean") return { kind: "scalar" };
-
-  const isArray = isArraySchema(schema);
-  const isObject = isObjectSchema(schema);
-
-  // Nested formats (dots, brackets) produce prefixed keys for objects
-  // and arrays of objects. Arrays of scalars use flat array encoding.
-  const nestedFmt = objectFmt === "dots" || objectFmt === "brackets";
-  if (nestedFmt && isObject) {
-    return { kind: "nested", objectFmt };
-  }
-  if (nestedFmt && isArray) {
-    const items = effectiveItems(schema);
-    if (items && typeof items !== "boolean" && isObjectSchema(items)) {
-      return { kind: "nested", objectFmt };
-    }
-  }
-
-  // Flat object formats
-  if (isObject && (objectFmt === "flat" || objectFmt === "flat-comma")) {
-    return { kind: "flat-object", objectFmt };
-  }
-
-  // Flat array formats
-  if (isArray) {
-    return { kind: "flat-array", arrayFmt };
-  }
-
-  return { kind: "scalar" };
 }
 
 // ── Non-query parameter deserialization ────────────────────────────

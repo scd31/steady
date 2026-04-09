@@ -929,6 +929,151 @@ Deno.test("parseFormData: brackets+brackets handles array of files", () => {
 });
 
 // =============================================================================
+// Bracket format enforcement: bare keys must not produce arrays
+// =============================================================================
+
+Deno.test("parseFormData: brackets+brackets bare repeated files produce scalar", () => {
+  const f1 = new File(["a"], "a.txt", { type: "text/plain" });
+  const f2 = new File(["b"], "b.txt", { type: "text/plain" });
+  const formData = new FormData();
+  formData.append("files", f1);
+  formData.append("files", f2);
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+    schema: {
+      type: "object",
+      properties: {
+        files: { type: "array", items: { type: "string", format: "binary" } },
+      },
+    },
+  });
+
+  const uploaded = result.files.get("files");
+  assert(
+    !Array.isArray(uploaded),
+    "bare 'files' key should not produce array when brackets format is required",
+  );
+});
+
+Deno.test("parseFormData: brackets+brackets bare repeated strings produce scalar", () => {
+  const formData = new FormData();
+  formData.append("tags", "a");
+  formData.append("tags", "b");
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+    schema: {
+      type: "object",
+      properties: {
+        tags: { type: "array", items: { type: "string" } },
+      },
+    },
+  });
+
+  assertEquals(result.data.tags, "b");
+});
+
+Deno.test("parseFormData: brackets+brackets append notation still produces array", () => {
+  const formData = new FormData();
+  formData.append("tags[]", "a");
+  formData.append("tags[]", "b");
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+    schema: {
+      type: "object",
+      properties: {
+        tags: { type: "array", items: { type: "string" } },
+      },
+    },
+  });
+
+  assertEquals(result.data.tags, ["a", "b"]);
+});
+
+// Mixed format: brackets array + non-brackets object
+
+Deno.test("parseFormData: brackets+flat bare repeated files produce scalar", () => {
+  const f1 = new File(["a"], "a.txt", { type: "text/plain" });
+  const f2 = new File(["b"], "b.txt", { type: "text/plain" });
+  const formData = new FormData();
+  formData.append("file", f1);
+  formData.append("file", f2);
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "flat",
+  });
+
+  const uploaded = result.files.get("file");
+  assert(
+    !Array.isArray(uploaded),
+    "bare 'file' should not produce array when brackets format is required",
+  );
+});
+
+Deno.test("parseFormData: brackets+flat explicit bracket files produce array", () => {
+  const f1 = new File(["a"], "a.txt", { type: "text/plain" });
+  const f2 = new File(["b"], "b.txt", { type: "text/plain" });
+  const formData = new FormData();
+  formData.append("files[]", f1);
+  formData.append("files[]", f2);
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "flat",
+  });
+
+  const uploaded = result.files.get("files");
+  assert(Array.isArray(uploaded));
+  assertEquals((uploaded as File[]).length, 2);
+});
+
+Deno.test("parseUrlEncoded: brackets+flat bare repeated keys produce scalar", () => {
+  const result = parseUrlEncoded("tags=a&tags=b", {
+    formArrayFormat: "brackets",
+    formObjectFormat: "flat",
+    schema: {
+      type: "object",
+      properties: { tags: { type: "array", items: { type: "string" } } },
+    },
+  });
+
+  // First value wins (consistent with URLSearchParams.get behavior).
+  // The key point: it is NOT an array.
+  assertEquals(result.data.tags, "a");
+  assert(!Array.isArray(result.data.tags));
+});
+
+Deno.test("parseUrlEncoded: brackets+flat explicit brackets produce array", () => {
+  const result = parseUrlEncoded("tags[]=a&tags[]=b", {
+    formArrayFormat: "brackets",
+    formObjectFormat: "flat",
+  });
+
+  assertEquals(result.data.tags, ["a", "b"]);
+});
+
+// Verify repeat format is unaffected
+
+Deno.test("parseFormData: repeat format still treats repeated keys as array", () => {
+  const formData = new FormData();
+  formData.append("tags", "a");
+  formData.append("tags", "b");
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "repeat",
+    formObjectFormat: "flat",
+  });
+
+  assertEquals(result.data.tags, ["a", "b"]);
+});
+
+// =============================================================================
 // Bracket path: schema coercion
 // =============================================================================
 

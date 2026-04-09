@@ -519,12 +519,104 @@ Deno.test("parseBracketEntries: array-of-objects with append notation", () => {
   });
 });
 
-Deno.test("parseBracketEntries: array-of-objects with repeated keys (no [])", () => {
+// In bracket mode, property-access keys ([name]) are object notation.
+// Arrays require explicit [] or [N] notation.
+
+Deno.test("parseBracketEntries: property-access keys produce object even with array schema", () => {
   const entries: [string, string][] = [
     ["filters[key]", "id"],
     ["filters[operator]", "eq"],
     ["filters[key]", "type"],
     ["filters[operator]", "contains"],
+  ];
+  const wrapperSchema: Schema = {
+    type: "object",
+    properties: { filters: arrayOfObjectsSchema },
+  };
+
+  // Without [] notation, repeated property keys are last-write-wins.
+  const result = parseBracketEntries(entries, wrapperSchema);
+  assertEquals(result, {
+    filters: { key: "type", operator: "contains" },
+  });
+});
+
+Deno.test("parseBracketEntries: property-access keys produce object for single element", () => {
+  const entries: [string, string][] = [
+    ["filters[key]", "id"],
+    ["filters[operator]", "eq"],
+    ["filters[value]", "string"],
+  ];
+  const wrapperSchema: Schema = {
+    type: "object",
+    properties: { filters: arrayOfObjectsSchema },
+  };
+
+  // No bracket array notation, so this is an object, not a wrapped array.
+  const result = parseBracketEntries(entries, wrapperSchema);
+  assertEquals(result, {
+    filters: { key: "id", operator: "eq", value: "string" },
+  });
+});
+
+Deno.test("parseBracketEntries: bare repeated key produces scalar even with array schema", () => {
+  const entries: [string, string][] = [
+    ["tags", "a"],
+    ["tags", "b"],
+    ["tags", "c"],
+  ];
+  const schema: Schema = {
+    type: "object",
+    properties: {
+      tags: { type: "array", items: { type: "string" } },
+    },
+  };
+
+  // Without [] notation, last-write-wins.
+  const result = parseBracketEntries(entries, schema);
+  assertEquals(result, { tags: "c" });
+});
+
+Deno.test("parseBracketEntries: append notation produces array", () => {
+  const entries: [string, string][] = [
+    ["tags[]", "a"],
+    ["tags[]", "b"],
+    ["tags[]", "c"],
+  ];
+  const schema: Schema = {
+    type: "object",
+    properties: {
+      tags: { type: "array", items: { type: "string" } },
+    },
+  };
+
+  const result = parseBracketEntries(entries, schema);
+  assertEquals(result, { tags: ["a", "b", "c"] });
+});
+
+Deno.test("parseBracketEntries: indexed notation produces array", () => {
+  const entries: [string, string][] = [
+    ["tags[0]", "a"],
+    ["tags[1]", "b"],
+    ["tags[2]", "c"],
+  ];
+  const schema: Schema = {
+    type: "object",
+    properties: {
+      tags: { type: "array", items: { type: "string" } },
+    },
+  };
+
+  const result = parseBracketEntries(entries, schema);
+  assertEquals(result, { tags: ["a", "b", "c"] });
+});
+
+Deno.test("parseBracketEntries: append array-of-objects still works", () => {
+  const entries: [string, string][] = [
+    ["filters[][key]", "id"],
+    ["filters[][operator]", "eq"],
+    ["filters[][key]", "type"],
+    ["filters[][operator]", "contains"],
   ];
   const wrapperSchema: Schema = {
     type: "object",
@@ -540,11 +632,12 @@ Deno.test("parseBracketEntries: array-of-objects with repeated keys (no [])", ()
   });
 });
 
-Deno.test("parseBracketEntries: single array-of-objects element with repeated keys", () => {
+Deno.test("parseBracketEntries: indexed array-of-objects still works", () => {
   const entries: [string, string][] = [
-    ["filters[key]", "id"],
-    ["filters[operator]", "eq"],
-    ["filters[value]", "string"],
+    ["filters[0][key]", "id"],
+    ["filters[0][operator]", "eq"],
+    ["filters[1][key]", "type"],
+    ["filters[1][operator]", "contains"],
   ];
   const wrapperSchema: Schema = {
     type: "object",
@@ -553,7 +646,10 @@ Deno.test("parseBracketEntries: single array-of-objects element with repeated ke
 
   const result = parseBracketEntries(entries, wrapperSchema);
   assertEquals(result, {
-    filters: [{ key: "id", operator: "eq", value: "string" }],
+    filters: [
+      { key: "id", operator: "eq" },
+      { key: "type", operator: "contains" },
+    ],
   });
 });
 

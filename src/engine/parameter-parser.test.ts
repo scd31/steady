@@ -384,7 +384,10 @@ Deno.test("parseQueryParam: multiple array items via dots format", () => {
   ]);
 });
 
-Deno.test("parseQueryParam: single array item via brackets format", () => {
+// In bracket mode, property-access keys ([name]) produce objects.
+// For arrays, use append ([][name]) or indexed ([0][name]) notation.
+
+Deno.test("parseQueryParam: property-access keys produce object via brackets", () => {
   const source = sourceFromQuery(
     "filters[key]=id&filters[operator]=eq&filters[value]=string",
   );
@@ -403,16 +406,39 @@ Deno.test("parseQueryParam: single array item via brackets format", () => {
     },
   });
 
+  // Without [] notation, this is an object, not a wrapped array.
   const result = parseQueryParam(source, param, "auto", "brackets");
   assertEquals(result.present, true);
-  assertEquals(result.value, [
-    { key: "id", operator: "eq", value: "string" },
-  ]);
+  assertEquals(result.value, { key: "id", operator: "eq", value: "string" });
 });
 
-Deno.test("parseQueryParam: multiple array items via brackets format", () => {
+Deno.test("parseQueryParam: repeated property-access keys produce last-wins object via brackets", () => {
   const source = sourceFromQuery(
     "filters[key]=id&filters[operator]=eq&filters[key]=type&filters[operator]=contains",
+  );
+  const param = makeParam({
+    name: "filters",
+    schema: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          key: { type: "string" },
+          operator: { type: "string" },
+        },
+      },
+    },
+  });
+
+  // Without [] notation, repeated properties are last-write-wins.
+  const result = parseQueryParam(source, param, "auto", "brackets");
+  assertEquals(result.present, true);
+  assertEquals(result.value, { key: "type", operator: "contains" });
+});
+
+Deno.test("parseQueryParam: append notation produces array via brackets", () => {
+  const source = sourceFromQuery(
+    "filters[][key]=id&filters[][operator]=eq&filters[][key]=type&filters[][operator]=contains",
   );
   const param = makeParam({
     name: "filters",

@@ -11,7 +11,8 @@ import {
   coerceScalar,
   effectiveItems,
   effectiveProperties,
-  effectiveType,
+  isArraySchema,
+  isObjectSchema,
 } from "@steady/json-schema";
 import type { Schema } from "@steady/json-schema";
 
@@ -36,6 +37,50 @@ export type ParamEncoding =
   | { kind: "flat-array"; arrayFmt: ConcreteArrayFormat }
   | { kind: "flat-object"; objectFmt: "flat" | "flat-comma" }
   | { kind: "nested"; objectFmt: "dots" | "brackets" };
+
+/**
+ * Determine how a parameter is encoded on the wire.
+ *
+ * This is the single decision point that combines schema type and format
+ * flags into an encoding kind. All consumers (presence detection, parsing,
+ * expected-key registration) use this instead of independently branching
+ * on isArray/isObject + format.
+ */
+export function resolveParamEncoding(
+  schema: Schema | null,
+  arrayFmt: ConcreteArrayFormat,
+  objectFmt: ConcreteObjectFormat,
+): ParamEncoding {
+  if (!schema || typeof schema === "boolean") return { kind: "scalar" };
+
+  const isArray = isArraySchema(schema);
+  const isObject = isObjectSchema(schema);
+
+  // Nested formats (dots, brackets) produce prefixed keys for objects
+  // and arrays of objects. Arrays of scalars use flat array encoding.
+  const nestedFmt = objectFmt === "dots" || objectFmt === "brackets";
+  if (nestedFmt && isObject) {
+    return { kind: "nested", objectFmt };
+  }
+  if (nestedFmt && isArray) {
+    const items = effectiveItems(schema);
+    if (items && typeof items !== "boolean" && isObjectSchema(items)) {
+      return { kind: "nested", objectFmt };
+    }
+  }
+
+  // Flat object formats
+  if (isObject && (objectFmt === "flat" || objectFmt === "flat-comma")) {
+    return { kind: "flat-object", objectFmt };
+  }
+
+  // Flat array formats
+  if (isArray) {
+    return { kind: "flat-array", arrayFmt };
+  }
+
+  return { kind: "scalar" };
+}
 
 /**
  * Interface for key-value pair sources (URLSearchParams, FormData entries, etc.)
@@ -661,6 +706,16 @@ export function parseBracketEntries(
 /**
  * Recursive core: assemble a value from bracket entries guided by schema.
  */
+/**
+ * Recursive core: assemble a value from bracket entries.
+ *
+ * In bracket mode, the wire syntax determines structure:
+ *   - [] (append) or [N] (index) → array
+ *   - [name] (property access) → object
+ *   - bare key (no segments) → scalar
+ *
+ * Schema is used only for type coercion, never to override structure.
+ */
 function assembleValue(
   entries: BracketEntry[],
   schema: Schema | null,
@@ -669,40 +724,35 @@ function assembleValue(
   if (entries.length === 0) return undefined;
 
   const resolved = resolve(schema, resolver) ?? null;
-  const schemaType = resolved ? effectiveType(resolved) : null;
 
-  // Terminal: all entries have no remaining segments
+  // Terminal: all entries have no remaining segments.
+  // Bare repeated keys are scalars (last wins), not arrays.
   if (entries.every((e) => e.segments.length === 0)) {
-    if (schemaType === "array") {
-      const items = resolved ? effectiveItems(resolved) : null;
-      const resolvedItems = resolve(items, resolver) ?? null;
-      return entries.map((e) => coerceLeaf(e.value, resolvedItems));
-    }
     if (entries.length === 1) {
       const entry = entries[0];
       if (entry) return coerceLeaf(entry.value, resolved);
     }
-    // Multiple terminals without array schema: last wins
     const last = entries[entries.length - 1];
     if (last) return coerceLeaf(last.value, resolved);
     return undefined;
   }
 
-  if (schemaType === "array") {
+  // Non-terminal: check the first segment to determine structure.
+  // Only append ([]) and index ([N]) produce arrays. Property-access
+  // keys ([name]) always produce objects, regardless of schema.
+  const firstSeg = entries[0]?.segments[0];
+  if (firstSeg && (firstSeg.type === "append" || firstSeg.type === "index")) {
     const items = resolved ? effectiveItems(resolved) : null;
     const resolvedItems = resolve(items, resolver) ?? null;
     return assembleArray(entries, resolvedItems, resolver);
   }
 
-  // Object or no schema: default to object
   return assembleObject(entries, resolved, resolver);
 }
 
 /**
- * Assemble an array value. Handles three conventions:
- * - Indexed: items[0][name]=a
- * - Append: items[][name]=a
- * - Repeated keys: items[name]=a&items[name]=b (schema says array)
+ * Assemble an array value. Only called when the first segment is
+ * append ([]) or index ([N]).
  */
 function assembleArray(
   entries: BracketEntry[],
@@ -727,11 +777,6 @@ function assembleArray(
       return stripped.map((e) => coerceLeaf(e.value, itemSchema));
     }
     return groupAppendEntries(stripped, itemSchema, resolver);
-  }
-
-  // Repeated keys: schema said array, but keys are property names
-  if (first.type === "key") {
-    return groupRepeatedKeyEntries(entries, itemSchema, resolver);
   }
 
   return [];
@@ -790,37 +835,6 @@ function groupAppendEntries(
   return elements
     .filter((g) => g.length > 0)
     .map((group) => assembleValue(group, itemSchema, resolver));
-}
-
-/**
- * Group entries by positional occurrence of each top-level key.
- * Same algorithm as parseRepeatedEntries: first occurrence of "key" goes
- * to item 0, second occurrence goes to item 1, etc.
- */
-function groupRepeatedKeyEntries(
-  entries: BracketEntry[],
-  itemSchema: Schema | null,
-  resolver?: RefResolver,
-): unknown[] {
-  const keyCounts = new Map<string, number>();
-  const itemEntries = new Map<number, BracketEntry[]>();
-
-  for (const entry of entries) {
-    const seg = entry.segments[0];
-    if (!seg || seg.type !== "key") continue;
-    const count = keyCounts.get(seg.name) ?? 0;
-    keyCounts.set(seg.name, count + 1);
-    const group = itemEntries.get(count) ?? [];
-    group.push(entry);
-    itemEntries.set(count, group);
-  }
-
-  const result: unknown[] = [];
-  for (const idx of [...itemEntries.keys()].sort((a, b) => a - b)) {
-    const group = itemEntries.get(idx);
-    if (group) result.push(assembleValue(group, itemSchema, resolver));
-  }
-  return result;
 }
 
 /** Assemble an object by grouping entries by first key segment. */

@@ -123,7 +123,8 @@ export function parseFormData(
     // Handle file fields
     if (fileValues.length > 0) {
       const isExplicitArray = explicitArrayFields.has(key);
-      const treatAsArray = isExplicitArray || fileValues.length > 1;
+      const treatAsArray = isExplicitArray ||
+        (formArrayFormat !== "brackets" && fileValues.length > 1);
       const firstFile = fileValues[0];
       if (treatAsArray) {
         files.set(key, fileValues);
@@ -150,11 +151,14 @@ export function parseFormData(
       resolveSchema,
     );
 
-    // Determine if this should be an array
+    // Determine if this should be an array.
+    // In brackets mode, only explicit [] notation produces arrays.
+    // In other modes, schema type and repeated values also count.
     const isExplicitArray = explicitArrayFields.has(key);
     const isArrayField = isExplicitArray ||
-      (propertySchema ? isArraySchema(propertySchema) : false) ||
-      stringValues.length > 1;
+      (formArrayFormat !== "brackets" &&
+        ((propertySchema ? isArraySchema(propertySchema) : false) ||
+          stringValues.length > 1));
 
     // Handle comma format: split single value into array if schema expects array
     if (
@@ -251,8 +255,9 @@ export function parseUrlEncoded(
     );
     const isExplicitArray = explicitArrays.has(key);
     const isArrayField = isExplicitArray ||
-      (propertySchema ? isArraySchema(propertySchema) : false) ||
-      values.length > 1;
+      (formArrayFormat !== "brackets" &&
+        ((propertySchema ? isArraySchema(propertySchema) : false) ||
+          values.length > 1));
 
     let finalValue: unknown;
     if (isArrayField) {
