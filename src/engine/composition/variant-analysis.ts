@@ -15,6 +15,7 @@
  */
 
 import { isPlainObject } from "@steady/json-pointer";
+import type { Schema } from "@steady/json-schema";
 import type { Diagnostic } from "../../diagnostic.ts";
 import type { CompositionContext, InterpretResult } from "../types.ts";
 import { getCode } from "../../codes/registry.ts";
@@ -28,6 +29,9 @@ interface VariantDetail {
  * Analyze a zero-structural-match composition failure.
  *
  * Tries to identify the most likely intended variant using:
+ * 0. Nullable wrapper pattern: when the composition is `[X, null]` and the
+ *    request data is non-null, the SDK clearly didn't intend null. Drop the
+ *    null branch before running heuristics.
  * 1. Property overlap (request keys vs variant schema properties)
  * 2. Structural failure count
  * Returns the identified variant's diagnostics with adjusted confidence,
@@ -55,10 +59,34 @@ export function analyzeAllFailed(
     };
   }
 
-  const variantDetails: VariantDetail[] = childResults.map((result, index) => ({
-    index,
-    result,
-  }));
+  const allVariantDetails: VariantDetail[] = childResults.map(
+    (result, index) => ({
+      index,
+      result,
+    }),
+  );
+
+  // Step 0: Nullable wrapper pattern. Drop branches whose type is exclusively
+  // null when the request data is non-null. The standard nullable encoding
+  // `anyOf: [X, {type: "null"}]` exists to make X nullable; if the SDK sent
+  // a value, it was clearly trying X. The null branch can only ever fail
+  // for non-null data and so contributes no signal to variant identification.
+  // Removing it lets failures be attributed to the real branch directly.
+  const variantDetails = context.data === null
+    ? allVariantDetails
+    : filterNullOnlyVariants(allVariantDetails, context.schema);
+
+  // If we filtered out null branches and exactly one variant remains, the
+  // SDK's intent is unambiguous: attribute directly with confidence 1.0.
+  if (
+    variantDetails.length === 1 &&
+    variantDetails.length < allVariantDetails.length
+  ) {
+    const detail = variantDetails[0];
+    if (detail) {
+      return identifiedVariant(detail, 1.0, "only non-null variant");
+    }
+  }
 
   // Step 1: Property overlap. Compare request keys against variant properties
   const overlapResult = identifyByPropertyOverlap(variantDetails, context);
@@ -70,6 +98,35 @@ export function analyzeAllFailed(
 
   // Step 3: No clear variant. Report E3012
   return reportAmbiguous(variantDetails, context);
+}
+
+/**
+ * Drop variants whose `type` is exclusively `"null"`. Other keywords on
+ * those variants can only narrow them further; they can never make them
+ * match non-null data. So for the purposes of variant identification when
+ * data is non-null, they always fail and provide no useful signal.
+ */
+function filterNullOnlyVariants(
+  variantDetails: VariantDetail[],
+  schema: Schema,
+): VariantDetail[] {
+  if (typeof schema === "boolean") return variantDetails;
+  const variants = schema.oneOf ?? schema.anyOf;
+  if (!Array.isArray(variants)) return variantDetails;
+
+  return variantDetails.filter((detail) => {
+    const variantSchema = variants[detail.index];
+    return !isNullOnlyType(variantSchema);
+  });
+}
+
+/** True if a schema's `type` is exclusively `"null"`. */
+function isNullOnlyType(schema: unknown): boolean {
+  if (!schema || typeof schema !== "object") return false;
+  const s = schema as Record<string, unknown>;
+  if ("$ref" in s) return false;
+  return s.type === "null" ||
+    (Array.isArray(s.type) && s.type.length === 1 && s.type[0] === "null");
 }
 
 /**

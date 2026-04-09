@@ -494,6 +494,84 @@ Deno.test("interpret", async (t) => {
   );
 
   await t.step(
+    "anyOf [X, null] with non-null data attributes failure to X",
+    () => {
+      // Real-world nullable wrapper pattern. Schema:
+      //   files: anyOf: [{type: array, items: binary}, {type: null}]
+      // SDK sends a scalar value where files is expected (e.g. wrong format).
+      // Expected: diagnostic from the array variant with high confidence,
+      // NOT E3012 ambiguous. The null branch is uninformative when data
+      // is non-null and should not dilute attribution.
+      const node: ValidationNode = {
+        valid: false,
+        keyword: "anyOf",
+        path: ["body", "files"],
+        // Tree-validator sets composition schemaPath to the parent schema,
+        // consistent with how leaf keywords like `type` and `required` do.
+        schemaPath: "#/schema/properties/files",
+        children: [
+          {
+            valid: false,
+            path: ["body", "files"],
+            schemaPath: "#/schema/properties/files/anyOf/0",
+            variantIndex: 0,
+            children: [
+              {
+                valid: false,
+                keyword: "type",
+                path: ["body", "files"],
+                schemaPath: "#/schema/properties/files/anyOf/0",
+              },
+            ],
+          },
+          {
+            valid: false,
+            path: ["body", "files"],
+            schemaPath: "#/schema/properties/files/anyOf/1",
+            variantIndex: 1,
+            children: [
+              {
+                valid: false,
+                keyword: "type",
+                path: ["body", "files"],
+                schemaPath: "#/schema/properties/files/anyOf/1",
+              },
+            ],
+          },
+        ],
+      };
+
+      const resolver = makeResolver({
+        "#/schema/properties/files": {
+          anyOf: [
+            { type: "array", items: { type: "string", format: "binary" } },
+            { type: "null" },
+          ],
+        },
+        "#/schema/properties/files/anyOf/0": {
+          type: "array",
+          items: { type: "string", format: "binary" },
+        },
+        "#/schema/properties/files/anyOf/1": { type: "null" },
+      });
+
+      // Body data has files set to a scalar (the bug we want to detect).
+      const data = { files: "[File]" };
+      const result = interpret(node, resolver, "body", data);
+
+      assertEquals(result.diagnostics.length, 1);
+      const diag = result.diagnostics[0]!;
+      assertEquals(diag.category, "sdk-issue");
+      assertEquals(
+        diag.code,
+        "E3008",
+        `expected E3008, got ${diag.code}: ${diag.message}`,
+      );
+      assertEquals(diag.attribution.confidence, 1);
+    },
+  );
+
+  await t.step(
     "E3007: top-level required field not re-attributed",
     () => {
       // path = ["body", "name"] → only one level, no parent to check

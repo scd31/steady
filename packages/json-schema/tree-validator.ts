@@ -224,7 +224,7 @@ export class TreeValidator {
         errors.push({
           keyword: "not",
           path: dataPath,
-          schemaPath: `${schemaPath}/not`,
+          schemaPath,
           valid: false,
           message: "Value must not match the schema in 'not'",
         });
@@ -878,12 +878,14 @@ export class TreeValidator {
     // Exactly one match → valid (standard oneOf)
     if (matchCount === 1) return;
 
-    // Zero or multiple matches → composition failure
+    // Zero or multiple matches → composition failure.
+    // schemaPath points to the schema containing `oneOf`, matching the
+    // leaf keyword convention (the `keyword` field carries "oneOf").
     errors.push({
       valid: false,
       keyword: "oneOf",
       path: dataPath,
-      schemaPath: `${schemaPath}/oneOf`,
+      schemaPath,
       children: variantResults,
     });
   }
@@ -928,11 +930,13 @@ export class TreeValidator {
 
     if (hasMatch) return;
 
+    // schemaPath points to the schema containing `anyOf`, matching the
+    // leaf keyword convention (the `keyword` field carries "anyOf").
     errors.push({
       valid: false,
       keyword: "anyOf",
       path: dataPath,
-      schemaPath: `${schemaPath}/anyOf`,
+      schemaPath,
       children: variantResults,
     });
   }
@@ -977,11 +981,13 @@ export class TreeValidator {
 
     if (allValid) return;
 
+    // schemaPath points to the schema containing `allOf`, matching the
+    // leaf keyword convention (the `keyword` field carries "allOf").
     errors.push({
       valid: false,
       keyword: "allOf",
       path: dataPath,
-      schemaPath: `${schemaPath}/allOf`,
+      schemaPath,
       children: childResults,
     });
   }

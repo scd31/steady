@@ -300,6 +300,400 @@ Deno.test("analyzeAllFailed", async (t) => {
     },
   );
 
+  await t.step(
+    "nullable wrapper: anyOf [X, null] with non-null data attributes to X",
+    () => {
+      // anyOf: [array, null] with non-null data is the standard nullable
+      // pattern. The SDK clearly didn't intend null. The diagnostic should
+      // come from the array variant with high confidence, NOT E3012.
+      const result = analyzeAllFailed(
+        [
+          {
+            diagnostics: [
+              makeDiag({
+                code: "E3008",
+                requestPath: "body.files",
+                message: "expected array, got string",
+              }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+          {
+            diagnostics: [
+              makeDiag({
+                code: "E3008",
+                requestPath: "body.files",
+                message: "expected null, got string",
+              }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+        ],
+        makeContext({
+          path: ["body", "files"],
+          schemaPath: "#/properties/files/anyOf",
+          schema: {
+            anyOf: [
+              { type: "array", items: { type: "string", format: "binary" } },
+              { type: "null" },
+            ],
+          },
+          // Non-null scalar data: SDK clearly was trying the array variant.
+          data: "[File]",
+        }),
+      );
+
+      assertInlineSnapshot(
+        result,
+        `{
+  diagnostics: [
+    {
+      attribution: {
+        confidence: 1,
+        reasoning: [
+          "Likely variant 0 (only non-null variant)",
+          "test",
+        ],
+      },
+      category: "sdk-issue",
+      code: "E3008",
+      message: "expected array, got string",
+      requestPath: "body.files",
+      severity: "error",
+      specPointer: "#/test",
+    },
+  ],
+  structuralFailureCount: 1,
+  structurallyValid: false,
+}`,
+      );
+    },
+  );
+
+  await t.step(
+    "nullable wrapper: oneOf [X, null] with non-null data attributes to X",
+    () => {
+      // Same pattern with oneOf instead of anyOf.
+      const result = analyzeAllFailed(
+        [
+          {
+            diagnostics: [
+              makeDiag({ code: "E3008", message: "expected string" }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+          {
+            diagnostics: [
+              makeDiag({ code: "E3008", message: "expected null" }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+        ],
+        makeContext({
+          schema: {
+            oneOf: [
+              { type: "string" },
+              { type: "null" },
+            ],
+          },
+          data: 42,
+        }),
+      );
+
+      assertInlineSnapshot(
+        result,
+        `{
+  diagnostics: [
+    {
+      attribution: {
+        confidence: 1,
+        reasoning: [
+          "Likely variant 0 (only non-null variant)",
+          "test",
+        ],
+      },
+      category: "sdk-issue",
+      code: "E3008",
+      message: "expected string",
+      requestPath: "body",
+      severity: "error",
+      specPointer: "#/test",
+    },
+  ],
+  structuralFailureCount: 1,
+  structurallyValid: false,
+}`,
+      );
+    },
+  );
+
+  await t.step(
+    "nullable wrapper: null variant first in the list still works",
+    () => {
+      // The null variant can appear at any position.
+      const result = analyzeAllFailed(
+        [
+          {
+            diagnostics: [
+              makeDiag({ code: "E3008", message: "expected null" }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+          {
+            diagnostics: [
+              makeDiag({ code: "E3008", message: "expected array" }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+        ],
+        makeContext({
+          schema: {
+            anyOf: [
+              { type: "null" },
+              { type: "array", items: { type: "string" } },
+            ],
+          },
+          data: "scalar",
+        }),
+      );
+
+      assertInlineSnapshot(
+        result,
+        `{
+  diagnostics: [
+    {
+      attribution: {
+        confidence: 1,
+        reasoning: [
+          "Likely variant 1 (only non-null variant)",
+          "test",
+        ],
+      },
+      category: "sdk-issue",
+      code: "E3008",
+      message: "expected array",
+      requestPath: "body",
+      severity: "error",
+      specPointer: "#/test",
+    },
+  ],
+  structuralFailureCount: 1,
+  structurallyValid: false,
+}`,
+      );
+    },
+  );
+
+  await t.step(
+    "nullable wrapper: multiple non-null variants still use heuristics",
+    () => {
+      // anyOf [string, integer, null] with boolean data.
+      // Null is filtered out, but two real variants remain.
+      // Heuristics still apply on the filtered list.
+      const result = analyzeAllFailed(
+        [
+          {
+            diagnostics: [
+              makeDiag({ code: "E3008", message: "expected string" }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+          {
+            diagnostics: [
+              makeDiag({ code: "E3008", message: "expected integer" }),
+              makeDiag({ code: "E3008", message: "extra failure" }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 2,
+          },
+          {
+            diagnostics: [
+              makeDiag({ code: "E3008", message: "expected null" }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+        ],
+        makeContext({
+          schema: {
+            anyOf: [
+              { type: "string" },
+              { type: "integer" },
+              { type: "null" },
+            ],
+          },
+          data: true,
+        }),
+      );
+
+      // Variant 0 (string) has 1 failure, variant 1 (integer) has 2.
+      // After filtering null, the failure-count heuristic picks variant 0.
+      // gap=1, confidence = 0.5 + 0.3*(1/2) = 0.65
+      assertInlineSnapshot(
+        result,
+        `{
+  diagnostics: [
+    {
+      attribution: {
+        confidence: 0.65,
+        reasoning: [
+          "Likely variant 0 (fewest structural failures)",
+          "test",
+        ],
+      },
+      category: "sdk-issue",
+      code: "E3008",
+      message: "expected string",
+      requestPath: "body",
+      severity: "error",
+      specPointer: "#/test",
+    },
+  ],
+  structuralFailureCount: 1,
+  structurallyValid: false,
+}`,
+      );
+    },
+  );
+
+  await t.step(
+    "nullable wrapper: real-world Anthropic skills.create files schema",
+    () => {
+      // Reproduces the exact schema shape that triggered the bug:
+      // anyOf: [array of binary, {type: null with extension}]
+      const result = analyzeAllFailed(
+        [
+          {
+            diagnostics: [
+              makeDiag({
+                code: "E3008",
+                requestPath: "body.files",
+                message: "expected array",
+              }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+          {
+            diagnostics: [
+              makeDiag({
+                code: "E3008",
+                requestPath: "body.files",
+                message: "expected null",
+              }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+        ],
+        makeContext({
+          path: ["body", "files"],
+          schemaPath: "#/properties/files",
+          schema: {
+            anyOf: [
+              { items: { type: "string", format: "binary" }, type: "array" },
+              { type: "null" },
+            ],
+            title: "Files",
+          },
+          // Wire format mismatch produces a scalar where an array was expected.
+          data: "[File]",
+        }),
+      );
+
+      assertInlineSnapshot(
+        result,
+        `{
+  diagnostics: [
+    {
+      attribution: {
+        confidence: 1,
+        reasoning: [
+          "Likely variant 0 (only non-null variant)",
+          "test",
+        ],
+      },
+      category: "sdk-issue",
+      code: "E3008",
+      message: "expected array",
+      requestPath: "body.files",
+      severity: "error",
+      specPointer: "#/test",
+    },
+  ],
+  structuralFailureCount: 1,
+  structurallyValid: false,
+}`,
+      );
+    },
+  );
+
+  await t.step(
+    "nullable wrapper: null-only variant with description is still detected",
+    () => {
+      // Annotation-only fields (description) should not prevent detection.
+      const result = analyzeAllFailed(
+        [
+          {
+            diagnostics: [
+              makeDiag({ code: "E3008", message: "expected array" }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+          {
+            diagnostics: [
+              makeDiag({ code: "E3008", message: "expected null" }),
+            ],
+            structurallyValid: false,
+            structuralFailureCount: 1,
+          },
+        ],
+        makeContext({
+          schema: {
+            anyOf: [
+              { type: "array", items: { type: "string" } },
+              { type: "null", description: "Allows null" },
+            ],
+          },
+          data: "scalar",
+        }),
+      );
+
+      assertInlineSnapshot(
+        result,
+        `{
+  diagnostics: [
+    {
+      attribution: {
+        confidence: 1,
+        reasoning: [
+          "Likely variant 0 (only non-null variant)",
+          "test",
+        ],
+      },
+      category: "sdk-issue",
+      code: "E3008",
+      message: "expected array",
+      requestPath: "body",
+      severity: "error",
+      specPointer: "#/test",
+    },
+  ],
+  structuralFailureCount: 1,
+  structurallyValid: false,
+}`,
+      );
+    },
+  );
+
   await t.step("uses structuralFailureCount, not diagnostic category", () => {
     // Variant 0: 1 structural failure but 3 diagnostics (2 are content/ambiguous)
     // Variant 1: 2 structural failures

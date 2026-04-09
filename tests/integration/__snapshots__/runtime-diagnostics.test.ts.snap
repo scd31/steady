@@ -306,19 +306,35 @@ snapshot[`POST /accounts with invalid nested address → errors at nested path 1
 snapshot[`POST /accounts/{id}/link with wrong variant data → errors 1`] = `
 [
   {
+    actual: undefined,
     attribution: {
-      confidence: 0.5,
+      confidence: 0.95,
       reasoning: [
-        "Variant 0: 1 structural failure(s), 1 total",
-        "Variant 1: 1 structural failure(s), 1 total",
+        'Discriminator "type" selected variant 0',
+        "Missing required field in body at body",
+        "Field 'google_account_id' is in the schema's required array",
+        "Request body did not include 'google_account_id'",
       ],
     },
-    category: "ambiguous",
-    code: "E3012",
-    message: "No variant matched: 2 variants all failed structurally",
+    category: "sdk-issue",
+    code: "E3007",
+    display: {
+      context: [
+        {
+          highlight: {
+            end: 37,
+            label: "Missing from request",
+            start: 18,
+          },
+          text: 'required: ["type","google_account_id"]',
+        },
+      ],
+    },
+    expected: "google_account_id",
+    message: "Missing required property: google_account_id",
     requestPath: "body",
-    severity: "warning",
-    specPointer: "#/components/schemas/AccountLink/oneOf",
+    severity: "error",
+    specPointer: "#/components/schemas/AccountLink/oneOf/0",
   },
 ]
 `;

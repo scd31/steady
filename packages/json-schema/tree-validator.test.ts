@@ -535,7 +535,10 @@ Deno.test("TreeValidator", async (t) => {
     assertEquals(leaf.keyword, "not");
     assertEquals(leaf.valid, false);
     assertEquals(leaf.path, ["body"]);
-    assertEquals(leaf.schemaPath, "#/schema/not");
+    // Composition keyword errors point to the containing schema, matching
+    // the leaf keyword convention. The `keyword` field identifies which
+    // keyword failed.
+    assertEquals(leaf.schemaPath, "#/schema");
   });
 
   await t.step("not: accepts data NOT matching inner schema", () => {
