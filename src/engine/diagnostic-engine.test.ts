@@ -1264,4 +1264,133 @@ Deno.test("DiagnosticEngine", async (t) => {
 
     assertEquals(result.length, 0);
   });
+
+  // ── Form array format mismatch (E3023) ────────────────────────────
+
+  await t.step(
+    "bracket form key when formArrayFormat is comma → E3023",
+    () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          files: { type: "array", items: { type: "string" } },
+        },
+      };
+      const spec = new StubSpec({ "/skills": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/skills",
+        method: "post",
+        body: {},
+        rawFormKeys: ["files[]"],
+        formArrayFormat: "comma",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 1);
+      assertEquals(e3023[0]?.category, "sdk-issue");
+      assertEquals(e3023[0]?.severity, "warning");
+    },
+  );
+
+  await t.step(
+    "bracket form key when formArrayFormat is brackets → no E3023",
+    () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          files: { type: "array", items: { type: "string" } },
+        },
+      };
+      const spec = new StubSpec({ "/skills": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/skills",
+        method: "post",
+        body: {},
+        rawFormKeys: ["files[]"],
+        formArrayFormat: "brackets",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 0);
+    },
+  );
+
+  await t.step(
+    "bare repeated key when formArrayFormat is brackets → E3023",
+    () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          tags: { type: "array", items: { type: "string" } },
+        },
+      };
+      const spec = new StubSpec({ "/items": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/items",
+        method: "post",
+        body: {},
+        rawFormKeys: ["tags", "tags", "tags"],
+        formArrayFormat: "brackets",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 1);
+    },
+  );
+
+  await t.step(
+    "bracket form key for unknown field → no E3023",
+    () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+      };
+      const spec = new StubSpec({ "/skills": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      // "unknown[]" has base name "unknown" which is NOT in the schema
+      const result = engine.analyze({
+        path: "/skills",
+        method: "post",
+        body: {},
+        rawFormKeys: ["unknown[]"],
+        formArrayFormat: "comma",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 0);
+    },
+  );
 });

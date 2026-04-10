@@ -77,6 +77,7 @@ export type ECode =
   | "E3020"
   | "E3021"
   | "E3022"
+  | "E3023"
   // E4xxx: Content
   | "E4001"
   | "E4002"
@@ -355,6 +356,12 @@ const CODES: Record<ECode, ECodeDefinition> = {
   },
   E3022: {
     title: "Malformed Accept header",
+    severity: "warning",
+    category: "sdk-issue",
+    context: "runtime",
+  },
+  E3023: {
+    title: "Form array format mismatch",
     severity: "warning",
     category: "sdk-issue",
     context: "runtime",

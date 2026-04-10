@@ -19,6 +19,10 @@ import type { Schema } from "@steady/json-schema";
 import { escapeSegment, type FragmentPointer } from "@steady/json-pointer";
 import type { Diagnostic, DiagnosticLocation } from "../diagnostic.ts";
 import type { QueryArrayFormat, QueryObjectFormat } from "../types.ts";
+import type {
+  ConcreteArrayFormat,
+  ConcreteObjectFormat,
+} from "../param-format.ts";
 import { wrapURLSearchParams } from "../param-format.ts";
 import type { SpecResolver, ValidationNode } from "./types.ts";
 import { type ECode, getCode } from "../codes/registry.ts";
@@ -126,6 +130,12 @@ export interface AnalyzeRequest {
   queryObjectFormat?: QueryObjectFormat;
   /** Query keys consumed during route disambiguation (e.g., /files?download vs /files?upload). */
   consumedQueryParams?: string[];
+  /** Effective form array format for multipart/urlencoded bodies. */
+  formArrayFormat?: ConcreteArrayFormat;
+  /** Effective form object format for multipart/urlencoded bodies. */
+  formObjectFormat?: ConcreteObjectFormat;
+  /** Raw form entry key names (with duplicates) for format mismatch detection. */
+  rawFormKeys?: string[];
 }
 
 // ── Engine ──────────────────────────────────────────────────────────
@@ -312,6 +322,72 @@ export class DiagnosticEngine {
           diagnostics.push(
             createUndocumentedParamDiagnostic(key, pathPattern),
           );
+        }
+      }
+    }
+
+    // 3.6 Form array format mismatch detection
+    if (request.rawFormKeys && request.formArrayFormat) {
+      const contentType = getHeaderValue(request.headers, "content-type");
+      const formEssence = contentType ? getMediaType(contentType) : null;
+      const bodyInfo = this.spec.getBodySchema(
+        pathPattern,
+        method,
+        formEssence ?? "multipart/form-data",
+      );
+      if (bodyInfo) {
+        const bodySchema = this.specResolver.resolve(bodyInfo.schemaPath);
+        const schemaProps = (bodySchema && typeof bodySchema === "object" &&
+            "properties" in bodySchema)
+          ? bodySchema.properties
+          : undefined;
+
+        if (schemaProps && typeof schemaProps === "object") {
+          const knownProps = new Set(Object.keys(schemaProps));
+          const formArrayFormat = request.formArrayFormat;
+
+          if (formArrayFormat !== "brackets") {
+            // Detect bracket/dot notation when format is NOT brackets
+            const seen = new Set<string>();
+            for (const key of request.rawFormKeys) {
+              if (seen.has(key)) continue;
+              seen.add(key);
+              const baseName = extractBaseName(key);
+              if (baseName !== key && knownProps.has(baseName)) {
+                diagnostics.push(
+                  createFormFormatMismatchDiagnostic(
+                    key,
+                    baseName,
+                    "brackets",
+                    formArrayFormat,
+                    pathPattern,
+                  ),
+                );
+              }
+            }
+          } else {
+            // Detect bare repeated keys when format IS brackets
+            const keyCounts = new Map<string, number>();
+            for (const key of request.rawFormKeys) {
+              keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
+            }
+            for (const [key, count] of keyCounts) {
+              if (count <= 1) continue;
+              // Only flag keys with no serialization suffix (bare names)
+              // that match a known schema property
+              if (extractBaseName(key) !== key) continue;
+              if (!knownProps.has(key)) continue;
+              diagnostics.push(
+                createFormFormatMismatchDiagnostic(
+                  `${key} (repeated ${count} times)`,
+                  key,
+                  "repeat",
+                  formArrayFormat,
+                  pathPattern,
+                ),
+              );
+            }
+          }
         }
       }
     }
@@ -759,6 +835,40 @@ function createSerializationMismatchDiagnostic(
       reasoning: [
         `Spec defines parameter '${baseName}'`,
         `Request sent '${actualKey}', which looks like a serialized form of '${baseName}'`,
+      ],
+    },
+  };
+}
+
+/**
+ * Create an E3023 diagnostic for a form array format mismatch.
+ */
+function createFormFormatMismatchDiagnostic(
+  actualKey: string,
+  baseName: string,
+  detectedFormat: string,
+  configuredFormat: ConcreteArrayFormat,
+  pathPattern: string,
+): Diagnostic {
+  const e3023 = getCode("E3023");
+
+  return {
+    code: "E3023",
+    severity: e3023.severity,
+    category: e3023.category,
+    requestPath: `body.${baseName}`,
+    specPointer: `#/paths/${escapeSegment(pathPattern)}`,
+    message:
+      `Form field "${actualKey}" uses ${detectedFormat} encoding, but formArrayFormat is "${configuredFormat}"`,
+    expected: configuredFormat,
+    actual: detectedFormat,
+    suggestion:
+      `Set --validator-form-array-format=${detectedFormat} to match the SDK encoding, or update the SDK to use ${configuredFormat} format`,
+    attribution: {
+      confidence: 0.8,
+      reasoning: [
+        `Configured form array format: '${configuredFormat}'`,
+        `Request sent '${actualKey}', which uses ${detectedFormat} encoding`,
       ],
     },
   };

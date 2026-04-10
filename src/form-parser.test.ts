@@ -928,6 +928,39 @@ Deno.test("parseFormData: brackets+brackets handles array of files", () => {
   assertEquals(uploaded.length, 2);
 });
 
+Deno.test("parseFormData: brackets+brackets single file with [] produces one-element array", () => {
+  const f1 = new File(["Example data"], "upload", {
+    type: "application/octet-stream",
+  });
+  const formData = new FormData();
+  formData.append("files[]", f1);
+
+  const result = parseFormData(formData, {
+    formArrayFormat: "brackets",
+    formObjectFormat: "brackets",
+    schema: {
+      type: "object",
+      properties: {
+        files: {
+          anyOf: [
+            { type: "array", items: { type: "string", format: "binary" } },
+            { type: "null" },
+          ],
+        },
+      },
+    },
+  });
+
+  // files[] with one file should produce a one-element array, not a scalar.
+  assertEquals(result.data.files, ["[File]"]);
+  const uploaded = result.files.get("files");
+  assert(
+    Array.isArray(uploaded),
+    "expected files to be an array of File objects",
+  );
+  assertEquals(uploaded.length, 1);
+});
+
 // =============================================================================
 // Bracket format enforcement: bare keys must not produce arrays
 // =============================================================================

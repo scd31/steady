@@ -27,6 +27,8 @@ import type { MultipartFormData, UrlEncoded } from "./media-type.ts";
 export interface BodyParseResult {
   body: unknown;
   contentType: string;
+  /** Raw form entry key names (with duplicates) for format mismatch detection. */
+  rawFormKeys?: string[];
 }
 
 export interface BodyParseError {
@@ -96,12 +98,16 @@ export async function parseRequestBody(
   try {
     let parsedBody: unknown;
 
+    let rawFormKeys: string[] | undefined;
+
     if (maybeMediaType && isFormMediaType(maybeMediaType)) {
-      parsedBody = await parseFormBody(
+      const formResult = await parseFormBody(
         req.clone(),
         maybeMediaType,
         formOptions,
       );
+      parsedBody = formResult.body;
+      rawFormKeys = formResult.rawFormKeys;
     } else if (maybeMediaType && isJsonMediaType(maybeMediaType)) {
       const body = await readBody(req.clone());
       if (body === "") {
@@ -117,7 +123,7 @@ export async function parseRequestBody(
       parsedBody = await readBody(req.clone());
     }
 
-    return { body: parsedBody, contentType: maybeMediaType ?? "" };
+    return { body: parsedBody, contentType: maybeMediaType ?? "", rawFormKeys };
   } catch (error) {
     if (error instanceof SyntaxError) {
       const def = getCode("E3021");
@@ -173,6 +179,11 @@ async function readBody(req: Request): Promise<string> {
   return await req.text();
 }
 
+interface FormBodyResult {
+  body: unknown;
+  rawFormKeys: string[];
+}
+
 /**
  * Parse form data body (multipart/form-data or application/x-www-form-urlencoded).
  */
@@ -180,7 +191,7 @@ async function parseFormBody(
   req: Request,
   mediaType: MultipartFormData | UrlEncoded,
   options?: FormParserOptions,
-): Promise<unknown> {
+): Promise<FormBodyResult> {
   const parserOptions: FormParserOptions = {
     formArrayFormat: options?.formArrayFormat ?? "repeat",
     formObjectFormat: options?.formObjectFormat ?? "flat",
@@ -190,12 +201,15 @@ async function parseFormBody(
 
   if (isMultipartFormData(mediaType)) {
     const formData = await req.formData();
+    const rawFormKeys = [...formData.keys()];
     const parsed = parseFormData(formData, parserOptions);
-    return parsed.data;
+    return { body: parsed.data, rawFormKeys };
   }
 
   // application/x-www-form-urlencoded
   const body = await readBody(req);
+  const params = new URLSearchParams(body);
+  const rawFormKeys = [...params.keys()];
   const parsed = parseUrlEncoded(body, parserOptions);
-  return parsed.data;
+  return { body: parsed.data, rawFormKeys };
 }

@@ -369,11 +369,13 @@ export class MockServer {
       const parseResult = await parseRequestBody(req, null, formOptions);
       let parseDiags: Diagnostic[] = [];
       let body: unknown;
+      let rawFormKeys: string[] | undefined;
       if (isParseError(parseResult)) {
         parseDiags = parseResult.diagnostics;
         body = undefined;
       } else {
         body = parseResult.body;
+        rawFormKeys = parseResult.rawFormKeys;
       }
 
       // Track request count and endpoint coverage
@@ -389,6 +391,8 @@ export class MockServer {
         body,
         pathParams,
         consumedQueryParams,
+        rawFormKeys,
+        formOptions,
       );
 
       const allDiagnostics = [...parseDiags, ...engineDiags];
@@ -610,6 +614,8 @@ export class MockServer {
     body: unknown,
     pathParams?: Record<string, string>,
     consumedQueryParams?: string[],
+    rawFormKeys?: string[],
+    formOptions?: FormParserOptions,
   ): Diagnostic[] {
     const headers: Record<string, string> = {};
     reqHeaders.forEach((value, key) => {
@@ -637,6 +643,9 @@ export class MockServer {
       queryArrayFormat,
       queryObjectFormat,
       consumedQueryParams,
+      formArrayFormat: formOptions?.formArrayFormat,
+      formObjectFormat: formOptions?.formObjectFormat,
+      rawFormKeys,
     };
 
     return this.diagnosticEngine.analyze(request);

@@ -933,6 +933,38 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
     seeAlso: ["E3006", "E3020"],
   },
 
+  E3023: {
+    description:
+      "A form field was sent with a different array serialization format\n" +
+      "than the configured formArrayFormat expects. For example, the SDK\n" +
+      "sent `files[]` (bracket notation) but formArrayFormat is `comma`\n" +
+      "(expecting `files=a,b`). Or the SDK sent bare repeated keys\n" +
+      "`tags=a&tags=b` but formArrayFormat is `brackets` (expecting\n" +
+      "`tags[]=a&tags[]=b`).",
+    reasoning:
+      "This is an SDK issue (or a configuration mismatch). The format\n" +
+      "flag tells Steady how the SDK encodes arrays. If the wire format\n" +
+      "doesn't match, the parser can't interpret the data correctly.\n" +
+      "This leads to downstream type errors that obscure the root cause.",
+    example: "  # formArrayFormat=comma, but SDK sends:\n" +
+      "  #   files[]=a.txt&files[]=b.txt  (bracket notation)\n" +
+      "  # Expected:\n" +
+      "  #   files=a.txt,b.txt            (comma style)\n" +
+      "  #\n" +
+      "  # formArrayFormat=brackets, but SDK sends:\n" +
+      "  #   tags=red&tags=blue           (repeat style)\n" +
+      "  # Expected:\n" +
+      "  #   tags[]=red&tags[]=blue       (bracket notation)",
+    fix: "Either change the format flag to match what the SDK sends\n" +
+      "(e.g. --validator-form-array-format=brackets), or update the\n" +
+      "SDK to use the configured format.\n\n" +
+      "OpenAPI supports declaring array encoding per-property via the\n" +
+      "`encoding` section on multipart request bodies (style/explode).\n" +
+      "Most specs omit this, which is why the flag exists as a default.\n" +
+      "The proper long-term fix is to declare encoding in the spec.",
+    seeAlso: ["E3014", "E3008"],
+  },
+
   // ── E4xxx: Content Validation Notes ─────────────────────────────────
 
   E4001: {
