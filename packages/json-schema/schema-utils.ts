@@ -193,6 +193,21 @@ function resolveItems(
 /**
  * Collect merged required fields, walking allOf (union, deduplicated).
  * Returns empty array if none found.
+ *
+ * NOTE: this returns the raw "what the spec author declared" set. It
+ * is NOT filtered against `effectiveProperties(schema)`, so it can
+ * contain names that are not defined as properties anywhere in the
+ * schema. Such "phantom required" entries are a spec bug (E1016
+ * catches them at startup), and consumers that iterate this list to
+ * generate or mutate data must filter them themselves. The standard
+ * pattern is
+ *   `for (const name of effectiveRequired(schema)) {
+ *      if (!props[name]) continue;
+ *      ...
+ *    }`
+ * Two distinct questions deserve two distinct answers: "what does the
+ * spec say is required?" is this function; "what can a consumer
+ * actually do with the required list?" is the caller's job.
  */
 export function effectiveRequired(
   schema: Schema | boolean,

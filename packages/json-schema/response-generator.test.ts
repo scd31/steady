@@ -3,10 +3,12 @@
  */
 
 import { assertEquals } from "@std/assert";
+import { assertInlineSnapshot } from "@std/testing/unstable-snapshot";
 import {
   RegistryResponseGenerator,
   SchemaRegistry,
 } from "./schema-registry.ts";
+import { TreeValidator } from "./tree-validator.ts";
 import type { Schema } from "./types.ts";
 
 /**
@@ -16,6 +18,27 @@ function createRegistry(schema: Schema): SchemaRegistry {
   // Wrap the schema in a document structure that SchemaRegistry expects
   const document = { schema };
   return SchemaRegistry.fromSpec(document);
+}
+
+/** Validate a generated value against its schema via TreeValidator. */
+function assertGeneratedMatchesSchema(
+  schema: Schema | boolean,
+  generated: unknown,
+  registry?: SchemaRegistry,
+): void {
+  const validator = new TreeValidator({
+    registry,
+    direction: "response",
+  });
+  const result = validator.validate(generated, schema, "#", []);
+  if (!result.valid) {
+    throw new Error(
+      `Generated value does not match its schema.\n` +
+        `  value:  ${JSON.stringify(generated)}\n` +
+        `  errors: ${JSON.stringify(result.children, null, 2)}\n` +
+        `  schema: ${JSON.stringify(schema)}`,
+    );
+  }
 }
 
 Deno.test("RegistryResponseGenerator - generates string for simple string schema", () => {
@@ -1015,4 +1038,262 @@ Deno.test("RegistryResponseGenerator - type-mismatched example nested inside obj
     true,
     `tags should be an array, got: ${JSON.stringify(tags)}`,
   );
+});
+
+Deno.test("RegistryResponseGenerator - required property not in properties should be skipped", () => {
+  // When a schema lists a property in `required` that is not defined in
+  // `properties`, the generator must not fabricate a value for it. The
+  // spec is malformed (E1016 is emitted at load time), and making up a
+  // value produces output that matches no valid SDK model. The only
+  // defined property (`has_more`) is optional, so the generated object
+  // must be empty.
+  const schema: Schema = {
+    type: "object",
+    properties: {
+      has_more: { type: "boolean" },
+    },
+    required: ["bogus"],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry);
+
+  const result = generator.generateFromSchema(schema, "#");
+
+  assertInlineSnapshot(result, `{}`);
+});
+
+Deno.test("RegistryResponseGenerator - phantom required across allOf should be skipped", () => {
+  // Properties come from one allOf member, phantom required from another.
+  // After merging, properties = {a}, required = [b]. Since b is not in
+  // effective properties, it must be skipped (not fabricated).
+  const schema: Schema = {
+    allOf: [
+      { type: "object", properties: { a: { type: "string" } } },
+      { required: ["b"] },
+    ],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry, { seed: 1 });
+
+  const result = generator.generateFromSchema(schema, "#");
+
+  assertInlineSnapshot(result, `{}`);
+});
+
+Deno.test("RegistryResponseGenerator - required satisfied by sibling allOf member is generated", () => {
+  // Property defined in one allOf member, required listed in another.
+  // The property must be generated because it is contributed by a
+  // sibling member. Confirms the phantom filter does not over-filter.
+  const schema: Schema = {
+    allOf: [
+      { type: "object", properties: { a: { type: "string" } } },
+      { required: ["a"] },
+    ],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry, { seed: 1 });
+
+  const result = generator.generateFromSchema(schema, "#") as Record<
+    string,
+    unknown
+  >;
+
+  assertEquals(typeof result.a, "string");
+  assertEquals(Object.keys(result), ["a"]);
+  assertGeneratedMatchesSchema(schema, result);
+});
+
+Deno.test("RegistryResponseGenerator - phantom required across deeply nested allOf", () => {
+  // Three-level allOf: properties defined at the deepest level,
+  // required listed at the outer level with both a valid name and a
+  // phantom name. The valid one is generated, the phantom is skipped.
+  const schema: Schema = {
+    allOf: [
+      {
+        allOf: [
+          { type: "object", properties: { deep: { type: "integer" } } },
+        ],
+      },
+      { required: ["deep", "ghost"] },
+    ],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry, { seed: 1 });
+
+  const result = generator.generateFromSchema(schema, "#") as Record<
+    string,
+    unknown
+  >;
+
+  assertEquals(typeof result.deep, "number");
+  assertEquals(Object.keys(result), ["deep"]);
+});
+
+Deno.test("RegistryResponseGenerator - phantom required inside picked anyOf branch", () => {
+  // anyOf variant lists both a real property and a phantom one as
+  // required. After the variant is picked, the phantom is filtered out;
+  // the real one is generated.
+  const schema: Schema = {
+    anyOf: [
+      {
+        type: "object",
+        properties: { a: { type: "string" } },
+        required: ["a", "ghost"],
+      },
+      { type: "null" },
+    ],
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry, { seed: 1 });
+
+  const result = generator.generateFromSchema(schema, "#") as Record<
+    string,
+    unknown
+  >;
+
+  assertEquals(typeof result.a, "string");
+  assertEquals(Object.keys(result), ["a"]);
+});
+
+Deno.test("RegistryResponseGenerator - $ref cycle emits null, not a $comment marker", () => {
+  // A self-referential schema. The generator must terminate without
+  // fabricating a synthetic `$comment` object (which matches no schema
+  // and pollutes SDK responses). The only universally schema-valid
+  // choice when we cannot descend further is `null`.
+  const document = {
+    components: {
+      schemas: {
+        Node: {
+          type: "object",
+          properties: {
+            child: { $ref: "#/components/schemas/Node" },
+          },
+          required: ["child"],
+        },
+      },
+    },
+  };
+  const registry = SchemaRegistry.fromSpec(document);
+  const generator = new RegistryResponseGenerator(registry, { seed: 1 });
+
+  const result = generator.generate("#/components/schemas/Node");
+
+  assertInlineSnapshot(
+    result,
+    `{
+  child: {
+    child: null,
+  },
+}`,
+  );
+});
+
+Deno.test("RegistryResponseGenerator - unresolved $ref emits null, not a $comment marker", () => {
+  // An unresolved $ref at generation time indicates a loader bug (E1004
+  // should have caught it at startup). The generator should fall back
+  // to the safest schema-valid value (null) rather than invent a
+  // synthetic `$comment` object.
+  const document = {
+    components: {
+      schemas: {
+        Container: {
+          type: "object",
+          properties: {
+            data: { $ref: "#/components/schemas/Missing" },
+          },
+          required: ["data"],
+        },
+      },
+    },
+  };
+  const registry = SchemaRegistry.fromSpec(document);
+  const generator = new RegistryResponseGenerator(registry, { seed: 1 });
+
+  const result = generator.generate("#/components/schemas/Container");
+
+  assertInlineSnapshot(
+    result,
+    `{
+  data: null,
+}`,
+  );
+});
+
+Deno.test("RegistryResponseGenerator - schema with no inferable shape emits null, not {}", () => {
+  // A schema with no type, no properties, no items, no composition,
+  // and no nullable hint. Historically the generator fell back to `{}`,
+  // inventing an object. `null` is the safer schema-valid choice:
+  // any schema accepts it under `nullable`, and none accepts an
+  // object of unknown shape.
+  const schema: Schema = { description: "anything at all" };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry, { seed: 1 });
+
+  const result = generator.generateFromSchema(schema, "#");
+
+  assertInlineSnapshot(result, `null`);
+});
+
+Deno.test("RegistryResponseGenerator - schema minItems wins over generator option arrayMin/arrayMax", () => {
+  // A schema that explicitly declares minItems must be honored even
+  // when the generator is configured with smaller bounds. Generator
+  // options are defaults for schemas that are silent; they are not
+  // overrides for schemas that speak.
+  const schema: Schema = {
+    type: "array",
+    items: { type: "string" },
+    minItems: 5,
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry, {
+    seed: 1,
+    arrayMin: 2,
+    arrayMax: 2,
+  });
+
+  const result = generator.generateFromSchema(schema, "#") as unknown[];
+
+  assertEquals(result.length, 5);
+});
+
+Deno.test("RegistryResponseGenerator - generator option arrayMin applies when schema is silent", () => {
+  // Inverse of the previous test: when the schema says nothing about
+  // bounds, the generator option should still drive the length. This
+  // preserves the existing behavior relied on by server tests.
+  const schema: Schema = {
+    type: "array",
+    items: { type: "string" },
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry, {
+    seed: 1,
+    arrayMin: 3,
+    arrayMax: 3,
+  });
+
+  const result = generator.generateFromSchema(schema, "#") as unknown[];
+
+  assertEquals(result.length, 3);
+});
+
+Deno.test("RegistryResponseGenerator - schema maxItems wins over generator option arrayMax", () => {
+  // Symmetric check: schema maxItems bound is honored even when the
+  // generator option would allow more.
+  const schema: Schema = {
+    type: "array",
+    items: { type: "string" },
+    maxItems: 2,
+  };
+  const registry = createRegistry(schema);
+  const generator = new RegistryResponseGenerator(registry, {
+    seed: 1,
+    arrayMin: 10,
+    arrayMax: 10,
+  });
+
+  const result = generator.generateFromSchema(schema, "#") as unknown[];
+
+  // Result length must not exceed schema maxItems; minimum is clamped
+  // to maxItems when option arrayMin would otherwise exceed it.
+  assertEquals(result.length, 2);
 });

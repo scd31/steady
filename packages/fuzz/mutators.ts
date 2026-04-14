@@ -139,6 +139,16 @@ export const omitRequiredBody: Mutator = {
   },
 };
 
+// FIXME: `effectiveRequired` returns the raw union of required names
+// across allOf, including entries that are absent from
+// `effectiveProperties`. Such "phantom required" entries are a spec
+// bug (E1016 catches them at startup) but they survive to this
+// mutator and generate noise mutations that delete a field the
+// baseline never had. Filter `requiredFields` against
+// `effectiveProperties(schema)` here to match the generator's
+// treatment in `schema-registry.ts:generateObject`. A better long-term
+// fix is to make the filter part of `effectiveRequired`'s contract,
+// but that change has its own blast radius.
 export const omitRequiredBodyField: Mutator = {
   id: "omitRequiredBodyField",
   apply(op, baseline) {

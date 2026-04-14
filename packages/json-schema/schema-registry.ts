@@ -12,13 +12,19 @@
  */
 
 import {
-  escapeSegment,
+  formatFragmentPointer,
   type FragmentPointer,
   isFragmentPointer,
   isPlainObject,
+  parseFragmentPointer,
+  type PointerPath,
   resolve as resolvePointer,
 } from "@steady/json-pointer";
-import { effectiveType } from "./schema-utils.ts";
+import {
+  effectiveProperties,
+  effectiveRequired,
+  effectiveType,
+} from "./schema-utils.ts";
 import { isSchema } from "./types.ts";
 import type { GenerateOptions, Schema } from "./types.ts";
 
@@ -96,12 +102,12 @@ export class SchemaRegistry {
     const edges = new Map<FragmentPointer, Set<string>>();
     let pointerCount = 0;
 
-    function walk(value: unknown, pointer: FragmentPointer): void {
+    function walk(value: unknown, path: PointerPath): void {
       if (Array.isArray(value)) {
         for (let i = 0; i < value.length; i++) {
           const item = value[i];
           if (item !== null && typeof item === "object") {
-            walk(item, `${pointer}/${i}`);
+            walk(item, [...path, String(i)]);
           }
         }
         return;
@@ -112,22 +118,28 @@ export class SchemaRegistry {
       const obj = value;
       pointerCount++;
 
-      // Collect $anchor and $id
-      if (typeof obj.$anchor === "string") {
-        anchors.set(obj.$anchor, pointer);
-      }
-      if (typeof obj.$id === "string") {
-        ids.set(obj.$id, pointer);
-      }
-
-      // Collect $ref edges
-      if (typeof obj.$ref === "string") {
-        refs.add(obj.$ref);
-        const existing = edges.get(pointer);
-        if (existing) {
-          existing.add(obj.$ref);
-        } else {
-          edges.set(pointer, new Set([obj.$ref]));
+      // Format the pointer only if this node is indexed (has $anchor,
+      // $id, or $ref). Keeps the hot walk path string-free.
+      if (
+        typeof obj.$anchor === "string" ||
+        typeof obj.$id === "string" ||
+        typeof obj.$ref === "string"
+      ) {
+        const pointer = formatFragmentPointer(path);
+        if (typeof obj.$anchor === "string") {
+          anchors.set(obj.$anchor, pointer);
+        }
+        if (typeof obj.$id === "string") {
+          ids.set(obj.$id, pointer);
+        }
+        if (typeof obj.$ref === "string") {
+          refs.add(obj.$ref);
+          const existing = edges.get(pointer);
+          if (existing) {
+            existing.add(obj.$ref);
+          } else {
+            edges.set(pointer, new Set([obj.$ref]));
+          }
         }
       }
 
@@ -135,11 +147,11 @@ export class SchemaRegistry {
         if (key === "$ref") continue;
         const val = obj[key];
         if (val === null || typeof val !== "object") continue;
-        walk(val, `${pointer}/${escapeSegment(key)}`);
+        walk(val, [...path, key]);
       }
     }
 
-    walk(spec, "#");
+    walk(spec, []);
 
     return { anchors, ids, refs, edges, pointerCount };
   }
@@ -247,9 +259,7 @@ export class SchemaRegistry {
 
     if (isPlainObject(components)) {
       for (const name of Object.keys(components)) {
-        const pointer: FragmentPointer = `#/components/schemas/${
-          escapeSegment(name)
-        }`;
+        const pointer = formatFragmentPointer(["components", "schemas", name]);
         const schema = this.get(pointer);
         if (schema) {
           result.set(name, schema);
@@ -316,7 +326,11 @@ export class RegistryResponseGenerator {
   }
 
   /**
-   * Generate data for a schema at the given pointer
+   * Generate data for a schema at the given pointer.
+   *
+   * Public entry: accepts a raw `FragmentPointer`, parses it into a
+   * structured `PointerPath` exactly once, and hands off to the
+   * path-based recursion.
    */
   generate(pointer: FragmentPointer): unknown {
     const schema = this.registry.get(pointer);
@@ -326,15 +340,31 @@ export class RegistryResponseGenerator {
     // Reset RNG state for deterministic output per-call
     this.seed = this.initialSeed;
     this.visited.clear();
-    return this.generateFromSchema(schema.raw, pointer);
+    return this.generateFromPath(schema.raw, parseFragmentPointer(pointer));
   }
 
   /**
-   * Generate data from a schema object
+   * Generate data from a schema object at a raw `FragmentPointer` position.
+   *
+   * Public entry for inline schemas (not stored in the registry). Parses
+   * the pointer once and delegates to the structured recursion.
    */
   generateFromSchema(
     schema: Schema | boolean,
-    pointer: string,
+    pointer: FragmentPointer,
+  ): unknown {
+    return this.generateFromPath(schema, parseFragmentPointer(pointer));
+  }
+
+  /**
+   * Recursive engine: walks a schema while tracking its position as a
+   * structured `PointerPath`. Never concatenates strings; appends via
+   * `[...path, segment]`. Parses raw pointers only when crossing a
+   * `$ref` boundary.
+   */
+  private generateFromPath(
+    schema: Schema | boolean,
+    path: PointerPath,
   ): unknown {
     // Handle boolean schemas
     if (typeof schema === "boolean") {
@@ -345,19 +375,35 @@ export class RegistryResponseGenerator {
     if (schema.$ref) {
       const ref = schema.$ref;
 
-      // Check for cycles
+      // Check for cycles. When we cannot descend further, `null` is
+      // the only universally schema-valid value; a synthetic
+      // `$comment` object matches no schema and pollutes SDK
+      // responses.
       if (this.visited.has(ref)) {
-        return { "$comment": `Circular reference to ${ref}` };
+        return null;
       }
 
-      // Resolve via registry
+      // Resolve via registry. Reaching this branch means a $ref
+      // survived to generation time without being caught at startup
+      // (E1004), which indicates a loader bug rather than a spec
+      // author error. Return `null` for the same reason as cycles;
+      // the synthetic `$comment` was worse than silence.
+      //
+      // FIXME: the generator has no logger injected. When a logger
+      // is threaded through, emit a warning here naming the bad ref
+      // so the loader bug surfaces instead of being silently swallowed.
       const resolved = this.registry.resolveRef(ref);
       if (!resolved) {
-        return { "$comment": `Unresolved reference: ${ref}` };
+        return null;
       }
 
+      // After a $ref hop, the path resets to the target schema's
+      // canonical location in the spec. The registry already knows it.
       this.visited.add(ref);
-      const result = this.generateFromSchema(resolved.raw, ref);
+      const result = this.generateFromPath(
+        resolved.raw,
+        parseFragmentPointer(resolved.pointer),
+      );
       this.visited.delete(ref);
       return result;
     }
@@ -392,7 +438,19 @@ export class RegistryResponseGenerator {
       return this.pick(schema.enum);
     }
 
-    // Priority 6: Handle composition keywords (anyOf, oneOf, allOf)
+    // Priority 6: Handle composition keywords (anyOf, oneOf, allOf).
+    //
+    // FIXME: these early-returns silently abandon any sibling
+    // `properties` / `required` declared at the same level as the
+    // composition keyword. A schema like
+    //   { properties: { a }, required: ["a"], oneOf: [...] }
+    // will generate only the oneOf variant and drop `a`. This is a
+    // separate latent bug from the phantom-required fix; it has not
+    // been triggered by any test yet, but it is the same class of
+    // "the generator ignores declared structure". The fix is to
+    // merge outer properties/required into the picked variant before
+    // recursing, which is blocked on unifying this with
+    // `mergeAllOfInto` (see FIXME above that method).
     if (schema.anyOf?.length) {
       // Pick first non-null option, or null if only null available
       const nonNullOptions = schema.anyOf.filter(
@@ -400,13 +458,13 @@ export class RegistryResponseGenerator {
       );
       const first = nonNullOptions[0] ?? schema.anyOf[0];
       if (first === undefined) return {};
-      return this.generateFromSchema(first, `${pointer}/anyOf/0`);
+      return this.generateFromPath(first, [...path, "anyOf", "0"]);
     }
 
     if (schema.oneOf?.length) {
       const first = schema.oneOf[0];
       if (first === undefined) return {};
-      return this.generateFromSchema(first, `${pointer}/oneOf/0`);
+      return this.generateFromPath(first, [...path, "oneOf", "0"]);
     }
 
     if (schema.allOf?.length) {
@@ -415,7 +473,7 @@ export class RegistryResponseGenerator {
       this.mergeAllOfInto(merged, schema.allOf, 0);
       // Generate from merged schema (remove allOf to avoid infinite recursion)
       const { allOf: _, ...mergedWithoutAllOf } = merged;
-      return this.generateFromSchema(mergedWithoutAllOf, pointer);
+      return this.generateFromPath(mergedWithoutAllOf, path);
     }
 
     // Priority 7: Generate based on type
@@ -433,27 +491,40 @@ export class RegistryResponseGenerator {
       case "string":
         return this.generateString(schema);
       case "array":
-        return this.generateArray(schema, pointer);
+        return this.generateArray(schema, path);
       case "object":
-        return this.generateObject(schema, pointer);
+        return this.generateObject(schema, path);
       default:
         // Infer from structure
         if (schema.properties || schema.additionalProperties) {
-          return this.generateObject(schema, pointer);
+          return this.generateObject(schema, path);
         }
         if (schema.items || schema.prefixItems) {
-          return this.generateArray(schema, pointer);
+          return this.generateArray(schema, path);
         }
-        // Schema with nullable: true but no type - return null
-        // This handles OpenAPI 3.0 style nullable modifiers in allOf
-        if (schema.nullable === true) {
-          return null;
-        }
-        return {};
+        // When neither structural hint nor type is available, the
+        // schema is effectively "anything". `null` is the safest
+        // universally schema-valid value; an empty object would be
+        // fabrication.
+        return null;
     }
   }
 
-  /** Recursively flatten allOf members into `merged`, resolving $refs. */
+  /**
+   * Recursively flatten allOf members into `merged`, resolving $refs.
+   *
+   * FIXME: this is a parallel composition pipeline. Every other consumer
+   * in the codebase uses `effectiveProperties` / `effectiveRequired` /
+   * `effectiveType` from `schema-utils.ts`. The generator still uses this
+   * custom merge because `effective*` do not resolve `$ref`s. Callers
+   * must pre-resolve. Eight prior `fix:` commits to this region
+   * (a24a21a, c3989a3, 71cd8d9, c3029dd, de04f68, cc7bf19, 4e4cdbf,
+   * bdda84d) confirm the drift. The fix is to teach `effective*` to take
+   * an optional registry for ref resolution, then delete this method
+   * and the `allOf` branch in `generateFromPath` that calls it. Do this
+   * as its own PR; the blast radius is every allOf test in this file
+   * plus the fuzz callers.
+   */
   private mergeAllOfInto(
     merged: Schema,
     members: ReadonlyArray<Schema | boolean>,
@@ -535,6 +606,16 @@ export class RegistryResponseGenerator {
     }
   }
 
+  // FIXME: scalar generation falls back to hardcoded bounds when the
+  // schema is silent (minimum ?? 0, maximum ?? 100 for numeric types;
+  // minLength ?? 1, maxLength ?? 10 for strings). These produce
+  // schema-valid values, so they do not violate the "no fabrication"
+  // principle in the letter, but they do in the spirit: "0..100" is a
+  // guess, not a derivation. An "unbounded scalar strategy" deserves
+  // its own design pass. Candidates: pick from a schema-aware default
+  // distribution, draw from format-specific ranges, or refuse to
+  // generate unbounded scalars entirely and require schema authors to
+  // declare bounds.
   private generateInteger(schema: Schema): number {
     const min = typeof schema.exclusiveMinimum === "number"
       ? schema.exclusiveMinimum + 1
@@ -628,10 +709,20 @@ export class RegistryResponseGenerator {
     }
   }
 
-  private generateArray(schema: Schema, pointer: string): unknown[] {
-    // Use generator options, which override schema constraints
-    const minItems = this.arrayMin;
-    const maxItems = this.arrayMax;
+  private generateArray(schema: Schema, path: PointerPath): unknown[] {
+    // Schema bounds win over generator options. Options are defaults
+    // for schemas that are silent; they are not overrides for schemas
+    // that speak. When schema and option disagree, schema wins and the
+    // other side is clamped so `min <= max` still holds.
+    let minItems = schema.minItems ?? this.arrayMin;
+    let maxItems = schema.maxItems ?? this.arrayMax;
+    if (schema.minItems !== undefined && minItems > maxItems) {
+      maxItems = minItems;
+    }
+    if (schema.maxItems !== undefined && maxItems < minItems) {
+      minItems = maxItems;
+    }
+
     const length = minItems <= 0
       ? 0
       : minItems + Math.floor(this.random() * (maxItems - minItems + 1));
@@ -644,7 +735,7 @@ export class RegistryResponseGenerator {
         const item = schema.prefixItems[i];
         if (item === undefined) continue;
         array.push(
-          this.generateFromSchema(item, `${pointer}/prefixItems/${i}`),
+          this.generateFromPath(item, [...path, "prefixItems", String(i)]),
         );
       }
     }
@@ -653,7 +744,7 @@ export class RegistryResponseGenerator {
     if (schema.items && !Array.isArray(schema.items) && array.length < length) {
       for (let i = array.length; i < length; i++) {
         array.push(
-          this.generateFromSchema(schema.items, `${pointer}/items`),
+          this.generateFromPath(schema.items, [...path, "items"]),
         );
       }
     }
@@ -663,30 +754,24 @@ export class RegistryResponseGenerator {
 
   private generateObject(
     schema: Schema,
-    pointer: string,
+    path: PointerPath,
   ): Record<string, unknown> {
     const obj: Record<string, unknown> = {};
+    const props = effectiveProperties(schema) ?? {};
 
-    // Generate required properties
-    if (schema.required) {
-      for (const prop of schema.required) {
-        const propSchema = schema.properties?.[prop];
-        if (propSchema) {
-          obj[prop] = this.generateFromSchema(
-            propSchema,
-            `${pointer}/properties/${prop}`,
-          );
-        } else {
-          obj[prop] = this.pick(["value", 123, true, null]);
-        }
-      }
+    for (const name of effectiveRequired(schema)) {
+      const propSchema = props[name];
+      if (!propSchema) continue;
+      obj[name] = this.generateFromPath(
+        propSchema,
+        [...path, "properties", name],
+      );
     }
 
-    // TODO: Revisit optional property generation strategy.
-    // Only required properties are generated. Optional properties are omitted
-    // to ensure consistent, minimal responses. This avoids flaky SDK tests
-    // (e.g., pagination responses randomly missing `items` array).
-    // Options to consider:
+    // FIXME: Revisit optional property generation strategy. Optional
+    // properties are omitted to keep responses minimal and deterministic.
+    // This was originally a workaround for flaky SDK pagination tests;
+    // now that fabrication is gone, it is easier to reason about. Options:
     // - Always include arrays (even empty) but skip other optionals
     // - Add a "minimal" vs "full" generation mode
     // - Let users configure which optional fields to include
