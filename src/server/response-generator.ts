@@ -9,7 +9,7 @@ import type {
   SchemaRegistry,
 } from "@steady/json-schema";
 import {
-  escapeSegment,
+  formatFragmentPointer,
   isFragmentPointer,
   isPlainObject,
 } from "@steady/json-pointer";
@@ -342,11 +342,16 @@ function generateStreamingResponse(
     throw new Error(`Unknown streaming format: ${contentType}`);
   }
 
-  const schemaPointer = `#/paths/${
-    escapeSegment(pathPattern)
-  }/${method}/responses/${statusCode}/content/${
-    escapeSegment(contentType)
-  }/schema`;
+  const schemaPointer = formatFragmentPointer([
+    "paths",
+    pathPattern,
+    method,
+    "responses",
+    statusCode,
+    "content",
+    contentType,
+    "schema",
+  ]);
 
   const { stream, warnings } = createStreamingResponse(
     registry,
@@ -403,9 +408,16 @@ function generateFromSchemaObject(
   // Inline schema: generate directly
   return generator.generateFromSchema(
     schema,
-    `#/paths/${
-      escapeSegment(pathPattern)
-    }/${method}/responses/${statusCode}/content/application~1json/schema`,
+    formatFragmentPointer([
+      "paths",
+      pathPattern,
+      method,
+      "responses",
+      statusCode,
+      "content",
+      "application/json",
+      "schema",
+    ]),
   );
 }
 

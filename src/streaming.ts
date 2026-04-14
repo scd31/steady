@@ -19,6 +19,7 @@ import type { Schema, SchemaRegistry } from "@steady/json-schema";
 import { RegistryResponseGenerator } from "@steady/json-schema";
 import type { GenerateOptions } from "@steady/json-schema";
 import type { ReferenceObject } from "@steady/openapi";
+import type { FragmentPointer } from "@steady/json-pointer";
 import {
   getMediaType,
   getStreamingFormat,
@@ -162,7 +163,7 @@ export function parseNDJSONExample(example: unknown): unknown[] {
 export function createStreamingResponse(
   registry: SchemaRegistry,
   schema: Schema | ReferenceObject,
-  schemaPointer: string,
+  schemaPointer: FragmentPointer,
   format: "ndjson" | "sse",
   options: StreamingOptions = {},
 ): { stream: ReadableStream<Uint8Array>; warnings: string[] } {
@@ -375,7 +376,7 @@ function formatSSEEvent(event: SSEEvent, index: number): string {
 function createStreamFromSchema(
   registry: SchemaRegistry,
   schema: Schema | ReferenceObject,
-  schemaPointer: string,
+  schemaPointer: FragmentPointer,
   format: "ndjson" | "sse",
   options: StreamingOptions,
 ): ReadableStream<Uint8Array> {
@@ -415,7 +416,11 @@ function createStreamFromSchema(
           const ref = schema.$ref;
           const resolved = registry.resolveRef(ref);
           if (resolved) {
-            item = generator.generateFromSchema(resolved.raw, ref);
+            // The resolved schema already knows its canonical fragment
+            // pointer in the spec. Use that rather than the raw ref
+            // string (which might not be a valid FragmentPointer if the
+            // ref is an anchor or $id).
+            item = generator.generateFromSchema(resolved.raw, resolved.pointer);
           } else {
             item = { error: `Unresolved reference: ${ref}` };
           }

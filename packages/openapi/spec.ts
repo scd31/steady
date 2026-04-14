@@ -14,7 +14,7 @@
 import { isSchema, SchemaRegistry } from "@steady/json-schema";
 import type { Schema } from "@steady/json-schema";
 import {
-  escapeSegment,
+  formatFragmentPointer,
   type FragmentPointer,
   isFragmentPointer,
   isPlainObject,
@@ -244,11 +244,15 @@ export class OpenAPISpec {
     const mediaContent = requestBody.content[matchedKey];
     if (!mediaContent?.schema) return null;
 
-    const escapedPath = escapeSegment(pathPattern);
-    const inlinePointer: FragmentPointer =
-      `#/paths/${escapedPath}/${method}/requestBody/content/${
-        escapeSegment(matchedKey)
-      }/schema`;
+    const inlinePointer = formatFragmentPointer([
+      "paths",
+      pathPattern,
+      method,
+      "requestBody",
+      "content",
+      matchedKey,
+      "schema",
+    ]);
 
     const { schema, schemaPath } = this.resolveSchemaRef(
       mediaContent.schema,
@@ -396,14 +400,22 @@ export class OpenAPISpec {
       return { param: resolved, pointer };
     }
 
-    // Inline parameter. Compute its pointer
-    const escapedPath = escapeSegment(pathPattern);
-    let pointer: FragmentPointer;
-    if (level === "pathItem") {
-      pointer = `#/paths/${escapedPath}/parameters/${index}`;
-    } else {
-      pointer = `#/paths/${escapedPath}/${method}/parameters/${index}`;
-    }
+    // Inline parameter. Compute its pointer.
+    // Operation-level parameters require a method; path-level do not.
+    const pointer = level === "pathItem" || method === undefined
+      ? formatFragmentPointer([
+        "paths",
+        pathPattern,
+        "parameters",
+        String(index),
+      ])
+      : formatFragmentPointer([
+        "paths",
+        pathPattern,
+        method,
+        "parameters",
+        String(index),
+      ]);
 
     return { param: paramOrRef, pointer };
   }
