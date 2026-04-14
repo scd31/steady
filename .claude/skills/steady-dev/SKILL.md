@@ -103,12 +103,37 @@ important thing visible?
 **No type hacks.** No `as` casts, no non-null assertions. Use type guards,
 `satisfies`, narrowing, or restructure parameters.
 
+**Raw at the edges, structured in the logic.** The codebase is mostly about
+manipulating pointers, schemas, and specs. Those are domain values with
+structural meaning. Parse the raw form exactly once at the incoming boundary
+(CLI arg, HTTP body, file read) into a domain type, pass the domain type through
+every internal function, and format back to raw form only at the outgoing
+boundary (response body, terminal output, file write). Never thread a
+`FragmentPointer` string through recursion and `${pointer}/${segment}` it, never
+re-parse a pointer mid-logic, never stringify a schema before it leaves the
+generator. Compiler and reader both win: invariants that would otherwise be
+runtime concerns become type errors.
+
+**Use the owning package for domain primitives.** Pointer manipulation lives in
+`@steady/json-pointer`. Schema composition and traversal live in
+`@steady/json-schema`. OpenAPI document access lives in `@steady/openapi`.
+Before writing a local helper, search the owning package. If the primitive you
+need does not exist there yet, add it _there_, not at the call site.
+
+For pointers specifically: `parseFragmentPointer` turns a `FragmentPointer` into
+a `PointerPath` at the incoming boundary; `formatFragmentPointer` goes the other
+way at the outgoing boundary; internal recursion appends segments via native
+`[...path, segment]`. Never open-code `` `${pointer}/${escapeSegment(key)}` `` —
+that template was the anti-pattern this rule exists to kill.
+
 **Red-green testing.** Write the failing test first. Run it. See it fail.
 Implement. See it pass. This is not optional.
 
 **Inline snapshots for output tests.** Use `assertInlineSnapshot` from
 `@std/testing/unstable-snapshot` for testing formatted output. Run with
-`-- --update` to auto-populate snapshot values.
+`-- --update` to auto-populate snapshot values. See
+`.claude/skills/snapshot-testing/SKILL.md` for the full snapshot workflow
+(inline vs file, red-green flow, pitfalls).
 
 **Run the tool.** After making changes to output formatting, CLI flags, or
 diagnostics — actually run `steady` against a real spec and look at it. Terminal

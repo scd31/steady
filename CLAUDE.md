@@ -86,6 +86,17 @@ Name"` (percent-decoded before JSON Pointer parsing).
    crashes when diagnostic messages flow into HTTP headers via `Headers.set()`.
    Use normal punctuation instead (periods, commas, semicolons). Two sentences
    are better than one long sentence joined by an em-dash.
+9. **Raw at the edges, structured in the logic** - Parse untyped inputs
+   (strings, JSON, HTTP bodies) once at the boundary into a domain type, and
+   pass the domain type through all internal logic. Format back to raw form only
+   at the outgoing boundary. Never thread a raw string through recursion and
+   re-parse or string-concat it inside the logic. If a primitive you need for
+   the domain type does not exist, add it to the owning package (e.g. pointer
+   manipulation belongs in `@steady/json-pointer`, schema composition in
+   `@steady/json-schema`). Never open-code a local helper that duplicates
+   something the owning package should provide, and never introduce a second
+   implementation of a primitive that already exists. Search the owning package
+   first.
 
 ## Skills
 
