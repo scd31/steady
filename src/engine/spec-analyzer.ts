@@ -8,7 +8,11 @@
 
 import type { ComponentsObject, OpenAPIRaw } from "@steady/openapi";
 import { openapi31Metaschema } from "@steady/openapi";
-import { escapeSegment, resolve } from "@steady/json-pointer";
+import {
+  formatFragmentPointer,
+  type PointerPath,
+  resolve,
+} from "@steady/json-pointer";
 import { JsonSchemaProcessor } from "@steady/json-schema";
 import type { Diagnostic, DiagnosticDisplay } from "../diagnostic.ts";
 import { type ECode, getCode, hasCode } from "../codes/registry.ts";
@@ -290,7 +294,7 @@ function checkFragmentInPath(spec: OpenAPIRaw): Diagnostic[] {
       diagnostics.push(
         specDiagnostic(
           "E1021",
-          `#/paths/${escapeSegment(path)}`,
+          formatFragmentPointer(["paths", path]),
           `Path "${path}" contains a URI fragment (#). Fragments are stripped by HTTP clients and cannot be routed.`,
           {
             suggestion:
@@ -315,7 +319,7 @@ function checkMultipleQuestionMarks(spec: OpenAPIRaw): Diagnostic[] {
       diagnostics.push(
         specDiagnostic(
           "E1013",
-          `#/paths/${escapeSegment(path)}`,
+          formatFragmentPointer(["paths", path]),
           `Path "${path}" contains ${qCount} question marks`,
           {
             suggestion:
@@ -411,15 +415,16 @@ function checkParamForQuestionMark(
   method: string | undefined,
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
-  const base = method
-    ? `#/paths/${escapeSegment(path)}/${method}`
-    : `#/paths/${escapeSegment(path)}`;
+  const basePath: PointerPath = method
+    ? ["paths", path, method, "parameters"]
+    : ["paths", path, "parameters"];
+  const pointer = formatFragmentPointer(basePath);
 
   if (param.name.includes("?")) {
     diagnostics.push(
       specDiagnostic(
         "E1014",
-        `${base}/parameters`,
+        pointer,
         `Parameter name "${param.name}" contains a question mark`,
         {
           suggestion:
@@ -435,7 +440,7 @@ function checkParamForQuestionMark(
         diagnostics.push(
           specDiagnostic(
             "E1014",
-            `${base}/parameters`,
+            pointer,
             `Enum value "${value}" in parameter "${param.name}" contains a question mark`,
             {
               suggestion:
@@ -507,7 +512,7 @@ function checkDuplicatePathParamNames(spec: OpenAPIRaw): Diagnostic[] {
         diagnostics.push(
           specDiagnostic(
             "E1009",
-            `#/paths/${escapeSegment(path)}`,
+            formatFragmentPointer(["paths", path]),
             `Path "${path}" has duplicate parameter name "{${name}}"`,
             {
               suggestion:
@@ -542,7 +547,7 @@ function checkMissingResponses(spec: OpenAPIRaw): Diagnostic[] {
         diagnostics.push(
           specDiagnostic(
             "E1010",
-            `#/paths/${escapeSegment(path)}/${method}/responses`,
+            formatFragmentPointer(["paths", path, method, "responses"]),
             `Operation ${method.toUpperCase()} ${path} has no response definitions`,
             {
               suggestion:
@@ -596,9 +601,13 @@ function checkRedirectsWithoutLocation(spec: OpenAPIRaw): Diagnostic[] {
           diagnostics.push(
             specDiagnostic(
               "E1017",
-              `#/paths/${
-                escapeSegment(path)
-              }/${method}/responses/${statusCode}`,
+              formatFragmentPointer([
+                "paths",
+                path,
+                method,
+                "responses",
+                statusCode,
+              ]),
               `${statusCode} response on ${method.toUpperCase()} ${path} has no Location header. HTTP redirects require Location per RFC 9110`,
               {
                 suggestion:
@@ -652,7 +661,13 @@ function checkNullBodyWithContent(spec: OpenAPIRaw): Diagnostic[] {
         diagnostics.push(
           specDiagnostic(
             "E1018",
-            `#/paths/${escapeSegment(path)}/${method}/responses/${statusCode}`,
+            formatFragmentPointer([
+              "paths",
+              path,
+              method,
+              "responses",
+              statusCode,
+            ]),
             `${statusCode} response on ${method.toUpperCase()} ${path} defines body content, but HTTP ${statusCode} must not have a body`,
             {
               suggestion:
@@ -690,7 +705,7 @@ function checkNoSuccessResponse(spec: OpenAPIRaw): Diagnostic[] {
         diagnostics.push(
           specDiagnostic(
             "E1019",
-            `#/paths/${escapeSegment(path)}/${method}/responses`,
+            formatFragmentPointer(["paths", path, method, "responses"]),
             `${method.toUpperCase()} ${path} has no 2xx success response (only ${
               statusCodes.join(", ")
             }). Mock server will return an error status for valid requests`,
@@ -734,7 +749,7 @@ function checkUnconventionalRequestBody(spec: OpenAPIRaw): Diagnostic[] {
       diagnostics.push(
         specDiagnostic(
           "E1020",
-          `#/paths/${escapeSegment(path)}/${method}/requestBody`,
+          formatFragmentPointer(["paths", path, method, "requestBody"]),
           `${method.toUpperCase()} ${path} defines a request body. HTTP ${method.toUpperCase()} requests conventionally do not carry a body`,
           {
             suggestion: stripped
@@ -761,8 +776,6 @@ function checkInvalidContentTypeKeys(spec: OpenAPIRaw): Diagnostic[] {
       const operation = pathItem[method];
       if (!operation) continue;
 
-      const escapedPath = escapeSegment(path);
-
       // Check requestBody.content keys
       if (operation.requestBody) {
         const rb = isObject(operation.requestBody) &&
@@ -777,9 +790,14 @@ function checkInvalidContentTypeKeys(spec: OpenAPIRaw): Diagnostic[] {
               diagnostics.push(
                 specDiagnostic(
                   "E1022",
-                  `#/paths/${escapedPath}/${method}/requestBody/content/${
-                    escapeSegment(key)
-                  }`,
+                  formatFragmentPointer([
+                    "paths",
+                    path,
+                    method,
+                    "requestBody",
+                    "content",
+                    key,
+                  ]),
                   `Invalid content type key ${
                     JSON.stringify(key)
                   } in request body for ${method.toUpperCase()} ${path}`,
@@ -816,9 +834,15 @@ function checkInvalidContentTypeKeys(spec: OpenAPIRaw): Diagnostic[] {
               diagnostics.push(
                 specDiagnostic(
                   "E1022",
-                  `#/paths/${escapedPath}/${method}/responses/${statusCode}/content/${
-                    escapeSegment(key)
-                  }`,
+                  formatFragmentPointer([
+                    "paths",
+                    path,
+                    method,
+                    "responses",
+                    statusCode,
+                    "content",
+                    key,
+                  ]),
                   `Invalid content type key ${
                     JSON.stringify(key)
                   } in ${statusCode} response for ${method.toUpperCase()} ${path}`,
@@ -869,7 +893,7 @@ function checkInvalidComponentNames(spec: OpenAPIRaw): Diagnostic[] {
         diagnostics.push(
           specDiagnostic(
             "E1011",
-            `#/components/${section}/${escapeSegment(name)}`,
+            formatFragmentPointer(["components", section, name]),
             `Component name "${name}" contains invalid characters`,
             {
               suggestion:
@@ -900,8 +924,8 @@ interface RefInfo {
 
 interface WalkResult {
   refs: RefInfo[];
-  /** All schema objects found, with their JSON pointers. */
-  schemas: Array<{ schema: Record<string, unknown>; pointer: string }>;
+  /** All schema objects found, with their fragment-pointer locations. */
+  schemas: Array<{ schema: Record<string, unknown>; pointer: FragmentPointer }>;
   /** Map of $anchor value to FragmentPointer. */
   anchors: Map<string, FragmentPointer>;
   /** Map of $id value to FragmentPointer. */
@@ -924,14 +948,17 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
   let pointerCount = 0;
 
   // ── Generic tree walker for $ref, $anchor, $id, edge collection ─
-  function walkForRefs(obj: unknown, pointer: FragmentPointer): void {
+  //
+  // The walker threads a structured `PointerPath`; a `FragmentPointer`
+  // is materialized only when a node is indexed (has $ref, $anchor, or
+  // $id) so that the hot path of unrelated nodes stays allocation-light.
+  function walkForRefs(obj: unknown, path: PointerPath): void {
     if (!isObject(obj)) {
       if (Array.isArray(obj)) {
         for (let i = 0; i < obj.length; i++) {
           const item = obj[i];
           if (item !== null && typeof item === "object") {
-            const child: FragmentPointer = `${pointer}/${i}`;
-            walkForRefs(item, child);
+            walkForRefs(item, [...path, String(i)]);
           }
         }
       }
@@ -940,26 +967,34 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
 
     pointerCount++;
 
-    if (typeof obj.$ref === "string") {
-      const siblingKeys = Object.keys(obj).filter((k) => k !== "$ref");
-      refs.push({ pointer, ref: obj.$ref, siblingKeys });
-      uniqueRefs.add(obj.$ref);
+    const hasRef = typeof obj.$ref === "string";
+    const hasAnchor = typeof obj.$anchor === "string";
+    const hasId = typeof obj.$id === "string";
 
-      // Collect edge for DocIndex
-      const existing = edges.get(pointer);
-      if (existing) {
-        existing.add(obj.$ref);
-      } else {
-        edges.set(pointer, new Set([obj.$ref]));
+    if (hasRef || hasAnchor || hasId) {
+      const pointer = formatFragmentPointer(path);
+
+      if (hasRef && typeof obj.$ref === "string") {
+        const siblingKeys = Object.keys(obj).filter((k) => k !== "$ref");
+        refs.push({ pointer, ref: obj.$ref, siblingKeys });
+        uniqueRefs.add(obj.$ref);
+
+        // Collect edge for DocIndex
+        const existing = edges.get(pointer);
+        if (existing) {
+          existing.add(obj.$ref);
+        } else {
+          edges.set(pointer, new Set([obj.$ref]));
+        }
       }
-    }
 
-    // Collect $anchor and $id indexes for O(1) lookup
-    if (typeof obj.$anchor === "string") {
-      anchors.set(obj.$anchor, pointer);
-    }
-    if (typeof obj.$id === "string") {
-      ids.set(obj.$id, pointer);
+      // Collect $anchor and $id indexes for O(1) lookup
+      if (hasAnchor && typeof obj.$anchor === "string") {
+        anchors.set(obj.$anchor, pointer);
+      }
+      if (hasId && typeof obj.$id === "string") {
+        ids.set(obj.$id, pointer);
+      }
     }
 
     for (const key of Object.keys(obj)) {
@@ -967,76 +1002,77 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
       const value = obj[key];
       // Skip primitives - they can't contain $ref
       if (value === null || typeof value !== "object") continue;
-      const child: FragmentPointer = `${pointer}/${escapeSegment(key)}`;
-      walkForRefs(value, child);
+      walkForRefs(value, [...path, key]);
     }
   }
 
   // Collect all $refs from the entire spec
-  walkForRefs(spec, "#");
+  walkForRefs(spec, []);
 
   // ── Schema walker for constraint checking ─────────────────────
-  function visitSchema(obj: unknown, pointer: string): void {
+  //
+  // Takes a structured `PointerPath`; children are appended via
+  // `[...path, segment]`. The formatted `FragmentPointer` is
+  // materialized only once per visited node, at the edge where the
+  // schema is pushed into `schemas`.
+  function visitSchema(obj: unknown, path: PointerPath): void {
     if (!isObject(obj)) return;
     if ("$ref" in obj) return;
 
-    schemas.push({ schema: obj, pointer });
+    schemas.push({ schema: obj, pointer: formatFragmentPointer(path) });
 
     // Recurse into sub-schemas
     const properties = obj.properties;
     if (isObject(properties)) {
       for (const [name, sub] of Object.entries(properties)) {
-        visitSchema(sub, `${pointer}/properties/${escapeSegment(name)}`);
+        visitSchema(sub, [...path, "properties", name]);
       }
     }
 
     const items = obj.items;
     if (isObject(items) && !("$ref" in items)) {
-      visitSchema(items, `${pointer}/items`);
+      visitSchema(items, [...path, "items"]);
     }
 
     const additionalProperties = obj.additionalProperties;
     if (isObject(additionalProperties) && !("$ref" in additionalProperties)) {
-      visitSchema(additionalProperties, `${pointer}/additionalProperties`);
+      visitSchema(additionalProperties, [...path, "additionalProperties"]);
     }
 
     const patternProperties = obj.patternProperties;
     if (isObject(patternProperties)) {
       for (const [pattern, sub] of Object.entries(patternProperties)) {
-        visitSchema(
-          sub,
-          `${pointer}/patternProperties/${escapeSegment(pattern)}`,
-        );
+        visitSchema(sub, [...path, "patternProperties", pattern]);
       }
     }
 
-    for (const keyword of ["allOf", "anyOf", "oneOf"]) {
+    for (const keyword of ["allOf", "anyOf", "oneOf"] as const) {
       const arr = obj[keyword];
       if (Array.isArray(arr)) {
         for (let i = 0; i < arr.length; i++) {
-          visitSchema(arr[i], `${pointer}/${keyword}/${i}`);
+          visitSchema(arr[i], [...path, keyword, String(i)]);
         }
       }
     }
 
     const not = obj.not;
     if (isObject(not) && !("$ref" in not)) {
-      visitSchema(not, `${pointer}/not`);
+      visitSchema(not, [...path, "not"]);
     }
 
     // $defs
     const defs = obj.$defs;
     if (isObject(defs)) {
       for (const [name, sub] of Object.entries(defs)) {
-        visitSchema(sub, `${pointer}/$defs/${escapeSegment(name)}`);
+        visitSchema(sub, [...path, "$defs", name]);
       }
     }
 
     // Conditional: if/then/else
-    for (const keyword of ["if", "then", "else"]) {
+    for (const keyword of ["if", "then", "else"] as const) {
       const sub = obj[keyword];
       if (isObject(sub) && !("$ref" in sub)) {
-        visitSchema(sub, `${pointer}/${keyword}`);
+        visitSchema(sub, [...path, keyword]);
       }
     }
   }
@@ -1044,10 +1080,7 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
   // Component schemas
   if (spec.components?.schemas) {
     for (const [name, schema] of Object.entries(spec.components.schemas)) {
-      visitSchema(
-        schema,
-        `#/components/schemas/${escapeSegment(name)}`,
-      );
+      visitSchema(schema, ["components", "schemas", name]);
     }
   }
 
@@ -1061,10 +1094,13 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
         const param = pathItem.parameters[i];
         if (!param || "$ref" in param) continue;
         if (param.schema && !("$ref" in param.schema)) {
-          visitSchema(
-            param.schema,
-            `#/paths/${escapeSegment(path)}/parameters/${i}/schema`,
-          );
+          visitSchema(param.schema, [
+            "paths",
+            path,
+            "parameters",
+            String(i),
+            "schema",
+          ]);
         }
       }
     }
@@ -1073,7 +1109,7 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
       const operation = pathItem[method];
       if (!operation) continue;
 
-      const opPointer = `#/paths/${escapeSegment(path)}/${method}`;
+      const opPath: PointerPath = ["paths", path, method];
 
       // Operation parameter schemas
       if (operation.parameters) {
@@ -1081,7 +1117,12 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
           const param = operation.parameters[i];
           if (!param || "$ref" in param) continue;
           if (param.schema && !("$ref" in param.schema)) {
-            visitSchema(param.schema, `${opPointer}/parameters/${i}/schema`);
+            visitSchema(param.schema, [
+              ...opPath,
+              "parameters",
+              String(i),
+              "schema",
+            ]);
           }
         }
       }
@@ -1095,12 +1136,13 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
         if (rb.content) {
           for (const [mediaType, mediaObj] of Object.entries(rb.content)) {
             if (mediaObj.schema) {
-              visitSchema(
-                mediaObj.schema,
-                `${opPointer}/requestBody/content/${
-                  escapeSegment(mediaType)
-                }/schema`,
-              );
+              visitSchema(mediaObj.schema, [
+                ...opPath,
+                "requestBody",
+                "content",
+                mediaType,
+                "schema",
+              ]);
             }
           }
         }
@@ -1112,21 +1154,23 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
           const [statusCode, response] of Object.entries(operation.responses)
         ) {
           if (!isObject(response) || "$ref" in response) continue;
-          const responsePointer = `${opPointer}/responses/${
-            escapeSegment(statusCode)
-          }`;
+          const responsePath: PointerPath = [
+            ...opPath,
+            "responses",
+            statusCode,
+          ];
 
           // Response content schemas
           const content = response.content;
           if (isObject(content)) {
             for (const [mediaType, mediaObj] of Object.entries(content)) {
               if (isObject(mediaObj) && mediaObj.schema) {
-                visitSchema(
-                  mediaObj.schema,
-                  `${responsePointer}/content/${
-                    escapeSegment(mediaType)
-                  }/schema`,
-                );
+                visitSchema(mediaObj.schema, [
+                  ...responsePath,
+                  "content",
+                  mediaType,
+                  "schema",
+                ]);
               }
             }
           }
@@ -1139,12 +1183,12 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
                 isObject(headerObj) && !("$ref" in headerObj) &&
                 headerObj.schema
               ) {
-                visitSchema(
-                  headerObj.schema,
-                  `${responsePointer}/headers/${
-                    escapeSegment(headerName)
-                  }/schema`,
-                );
+                visitSchema(headerObj.schema, [
+                  ...responsePath,
+                  "headers",
+                  headerName,
+                  "schema",
+                ]);
               }
             }
           }
@@ -1159,9 +1203,12 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
           if (!isObject(cbObj) || "$ref" in cbObj) continue;
           for (const [cbPath, cbPathItem] of Object.entries(cbObj)) {
             if (!isObject(cbPathItem)) continue;
-            const cbPointer = `${opPointer}/callbacks/${
-              escapeSegment(cbName)
-            }/${escapeSegment(cbPath)}`;
+            const cbBase: PointerPath = [
+              ...opPath,
+              "callbacks",
+              cbName,
+              cbPath,
+            ];
             for (const cbMethod of HTTP_METHODS) {
               const cbOp = cbPathItem[cbMethod];
               if (!isObject(cbOp)) continue;
@@ -1175,12 +1222,14 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
                     const [mt, mtObj] of Object.entries(cbContent)
                   ) {
                     if (isObject(mtObj) && mtObj.schema) {
-                      visitSchema(
-                        mtObj.schema,
-                        `${cbPointer}/${cbMethod}/requestBody/content/${
-                          escapeSegment(mt)
-                        }/schema`,
-                      );
+                      visitSchema(mtObj.schema, [
+                        ...cbBase,
+                        cbMethod,
+                        "requestBody",
+                        "content",
+                        mt,
+                        "schema",
+                      ]);
                     }
                   }
                 }
@@ -1199,12 +1248,15 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
                       const [mt, mtObj] of Object.entries(respContent)
                     ) {
                       if (isObject(mtObj) && mtObj.schema) {
-                        visitSchema(
-                          mtObj.schema,
-                          `${cbPointer}/${cbMethod}/responses/${
-                            escapeSegment(sc)
-                          }/content/${escapeSegment(mt)}/schema`,
-                        );
+                        visitSchema(mtObj.schema, [
+                          ...cbBase,
+                          cbMethod,
+                          "responses",
+                          sc,
+                          "content",
+                          mt,
+                          "schema",
+                        ]);
                       }
                     }
                   }
@@ -1224,14 +1276,19 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
       for (const method of HTTP_METHODS) {
         const operation = pathItem[method];
         if (!operation) continue;
-        const opPointer = `#/webhooks/${escapeSegment(name)}/${method}`;
+        const opPath: PointerPath = ["webhooks", name, method];
 
         if (operation.parameters) {
           for (let i = 0; i < operation.parameters.length; i++) {
             const param = operation.parameters[i];
             if (!param || "$ref" in param) continue;
             if (param.schema && !("$ref" in param.schema)) {
-              visitSchema(param.schema, `${opPointer}/parameters/${i}/schema`);
+              visitSchema(param.schema, [
+                ...opPath,
+                "parameters",
+                String(i),
+                "schema",
+              ]);
             }
           }
         }
@@ -1244,12 +1301,13 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
           if (rb.content) {
             for (const [mt, mtObj] of Object.entries(rb.content)) {
               if (mtObj.schema) {
-                visitSchema(
-                  mtObj.schema,
-                  `${opPointer}/requestBody/content/${
-                    escapeSegment(mt)
-                  }/schema`,
-                );
+                visitSchema(mtObj.schema, [
+                  ...opPath,
+                  "requestBody",
+                  "content",
+                  mt,
+                  "schema",
+                ]);
               }
             }
           }
@@ -1264,12 +1322,14 @@ function walkSpec(spec: OpenAPIRaw): WalkResult {
             if (isObject(content)) {
               for (const [mt, mtObj] of Object.entries(content)) {
                 if (isObject(mtObj) && mtObj.schema) {
-                  visitSchema(
-                    mtObj.schema,
-                    `${opPointer}/responses/${escapeSegment(sc)}/content/${
-                      escapeSegment(mt)
-                    }/schema`,
-                  );
+                  visitSchema(mtObj.schema, [
+                    ...opPath,
+                    "responses",
+                    sc,
+                    "content",
+                    mt,
+                    "schema",
+                  ]);
                 }
               }
             }

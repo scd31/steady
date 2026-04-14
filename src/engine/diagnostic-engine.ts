@@ -16,7 +16,10 @@
  */
 
 import type { Schema } from "@steady/json-schema";
-import { escapeSegment, type FragmentPointer } from "@steady/json-pointer";
+import {
+  formatFragmentPointer,
+  type FragmentPointer,
+} from "@steady/json-pointer";
 import type { Diagnostic, DiagnosticLocation } from "../diagnostic.ts";
 import type { QueryArrayFormat, QueryObjectFormat } from "../types.ts";
 import type {
@@ -546,7 +549,7 @@ function createMissingParamDiagnostic(
     severity: codeInfo.severity,
     category: codeInfo.category,
     requestPath: `${param.in}.${param.name}`,
-    specPointer: `#/paths/${escapeSegment(pathPattern)}`,
+    specPointer: formatFragmentPointer(["paths", pathPattern]),
     message: `Missing required ${param.in} parameter: ${param.name}`,
     attribution: {
       confidence: 1.0,
@@ -574,7 +577,12 @@ function createMissingBodyDiagnostic(
     severity: e3005.severity,
     category: e3005.category,
     requestPath: "body",
-    specPointer: `#/paths/${escapeSegment(pathPattern)}/${method}/requestBody`,
+    specPointer: formatFragmentPointer([
+      "paths",
+      pathPattern,
+      method,
+      "requestBody",
+    ]),
     message:
       `Operation ${method.toUpperCase()} ${pathPattern} requires a request body`,
     attribution: {
@@ -604,7 +612,12 @@ function createMissingResponsesDiagnostic(
     severity: e1010.severity,
     category: e1010.category,
     requestPath: `${method.toUpperCase()} ${pathPattern}`,
-    specPointer: `#/paths/${escapeSegment(pathPattern)}/${method}/responses`,
+    specPointer: formatFragmentPointer([
+      "paths",
+      pathPattern,
+      method,
+      "responses",
+    ]),
     message:
       `Operation ${method.toUpperCase()} ${pathPattern} has no response definitions`,
     attribution: {
@@ -633,9 +646,13 @@ function createWrongContentTypeDiagnostic(
     severity: e3006.severity,
     category: e3006.category,
     requestPath: "header.content-type",
-    specPointer: `#/paths/${
-      escapeSegment(pathPattern)
-    }/${method}/requestBody/content`,
+    specPointer: formatFragmentPointer([
+      "paths",
+      pathPattern,
+      method,
+      "requestBody",
+      "content",
+    ]),
     message: `Content-Type "${actualType}" is not accepted. Expected: ${
       acceptedTypes.join(", ")
     }`,
@@ -823,7 +840,7 @@ function createSerializationMismatchDiagnostic(
     severity: e3014.severity,
     category: e3014.category,
     requestPath: `query.${actualKey}`,
-    specPointer: `#/paths/${escapeSegment(pathPattern)}`,
+    specPointer: formatFragmentPointer(["paths", pathPattern]),
     message:
       `Query parameter "${actualKey}" looks like a serialization of "${baseName}" - check the encoding format`,
     expected: baseName,
@@ -857,7 +874,7 @@ function createFormFormatMismatchDiagnostic(
     severity: e3023.severity,
     category: e3023.category,
     requestPath: `body.${baseName}`,
-    specPointer: `#/paths/${escapeSegment(pathPattern)}`,
+    specPointer: formatFragmentPointer(["paths", pathPattern]),
     message:
       `Form field "${actualKey}" uses ${detectedFormat} encoding, but formArrayFormat is "${configuredFormat}"`,
     expected: configuredFormat,
@@ -888,7 +905,7 @@ function createUndocumentedParamDiagnostic(
     severity: e3015.severity,
     category: e3015.category,
     requestPath: `query.${key}`,
-    specPointer: `#/paths/${escapeSegment(pathPattern)}`,
+    specPointer: formatFragmentPointer(["paths", pathPattern]),
     message: `Query parameter "${key}" is not defined in the spec`,
     actual: key,
     attribution: {
