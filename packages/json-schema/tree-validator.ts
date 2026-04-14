@@ -16,10 +16,12 @@
  */
 
 import {
-  escapeSegment,
+  formatFragmentPointer,
   type FragmentPointer,
   isFragmentPointer,
   isPlainObject,
+  parseFragmentPointer,
+  type PointerPath,
 } from "@steady/json-pointer";
 import { isSchema } from "./types.ts";
 import type { Schema } from "./types.ts";
@@ -93,8 +95,9 @@ export class TreeValidator {
     dataPath: string[],
   ): ValidationNode {
     const errors: ValidationNode[] = [];
+    const path = parseFragmentPointer(schemaPath);
 
-    this.validateSchema(data, schema, schemaPath, dataPath, errors, schema);
+    this.validateSchema(data, schema, path, dataPath, errors, schema);
 
     if (errors.length === 0) {
       return { valid: true, path: dataPath, schemaPath };
@@ -111,11 +114,17 @@ export class TreeValidator {
   /**
    * Core recursive validation. Collects error nodes into `errors`.
    * `rootSchema` is the top-level schema for $ref resolution.
+   *
+   * `schemaPath` is the structured position inside the schema tree. It
+   * is a `PointerPath`, not a `FragmentPointer`: new segments are
+   * appended via `[...schemaPath, segment]`, and the only time a
+   * `FragmentPointer` is produced is when it leaves this module via a
+   * `ValidationNode`, at which point we call `formatFragmentPointer`.
    */
   private validateSchema(
     data: unknown,
     schema: Schema | boolean,
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -128,7 +137,7 @@ export class TreeValidator {
           valid: false,
           keyword: "false",
           path: dataPath,
-          schemaPath,
+          schemaPath: formatFragmentPointer(schemaPath),
           message: "Schema is false; no value is valid",
         });
       }
@@ -140,13 +149,13 @@ export class TreeValidator {
     if (schema.$ref) {
       const resolved = this.resolveRef(schema.$ref, rootSchema);
       if (resolved !== undefined) {
-        const refSchemaPath: FragmentPointer = isFragmentPointer(schema.$ref)
-          ? schema.$ref
+        const refPath: PointerPath = isFragmentPointer(schema.$ref)
+          ? parseFragmentPointer(schema.$ref)
           : schemaPath;
         this.validateSchema(
           data,
           resolved,
-          refSchemaPath,
+          refPath,
           dataPath,
           errors,
           rootSchema,
@@ -214,7 +223,7 @@ export class TreeValidator {
       this.validateSchema(
         data,
         schema.not,
-        `${schemaPath}/not`,
+        [...schemaPath, "not"],
         dataPath,
         innerErrors,
         rootSchema,
@@ -224,7 +233,7 @@ export class TreeValidator {
         errors.push({
           keyword: "not",
           path: dataPath,
-          schemaPath,
+          schemaPath: formatFragmentPointer(schemaPath),
           valid: false,
           message: "Value must not match the schema in 'not'",
         });
@@ -315,7 +324,7 @@ export class TreeValidator {
           valid: false,
           keyword: "minProperties",
           path: dataPath,
-          schemaPath,
+          schemaPath: formatFragmentPointer(schemaPath),
           expected: schema.minProperties,
           actual: Object.keys(obj).length,
         });
@@ -328,7 +337,7 @@ export class TreeValidator {
           valid: false,
           keyword: "maxProperties",
           path: dataPath,
-          schemaPath,
+          schemaPath: formatFragmentPointer(schemaPath),
           expected: schema.maxProperties,
           actual: Object.keys(obj).length,
         });
@@ -363,7 +372,7 @@ export class TreeValidator {
   private validateType(
     data: unknown,
     schema: Schema,
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
     context?: { arrayItem?: boolean },
@@ -388,7 +397,7 @@ export class TreeValidator {
         valid: false,
         keyword: "type",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: Array.isArray(schema.type) ? schema.type : schema.type,
         actual: data === null ? null : actualType,
         arrayItem: context?.arrayItem || undefined,
@@ -426,7 +435,7 @@ export class TreeValidator {
   private validateRequired(
     obj: Record<string, unknown>,
     required: string[],
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
   ): void {
@@ -436,7 +445,7 @@ export class TreeValidator {
           valid: false,
           keyword: "required",
           path: dataPath,
-          schemaPath: `${schemaPath}`,
+          schemaPath: formatFragmentPointer(schemaPath),
           field,
           expected: field,
         });
@@ -449,7 +458,7 @@ export class TreeValidator {
   private validateProperties(
     obj: Record<string, unknown>,
     properties: Record<string, Schema>,
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -461,7 +470,7 @@ export class TreeValidator {
         this.validateSchema(
           obj[propName],
           propSchema,
-          `${schemaPath}/properties/${escapeSegment(propName)}`,
+          [...schemaPath, "properties", propName],
           [...dataPath, propName],
           errors,
           rootSchema,
@@ -475,7 +484,7 @@ export class TreeValidator {
   private validatePatternProperties(
     obj: Record<string, unknown>,
     patternProperties: Record<string, Schema>,
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -495,7 +504,7 @@ export class TreeValidator {
           this.validateSchema(
             obj[propName],
             propSchema,
-            `${schemaPath}/patternProperties/${escapeSegment(pattern)}`,
+            [...schemaPath, "patternProperties", pattern],
             [...dataPath, propName],
             errors,
             rootSchema,
@@ -510,7 +519,7 @@ export class TreeValidator {
   private validateAdditionalProperties(
     obj: Record<string, unknown>,
     schema: Schema,
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -524,7 +533,7 @@ export class TreeValidator {
           valid: false,
           keyword: "additionalProperties",
           path: dataPath,
-          schemaPath,
+          schemaPath: formatFragmentPointer(schemaPath),
           field: propName,
           expected: false,
         });
@@ -535,7 +544,7 @@ export class TreeValidator {
         this.validateSchema(
           obj[propName],
           schema.additionalProperties,
-          `${schemaPath}/additionalProperties`,
+          [...schemaPath, "additionalProperties"],
           [...dataPath, propName],
           errors,
           rootSchema,
@@ -549,7 +558,7 @@ export class TreeValidator {
   private validateEnum(
     data: unknown,
     enumValues: unknown[],
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
   ): void {
@@ -558,7 +567,7 @@ export class TreeValidator {
         valid: false,
         keyword: "enum",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: enumValues,
         actual: data,
       });
@@ -568,7 +577,7 @@ export class TreeValidator {
   private validateConst(
     data: unknown,
     constValue: unknown,
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
   ): void {
@@ -577,7 +586,7 @@ export class TreeValidator {
         valid: false,
         keyword: "const",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: constValue,
         actual: data,
       });
@@ -589,7 +598,7 @@ export class TreeValidator {
   private validateString(
     data: string,
     schema: Schema,
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
   ): void {
@@ -598,7 +607,7 @@ export class TreeValidator {
         valid: false,
         keyword: "minLength",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: schema.minLength,
         actual: data.length,
       });
@@ -609,7 +618,7 @@ export class TreeValidator {
         valid: false,
         keyword: "maxLength",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: schema.maxLength,
         actual: data.length,
       });
@@ -623,7 +632,7 @@ export class TreeValidator {
             valid: false,
             keyword: "pattern",
             path: dataPath,
-            schemaPath,
+            schemaPath: formatFragmentPointer(schemaPath),
             expected: schema.pattern,
             actual: data,
           });
@@ -639,7 +648,7 @@ export class TreeValidator {
           valid: false,
           keyword: "format",
           path: dataPath,
-          schemaPath,
+          schemaPath: formatFragmentPointer(schemaPath),
           expected: schema.format,
           actual: data,
         });
@@ -652,7 +661,7 @@ export class TreeValidator {
   private validateNumber(
     data: number,
     schema: Schema,
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
   ): void {
@@ -661,7 +670,7 @@ export class TreeValidator {
         valid: false,
         keyword: "minimum",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: schema.minimum,
         actual: data,
       });
@@ -671,7 +680,7 @@ export class TreeValidator {
         valid: false,
         keyword: "maximum",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: schema.maximum,
         actual: data,
       });
@@ -684,7 +693,7 @@ export class TreeValidator {
         valid: false,
         keyword: "exclusiveMinimum",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: schema.exclusiveMinimum,
         actual: data,
       });
@@ -696,7 +705,7 @@ export class TreeValidator {
         valid: false,
         keyword: "exclusiveMinimum",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: schema.minimum,
         actual: data,
       });
@@ -709,7 +718,7 @@ export class TreeValidator {
         valid: false,
         keyword: "exclusiveMaximum",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: schema.exclusiveMaximum,
         actual: data,
       });
@@ -721,7 +730,7 @@ export class TreeValidator {
         valid: false,
         keyword: "exclusiveMaximum",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: schema.maximum,
         actual: data,
       });
@@ -737,7 +746,7 @@ export class TreeValidator {
           valid: false,
           keyword: "multipleOf",
           path: dataPath,
-          schemaPath,
+          schemaPath: formatFragmentPointer(schemaPath),
           expected: schema.multipleOf,
           actual: data,
         });
@@ -750,7 +759,7 @@ export class TreeValidator {
   private validateArray(
     data: unknown[],
     schema: Schema,
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -760,7 +769,7 @@ export class TreeValidator {
         valid: false,
         keyword: "minItems",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: schema.minItems,
         actual: data.length,
       });
@@ -771,7 +780,7 @@ export class TreeValidator {
         valid: false,
         keyword: "maxItems",
         path: dataPath,
-        schemaPath,
+        schemaPath: formatFragmentPointer(schemaPath),
         expected: schema.maxItems,
         actual: data.length,
       });
@@ -786,7 +795,7 @@ export class TreeValidator {
         this.validateSchema(
           data[i],
           schema.items,
-          `${schemaPath}/items`,
+          [...schemaPath, "items"],
           [...dataPath, String(i)],
           errors,
           rootSchema,
@@ -803,7 +812,7 @@ export class TreeValidator {
           this.validateSchema(
             data[i],
             itemSchema,
-            `${schemaPath}/prefixItems/${i}`,
+            [...schemaPath, "prefixItems", String(i)],
             [...dataPath, String(i)],
             errors,
             rootSchema,
@@ -822,7 +831,7 @@ export class TreeValidator {
             valid: false,
             keyword: "uniqueItems",
             path: dataPath,
-            schemaPath,
+            schemaPath: formatFragmentPointer(schemaPath),
             message: `Duplicate item at index ${i}`,
             expected: true,
             actual: false,
@@ -839,7 +848,7 @@ export class TreeValidator {
   private validateOneOf(
     data: unknown,
     variants: Schema[],
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -851,11 +860,12 @@ export class TreeValidator {
       const variant = variants[i];
       if (!variant) continue;
 
+      const variantPath: PointerPath = [...schemaPath, "oneOf", String(i)];
       const variantErrors: ValidationNode[] = [];
       this.validateSchema(
         data,
         variant,
-        `${schemaPath}/oneOf/${i}`,
+        variantPath,
         dataPath,
         variantErrors,
         rootSchema,
@@ -866,7 +876,7 @@ export class TreeValidator {
       const variantNode: ValidationNode = {
         valid,
         path: dataPath,
-        schemaPath: `${schemaPath}/oneOf/${i}`,
+        schemaPath: formatFragmentPointer(variantPath),
         variantIndex: i,
         children: variantErrors.length > 0 ? variantErrors : undefined,
       };
@@ -885,7 +895,7 @@ export class TreeValidator {
       valid: false,
       keyword: "oneOf",
       path: dataPath,
-      schemaPath,
+      schemaPath: formatFragmentPointer(schemaPath),
       children: variantResults,
     });
   }
@@ -893,7 +903,7 @@ export class TreeValidator {
   private validateAnyOf(
     data: unknown,
     variants: Schema[],
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -905,11 +915,12 @@ export class TreeValidator {
       const variant = variants[i];
       if (!variant) continue;
 
+      const variantPath: PointerPath = [...schemaPath, "anyOf", String(i)];
       const variantErrors: ValidationNode[] = [];
       this.validateSchema(
         data,
         variant,
-        `${schemaPath}/anyOf/${i}`,
+        variantPath,
         dataPath,
         variantErrors,
         rootSchema,
@@ -920,7 +931,7 @@ export class TreeValidator {
       variantResults.push({
         valid,
         path: dataPath,
-        schemaPath: `${schemaPath}/anyOf/${i}`,
+        schemaPath: formatFragmentPointer(variantPath),
         variantIndex: i,
         children: variantErrors.length > 0 ? variantErrors : undefined,
       });
@@ -936,7 +947,7 @@ export class TreeValidator {
       valid: false,
       keyword: "anyOf",
       path: dataPath,
-      schemaPath,
+      schemaPath: formatFragmentPointer(schemaPath),
       children: variantResults,
     });
   }
@@ -944,7 +955,7 @@ export class TreeValidator {
   private validateAllOf(
     data: unknown,
     subschemas: Schema[],
-    schemaPath: FragmentPointer,
+    schemaPath: PointerPath,
     dataPath: string[],
     errors: ValidationNode[],
     rootSchema: Schema | boolean,
@@ -957,11 +968,12 @@ export class TreeValidator {
       const sub = subschemas[i];
       if (sub === undefined || sub === null) continue;
 
+      const subPath: PointerPath = [...schemaPath, "allOf", String(i)];
       const subErrors: ValidationNode[] = [];
       this.validateSchema(
         data,
         sub,
-        `${schemaPath}/allOf/${i}`,
+        subPath,
         dataPath,
         subErrors,
         rootSchema,
@@ -974,7 +986,7 @@ export class TreeValidator {
       childResults.push({
         valid,
         path: dataPath,
-        schemaPath: `${schemaPath}/allOf/${i}`,
+        schemaPath: formatFragmentPointer(subPath),
         children: subErrors.length > 0 ? subErrors : undefined,
       });
     }
@@ -987,7 +999,7 @@ export class TreeValidator {
       valid: false,
       keyword: "allOf",
       path: dataPath,
-      schemaPath,
+      schemaPath: formatFragmentPointer(schemaPath),
       children: childResults,
     });
   }

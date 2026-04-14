@@ -5,7 +5,11 @@
  * and response generation. This is critical for performance with large schemas.
  */
 
-import { escapeSegment, type FragmentPointer } from "@steady/json-pointer";
+import {
+  formatFragmentPointer,
+  type FragmentPointer,
+  type PointerPath,
+} from "@steady/json-pointer";
 import type {
   ComplexityMetrics,
   ProcessedSchema,
@@ -37,7 +41,7 @@ export class SchemaIndexer {
     const features = new Set<string>();
 
     // Walk the schema tree once, building all indexes
-    this.walkSchema(schema, "#", (subSchema, pointer) => {
+    this.walkSchema(schema, [], (subSchema, pointer) => {
       // Add to pointer index
       index.byPointer.set(pointer, subSchema);
 
@@ -111,14 +115,23 @@ export class SchemaIndexer {
   }
 
   /**
-   * Walk the schema tree, calling visitor for each sub-schema
+   * Walk the schema tree, calling visitor for each sub-schema.
+   *
+   * Recursion is path-structural; each child appends a segment via
+   * `[...path, segment]`. The visitor receives a formatted
+   * `FragmentPointer` (the edge) and can use it as a map key, prefix
+   * check, etc. Cycle detection uses the formatted pointer string so
+   * that equivalent paths deduplicate consistently with how downstream
+   * indexes store them.
    */
   private walkSchema(
     schema: Schema | boolean,
-    pointer: FragmentPointer,
+    path: PointerPath,
     visitor: (schema: Schema | boolean, pointer: FragmentPointer) => void,
-    visited = new Set<string>(),
+    visited = new Set<FragmentPointer>(),
   ): void {
+    const pointer = formatFragmentPointer(path);
+
     // Prevent infinite recursion
     if (visited.has(pointer)) return;
     visited.add(pointer);
@@ -131,12 +144,7 @@ export class SchemaIndexer {
     // Walk all possible schema locations
     if (schema.$defs) {
       for (const [key, subSchema] of Object.entries(schema.$defs)) {
-        this.walkSchema(
-          subSchema,
-          `${pointer}/$defs/${escapeSegment(key)}`,
-          visitor,
-          visited,
-        );
+        this.walkSchema(subSchema, [...path, "$defs", key], visitor, visited);
       }
     }
 
@@ -144,7 +152,7 @@ export class SchemaIndexer {
       for (const [key, subSchema] of Object.entries(schema.properties)) {
         this.walkSchema(
           subSchema,
-          `${pointer}/properties/${escapeSegment(key)}`,
+          [...path, "properties", key],
           visitor,
           visited,
         );
@@ -157,7 +165,7 @@ export class SchemaIndexer {
       ) {
         this.walkSchema(
           subSchema,
-          `${pointer}/patternProperties/${escapeSegment(pattern)}`,
+          [...path, "patternProperties", pattern],
           visitor,
           visited,
         );
@@ -170,7 +178,7 @@ export class SchemaIndexer {
     ) {
       this.walkSchema(
         schema.additionalProperties,
-        `${pointer}/additionalProperties`,
+        [...path, "additionalProperties"],
         visitor,
         visited,
       );
@@ -181,18 +189,13 @@ export class SchemaIndexer {
         schema.items.forEach((subSchema, index) => {
           this.walkSchema(
             subSchema,
-            `${pointer}/items/${index}`,
+            [...path, "items", String(index)],
             visitor,
             visited,
           );
         });
       } else {
-        this.walkSchema(
-          schema.items,
-          `${pointer}/items`,
-          visitor,
-          visited,
-        );
+        this.walkSchema(schema.items, [...path, "items"], visitor, visited);
       }
     }
 
@@ -200,7 +203,7 @@ export class SchemaIndexer {
       schema.prefixItems.forEach((subSchema, index) => {
         this.walkSchema(
           subSchema,
-          `${pointer}/prefixItems/${index}`,
+          [...path, "prefixItems", String(index)],
           visitor,
           visited,
         );
@@ -208,18 +211,13 @@ export class SchemaIndexer {
     }
 
     if (schema.contains) {
-      this.walkSchema(
-        schema.contains,
-        `${pointer}/contains`,
-        visitor,
-        visited,
-      );
+      this.walkSchema(schema.contains, [...path, "contains"], visitor, visited);
     }
 
     if (schema.propertyNames) {
       this.walkSchema(
         schema.propertyNames,
-        `${pointer}/propertyNames`,
+        [...path, "propertyNames"],
         visitor,
         visited,
       );
@@ -230,7 +228,7 @@ export class SchemaIndexer {
       schema.allOf.forEach((subSchema, index) => {
         this.walkSchema(
           subSchema,
-          `${pointer}/allOf/${index}`,
+          [...path, "allOf", String(index)],
           visitor,
           visited,
         );
@@ -241,7 +239,7 @@ export class SchemaIndexer {
       schema.anyOf.forEach((subSchema, index) => {
         this.walkSchema(
           subSchema,
-          `${pointer}/anyOf/${index}`,
+          [...path, "anyOf", String(index)],
           visitor,
           visited,
         );
@@ -252,7 +250,7 @@ export class SchemaIndexer {
       schema.oneOf.forEach((subSchema, index) => {
         this.walkSchema(
           subSchema,
-          `${pointer}/oneOf/${index}`,
+          [...path, "oneOf", String(index)],
           visitor,
           visited,
         );
@@ -260,40 +258,20 @@ export class SchemaIndexer {
     }
 
     if (schema.not) {
-      this.walkSchema(
-        schema.not,
-        `${pointer}/not`,
-        visitor,
-        visited,
-      );
+      this.walkSchema(schema.not, [...path, "not"], visitor, visited);
     }
 
     // Conditional schemas
     if (schema.if) {
-      this.walkSchema(
-        schema.if,
-        `${pointer}/if`,
-        visitor,
-        visited,
-      );
+      this.walkSchema(schema.if, [...path, "if"], visitor, visited);
     }
 
     if (schema.then) {
-      this.walkSchema(
-        schema.then,
-        `${pointer}/then`,
-        visitor,
-        visited,
-      );
+      this.walkSchema(schema.then, [...path, "then"], visitor, visited);
     }
 
     if (schema.else) {
-      this.walkSchema(
-        schema.else,
-        `${pointer}/else`,
-        visitor,
-        visited,
-      );
+      this.walkSchema(schema.else, [...path, "else"], visitor, visited);
     }
 
     // Dependent schemas
@@ -301,7 +279,7 @@ export class SchemaIndexer {
       for (const [key, subSchema] of Object.entries(schema.dependentSchemas)) {
         this.walkSchema(
           subSchema,
-          `${pointer}/dependentSchemas/${escapeSegment(key)}`,
+          [...path, "dependentSchemas", key],
           visitor,
           visited,
         );
@@ -315,7 +293,7 @@ export class SchemaIndexer {
     ) {
       this.walkSchema(
         schema.unevaluatedProperties,
-        `${pointer}/unevaluatedProperties`,
+        [...path, "unevaluatedProperties"],
         visitor,
         visited,
       );
@@ -326,7 +304,7 @@ export class SchemaIndexer {
     ) {
       this.walkSchema(
         schema.unevaluatedItems,
-        `${pointer}/unevaluatedItems`,
+        [...path, "unevaluatedItems"],
         visitor,
         visited,
       );
