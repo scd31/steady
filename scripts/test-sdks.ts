@@ -135,11 +135,17 @@ const SDKS: SDK[] = [
     repo: "Finch-API/finch-api-python",
     name: "finch-api-python",
     language: "python",
+    validatorFlags: [
+      "--validator-query-array-format=brackets",
+    ],
   },
   {
     repo: "orbcorp/orb-python",
     name: "orb-python",
     language: "python",
+    validatorFlags: [
+      "--validator-query-array-format=brackets",
+    ],
   },
   {
     repo: "writer/writer-python",
