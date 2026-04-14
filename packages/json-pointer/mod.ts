@@ -27,10 +27,13 @@ export function isJsonPointer(s: string): s is JsonPointer {
 export {
   escapeSegment,
   exists,
+  formatFragmentPointer,
   formatPointer,
   JsonPointerError,
   listPointers,
+  parseFragmentPointer,
   parsePointer,
+  type PointerPath,
   resolve,
   set,
   unescapeSegment,

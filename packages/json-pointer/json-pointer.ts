@@ -3,6 +3,26 @@
  * https://tools.ietf.org/html/rfc6901
  */
 
+import type { FragmentPointer } from "./mod.ts";
+
+/**
+ * A JSON Pointer expressed as an array of decoded path segments.
+ *
+ * This is the structured representation used inside traversal and
+ * building logic. `FragmentPointer` strings are parsed into a
+ * `PointerPath` at the incoming boundary and formatted back into a
+ * `FragmentPointer` only at the outgoing boundary.
+ *
+ * Segments are stored in their RFC 6901 decoded form: a segment that
+ * contains "/" is stored as "foo/bar", not "foo~1bar"; a segment that
+ * contains "~" is stored as "foo~bar", not "foo~0bar". Escaping happens
+ * only inside `formatFragmentPointer` / `formatPointer`.
+ *
+ * `readonly` so that recursive walkers can share a base path and append
+ * via `[...path, segment]` without risk of aliasing mutation.
+ */
+export type PointerPath = readonly string[];
+
 export class JsonPointerError extends Error {
   constructor(message: string, public pointer: string) {
     super(message);
@@ -94,11 +114,53 @@ export function unescapeSegment(segment: string): string {
 /**
  * Convert an array of path segments to a JSON Pointer string
  */
-export function formatPointer(segments: string[]): string {
+export function formatPointer(segments: readonly string[]): string {
   if (segments.length === 0) {
     return "";
   }
   return "/" + segments.map(escapeSegment).join("/");
+}
+
+/**
+ * Parse a `FragmentPointer` into a structured `PointerPath`.
+ *
+ * This is the "incoming boundary" function: use it once, at the point
+ * a raw pointer string enters the logic, then pass the `PointerPath`
+ * through the rest of the call graph.
+ *
+ * Handles both layers of decoding: RFC 3986 percent-decoding (the
+ * fragment identifier layer) and RFC 6901 segment unescaping.
+ *
+ * Examples:
+ *   "#"                       → []
+ *   "#/foo/bar"               → ["foo", "bar"]
+ *   "#/a~1b/c~0d"             → ["a/b", "c~d"]
+ *   "#/User%20Name"           → ["User Name"]
+ */
+export function parseFragmentPointer(pointer: FragmentPointer): PointerPath {
+  return parsePointer(toBarePointer(pointer));
+}
+
+/**
+ * Format a structured `PointerPath` as a `FragmentPointer`.
+ *
+ * This is the "outgoing boundary" function: use it only at the point
+ * a structured path needs to leave the logic (stored in a diagnostic,
+ * sent in a response, printed to the terminal, looked up in the
+ * registry).
+ *
+ * Segments are RFC 6901 escaped. Percent-encoding is not applied: our
+ * `parseFragmentPointer` accepts both forms and most downstream tools
+ * do the same.
+ *
+ * Examples:
+ *   []                        → "#"
+ *   ["foo", "bar"]            → "#/foo/bar"
+ *   ["a/b", "c~d"]            → "#/a~1b/c~0d"
+ */
+export function formatFragmentPointer(path: PointerPath): FragmentPointer {
+  if (path.length === 0) return "#";
+  return `#${formatPointer(path)}`;
 }
 
 /**

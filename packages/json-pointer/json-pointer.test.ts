@@ -2,14 +2,18 @@ import { assertEquals, assertThrows } from "@std/assert";
 import {
   escapeSegment,
   exists,
+  formatFragmentPointer,
   formatPointer,
   JsonPointerError,
   listPointers,
+  parseFragmentPointer,
   parsePointer,
+  type PointerPath,
   resolve,
   set,
   unescapeSegment,
 } from "./json-pointer.ts";
+import type { FragmentPointer } from "./mod.ts";
 
 Deno.test("parsePointer - parses valid pointers", () => {
   assertEquals(parsePointer(""), []);
@@ -411,4 +415,80 @@ Deno.test("listPointers - handles circular references without hanging", () => {
   assertEquals(pointers.includes("/child"), true);
   assertEquals(pointers.includes("/child/name"), true);
   // Note: we're NOT asserting exact count because cycle handling may vary
+});
+
+// ── PointerPath / FragmentPointer primitives ──────────────────────────
+
+Deno.test("parseFragmentPointer - root fragment", () => {
+  assertEquals(parseFragmentPointer("#"), []);
+});
+
+Deno.test("parseFragmentPointer - simple path", () => {
+  assertEquals(parseFragmentPointer("#/foo/bar"), ["foo", "bar"]);
+});
+
+Deno.test("parseFragmentPointer - RFC 6901 unescapes segments", () => {
+  assertEquals(parseFragmentPointer("#/a~1b/c~0d"), ["a/b", "c~d"]);
+});
+
+Deno.test("parseFragmentPointer - percent-decodes fragment layer", () => {
+  // "#/User%20Name" → ["User Name"]
+  assertEquals(parseFragmentPointer("#/User%20Name"), ["User Name"]);
+});
+
+Deno.test("parseFragmentPointer - rejects invalid percent encoding", () => {
+  assertThrows(
+    () => parseFragmentPointer("#/%ZZ"),
+    JsonPointerError,
+    "Invalid percent encoding",
+  );
+});
+
+Deno.test("formatFragmentPointer - empty path is root", () => {
+  assertEquals(formatFragmentPointer([]), "#");
+});
+
+Deno.test("formatFragmentPointer - simple path", () => {
+  assertEquals(formatFragmentPointer(["foo", "bar"]), "#/foo/bar");
+});
+
+Deno.test("formatFragmentPointer - RFC 6901 escapes segments", () => {
+  assertEquals(formatFragmentPointer(["a/b", "c~d"]), "#/a~1b/c~0d");
+});
+
+Deno.test("formatFragmentPointer - accepts readonly string[]", () => {
+  const path: PointerPath = ["components", "schemas", "User"];
+  const result: FragmentPointer = formatFragmentPointer(path);
+  assertEquals(result, "#/components/schemas/User");
+});
+
+Deno.test("parseFragmentPointer and formatFragmentPointer are inverses", () => {
+  const cases: FragmentPointer[] = [
+    "#",
+    "#/foo",
+    "#/foo/bar/baz",
+    "#/a~1b/c~0d",
+    "#/0/1/2",
+  ];
+  for (const ptr of cases) {
+    assertEquals(formatFragmentPointer(parseFragmentPointer(ptr)), ptr);
+  }
+});
+
+Deno.test("formatPointer accepts readonly string[]", () => {
+  // formatPointer is the bare counterpart; it must also accept readonly
+  // for callers building segments with `[...path, "x"]`.
+  const path: readonly string[] = ["foo", "bar"];
+  assertEquals(formatPointer(path), "/foo/bar");
+});
+
+Deno.test("PointerPath append via spread produces a new FragmentPointer", () => {
+  const base: PointerPath = ["paths", "/users"];
+  const child: PointerPath = [...base, "get", "responses", "200"];
+  assertEquals(
+    formatFragmentPointer(child),
+    "#/paths/~1users/get/responses/200",
+  );
+  // base is not mutated
+  assertEquals(base.length, 2);
 });
