@@ -361,7 +361,7 @@ const CODES: Record<ECode, ECodeDefinition> = {
     context: "runtime",
   },
   E3023: {
-    title: "Form array format mismatch",
+    title: "Form field format mismatch",
     severity: "warning",
     category: "sdk-issue",
     context: "runtime",

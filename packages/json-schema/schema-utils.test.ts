@@ -8,6 +8,7 @@ import { assertEquals } from "@std/assert";
 import type { Schema } from "./types.ts";
 import {
   coerceDeep,
+  coerceFormValue,
   coerceScalar,
   effectiveItems,
   effectiveProperties,
@@ -606,6 +607,63 @@ Deno.test("coerceScalar: deeply nested composition resolves type", () => {
     }),
     10,
   );
+});
+
+// ── coerceFormValue ───────────────────────────────────────────────
+
+Deno.test("coerceFormValue: integer schema coerces to integer", () => {
+  assertEquals(coerceFormValue("42", { type: "integer" }), 42);
+});
+
+Deno.test("coerceFormValue: number schema coerces to number", () => {
+  assertEquals(coerceFormValue("3.14", { type: "number" }), 3.14);
+});
+
+Deno.test("coerceFormValue: boolean schema coerces true/false", () => {
+  assertEquals(coerceFormValue("true", { type: "boolean" }), true);
+  assertEquals(coerceFormValue("false", { type: "boolean" }), false);
+});
+
+Deno.test("coerceFormValue: string schema returns raw", () => {
+  assertEquals(coerceFormValue("hello", { type: "string" }), "hello");
+});
+
+Deno.test("coerceFormValue: object schema returns raw (complex type passthrough)", () => {
+  // Complex types flow through unchanged; downstream validation reports
+  // the type mismatch. This is the extension point for future handling
+  // (e.g. JSON-encoded multipart complex fields).
+  assertEquals(
+    coerceFormValue('{"a":1}', { type: "object" }),
+    '{"a":1}',
+  );
+});
+
+Deno.test("coerceFormValue: array schema returns raw (complex type passthrough)", () => {
+  assertEquals(
+    coerceFormValue("[1,2,3]", { type: "array" }),
+    "[1,2,3]",
+  );
+});
+
+Deno.test("coerceFormValue: walks allOf composition for primitives", () => {
+  assertEquals(
+    coerceFormValue("42", { allOf: [{ type: "integer" }] }),
+    42,
+  );
+});
+
+Deno.test("coerceFormValue: walks anyOf composition for primitives", () => {
+  assertEquals(
+    coerceFormValue("true", {
+      anyOf: [{ type: "boolean" }, { type: "null" }],
+    }),
+    true,
+  );
+});
+
+Deno.test("coerceFormValue: boolean schema literal returns raw", () => {
+  assertEquals(coerceFormValue("hello", true), "hello");
+  assertEquals(coerceFormValue("hello", false), "hello");
 });
 
 // ── coerceDeep ────────────────────────────────────────────────────

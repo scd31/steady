@@ -323,6 +323,25 @@ export function coerceScalar(raw: string, schema: Schema | boolean): unknown {
 }
 
 /**
+ * Coerce a raw form-field string to the type declared by the schema.
+ *
+ * This is the terminal transformation applied to every leaf value in the
+ * form parser. For primitive target types (integer, number, boolean,
+ * string, null) it delegates to `coerceScalar`. For complex target types
+ * (object, array) the raw string is returned unchanged; validation
+ * downstream will see a type mismatch and report it.
+ *
+ * Keep this in sync with `coerceScalar`'s primitive set. New primitive
+ * types added to the former should flow through here too.
+ */
+export function coerceFormValue(
+  raw: string,
+  schema: Schema | boolean,
+): unknown {
+  return coerceScalar(raw, schema);
+}
+
+/**
  * Recursively coerce leaf string values in arrays/objects using schema structure.
  * Walks composition keywords to find effective properties and items.
  * Non-string values pass through unchanged.

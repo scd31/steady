@@ -43,6 +43,7 @@ export { JsonSchemaProcessor } from "./processor.ts";
 // Schema inspection and coercion utilities
 export {
   coerceDeep,
+  coerceFormValue,
   coerceScalar,
   effectiveItems,
   effectiveProperties,

@@ -1393,4 +1393,371 @@ Deno.test("DiagnosticEngine", async (t) => {
       assertEquals(e3023.length, 0);
     },
   );
+
+  // ── Form object-format mismatch (E3023) ───────────────────────────
+
+  await t.step(
+    "dot-notation form key when formObjectFormat is flat → E3023 suggesting dots",
+    () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          expires_after: {
+            type: "object",
+            properties: { anchor: { type: "string" } },
+          },
+        },
+      };
+      const spec = new StubSpec({ "/files": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/files",
+        method: "post",
+        body: {},
+        rawFormKeys: ["expires_after.anchor"],
+        formArrayFormat: "repeat",
+        formObjectFormat: "flat",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 1);
+      assertEquals(e3023[0]?.actual, "dots");
+      assertEquals(e3023[0]?.expected, "flat");
+      // suggestion mentions the object-format flag, not the array-format flag
+      assertEquals(
+        e3023[0]?.suggestion?.includes("--validator-form-object-format=dots"),
+        true,
+      );
+    },
+  );
+
+  await t.step(
+    "bracket-notation form key when formObjectFormat is flat → E3023 suggesting brackets",
+    () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          expires_after: {
+            type: "object",
+            properties: { anchor: { type: "string" } },
+          },
+        },
+      };
+      const spec = new StubSpec({ "/files": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/files",
+        method: "post",
+        body: {},
+        rawFormKeys: ["expires_after[anchor]"],
+        formArrayFormat: "repeat",
+        formObjectFormat: "flat",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 1);
+      assertEquals(e3023[0]?.actual, "brackets");
+      assertEquals(
+        e3023[0]?.suggestion?.includes(
+          "--validator-form-object-format=brackets",
+        ),
+        true,
+      );
+    },
+  );
+
+  await t.step(
+    "dot-notation form key when formObjectFormat is brackets → E3023 suggesting dots",
+    () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          expires_after: {
+            type: "object",
+            properties: { anchor: { type: "string" } },
+          },
+        },
+      };
+      const spec = new StubSpec({ "/files": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/files",
+        method: "post",
+        body: {},
+        rawFormKeys: ["expires_after.anchor"],
+        formArrayFormat: "repeat",
+        formObjectFormat: "brackets",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 1);
+      assertEquals(e3023[0]?.actual, "dots");
+    },
+  );
+
+  await t.step(
+    "dot-notation form key for unknown field → no E3023",
+    () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+      };
+      const spec = new StubSpec({ "/files": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/files",
+        method: "post",
+        body: {},
+        rawFormKeys: ["unknown.anchor"],
+        formArrayFormat: "repeat",
+        formObjectFormat: "flat",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 0);
+    },
+  );
+
+  // ── Dot-notation detection on the array axis (E3023) ─────────────
+
+  await t.step(
+    "dot-notation form key when formArrayFormat is repeat → E3023 suggesting dots",
+    () => {
+      // This is the Stainless Go SDK shape: a nested object is sent with
+      // dot-flattened keys (expires_after.anchor), but the array format
+      // flag defaults to repeat and the existing array-format detector
+      // never checked for dot notation.
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          expires_after: {
+            type: "object",
+            properties: { anchor: { type: "string" } },
+          },
+        },
+      };
+      const spec = new StubSpec({ "/files": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/files",
+        method: "post",
+        body: {},
+        rawFormKeys: ["expires_after.anchor"],
+        formArrayFormat: "repeat",
+        formObjectFormat: "flat",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 1);
+      assertEquals(e3023[0]?.actual, "dots");
+    },
+  );
+
+  await t.step(
+    "dot-notation on allOf-wrapped object property → E3023 on object axis",
+    () => {
+      // The composition case: property schema uses allOf to compose the
+      // object shape. `resolveFormatAxis` walks composition via
+      // `effectiveType`/`isObjectSchema` and must route to the object axis.
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          expires_after: {
+            allOf: [
+              {
+                type: "object",
+                properties: { anchor: { type: "string" } },
+              },
+            ],
+          },
+        },
+      };
+      const spec = new StubSpec({ "/files": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/files",
+        method: "post",
+        body: {},
+        rawFormKeys: ["expires_after.anchor"],
+        formArrayFormat: "repeat",
+        formObjectFormat: "flat",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 1);
+      assertEquals(e3023[0]?.actual, "dots");
+      assertEquals(
+        e3023[0]?.suggestion?.includes("--validator-form-object-format=dots"),
+        true,
+      );
+    },
+  );
+
+  await t.step(
+    "dot-notation on anyOf-wrapped object property → E3023 on object axis",
+    () => {
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          expires_after: {
+            anyOf: [
+              {
+                type: "object",
+                properties: { anchor: { type: "string" } },
+              },
+              { type: "null" },
+            ],
+          },
+        },
+      };
+      const spec = new StubSpec({ "/files": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/files",
+        method: "post",
+        body: {},
+        rawFormKeys: ["expires_after.anchor"],
+        formArrayFormat: "repeat",
+        formObjectFormat: "flat",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 1);
+      assertEquals(
+        e3023[0]?.suggestion?.includes("--validator-form-object-format=dots"),
+        true,
+      );
+    },
+  );
+
+  await t.step(
+    "dot-notation on $ref-wrapped object property → E3023 on object axis",
+    () => {
+      const refTarget: Schema = {
+        type: "object",
+        properties: { anchor: { type: "string" } },
+      };
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          expires_after: { $ref: "#/components/schemas/ExpiresAfter" },
+        },
+      };
+      const spec = new StubSpec({ "/files": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      spec.schemas.set("#/components/schemas/ExpiresAfter", refTarget);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/files",
+        method: "post",
+        body: {},
+        rawFormKeys: ["expires_after.anchor"],
+        formArrayFormat: "repeat",
+        formObjectFormat: "flat",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 1);
+      assertEquals(
+        e3023[0]?.suggestion?.includes("--validator-form-object-format=dots"),
+        true,
+      );
+    },
+  );
+
+  await t.step(
+    "dot-notation on array-of-primitive property → E3023 on array axis",
+    () => {
+      // Making sure the axis logic doesn't mis-route arrays to the
+      // object axis: a `type: array` property should stay on the
+      // array axis even though it has a "." in the key.
+      const schema: Schema = {
+        type: "object",
+        properties: {
+          tags: { type: "array", items: { type: "string" } },
+        },
+      };
+      const spec = new StubSpec({ "/files": { post: OP } });
+      spec.bodySchema = {
+        schema,
+        schemaPath: "#/schema",
+        required: false,
+      };
+      spec.schemas.set("#/schema", schema);
+      const engine = createEngine(spec);
+
+      const result = engine.analyze({
+        path: "/files",
+        method: "post",
+        body: {},
+        rawFormKeys: ["tags.0"],
+        formArrayFormat: "repeat",
+        formObjectFormat: "flat",
+      });
+
+      const e3023 = result.filter((d) => d.code === "E3023");
+      assertEquals(e3023.length, 1);
+      assertEquals(
+        e3023[0]?.suggestion?.includes("--validator-form-array-format=dots"),
+        true,
+      );
+    },
+  );
 });

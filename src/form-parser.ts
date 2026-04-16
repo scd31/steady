@@ -1,35 +1,22 @@
 /**
  * Form Data Parser - Handles multipart/form-data and application/x-www-form-urlencoded
  *
- * Uses Deno's native FormData API (web standard) for parsing, then converts
- * to plain objects with proper nested property handling.
- *
- * Supports:
- * - Dot notation: `user.name=sam` → `{user: {name: "sam"}}`
- * - Bracket notation: `user[name]=sam` → `{user: {name: "sam"}}`
- * - Array fields: `tags=a&tags=b` → `{tags: ["a", "b"]}`
- * - File uploads: Returns File objects for binary fields
- * - Type coercion: Converts strings to numbers/booleans based on schema
+ * A thin adapter over the schema-driven kernel in `param-format.ts`. Each
+ * wrapper collects entries from its data source and hands them to
+ * `parseFormEntries`; the kernel takes care of segment parsing, recursion,
+ * terminal coalescing, and type coercion. The only form-parser-specific
+ * concern is extracting File instances from multipart data into a separate
+ * Map with `"[File]"` placeholders.
  */
 
 import type { ReferenceObject, SchemaObject } from "@steady/openapi";
-import {
-  coerceScalar,
-  effectiveItems,
-  effectiveProperties,
-  effectiveType,
-  isArraySchema,
-} from "@steady/json-schema";
 import { isPlainObject } from "@steady/json-pointer";
 import { isReference } from "./types.ts";
 import {
   type ConcreteArrayFormat,
   type ConcreteObjectFormat,
-  groupFormEntries,
-  isNumericString,
-  parseBracketEntries,
-  parseKeyToPath,
-  setNestedValue,
+  type FormFormat,
+  parseFormEntries,
 } from "./param-format.ts";
 
 /**
@@ -72,137 +59,21 @@ export function parseFormData(
   formData: FormData,
   options: FormParserOptions = {},
 ): ParsedFormData {
-  const {
-    schema,
-    formArrayFormat = "repeat",
-    formObjectFormat = "flat",
+  const { schema, resolveSchema } = options;
+  const format: FormFormat = {
+    array: options.formArrayFormat ?? "repeat",
+    object: options.formObjectFormat ?? "flat",
+  };
+
+  const rootSchema = resolveRoot(schema, resolveSchema);
+  const data = parseFormEntries(
+    formData.entries(),
+    rootSchema ?? null,
+    format,
     resolveSchema,
-  } = options;
-
-  // When both formats are brackets, use schema-driven bracket parser.
-  if (formArrayFormat === "brackets" && formObjectFormat === "brackets") {
-    const data = parseBracketEntries(
-      formData.entries(),
-      schema ?? null,
-      resolveSchema,
-    );
-    const files = extractFiles(data);
-    return { data, files };
-  }
-
-  const result: Record<string, unknown> = Object.create(null);
-  const files = new Map<string, File | File[]>();
-
-  // Track which fields are explicitly arrays (brackets notation)
-  const explicitArrayFields = new Set<string>();
-
-  // Group all values by field name (handles repeated fields)
-  const fieldValues = new Map<string, (string | File)[]>();
-
-  for (const [rawKey, value] of formData.entries()) {
-    // Normalize key based on array format
-    let key = rawKey;
-    if (formArrayFormat === "brackets" && rawKey.endsWith("[]")) {
-      key = rawKey.slice(0, -2);
-      explicitArrayFields.add(key);
-    }
-
-    const existing = fieldValues.get(key) || [];
-    existing.push(value);
-    fieldValues.set(key, existing);
-  }
-
-  // Process each field
-  for (const [key, values] of fieldValues) {
-    // Separate files from regular values
-    const fileValues = values.filter((v): v is File => v instanceof File);
-    const stringValues = values.filter((v): v is string =>
-      typeof v === "string"
-    );
-
-    // Handle file fields
-    if (fileValues.length > 0) {
-      const isExplicitArray = explicitArrayFields.has(key);
-      const treatAsArray = isExplicitArray ||
-        (formArrayFormat !== "brackets" && fileValues.length > 1);
-      const firstFile = fileValues[0];
-      if (treatAsArray) {
-        files.set(key, fileValues);
-      } else if (firstFile !== undefined) {
-        files.set(key, firstFile);
-      }
-      // Also set a placeholder in the data for schema validation
-      const filePlaceholder = treatAsArray
-        ? fileValues.map(() => "[File]")
-        : "[File]";
-      const path = parseKeyToPath(key, formObjectFormat);
-      setNestedValue(result, path, filePlaceholder);
-      continue;
-    }
-
-    // Handle string fields
-    if (stringValues.length === 0) continue;
-
-    // Get the schema for this property (for type coercion)
-    const propertySchema = getPropertySchema(
-      key,
-      schema,
-      formObjectFormat,
-      resolveSchema,
-    );
-
-    // Determine if this should be an array.
-    // In brackets mode, only explicit [] notation produces arrays.
-    // In other modes, schema type and repeated values also count.
-    const isExplicitArray = explicitArrayFields.has(key);
-    const isArrayField = isExplicitArray ||
-      (formArrayFormat !== "brackets" &&
-        ((propertySchema ? isArraySchema(propertySchema) : false) ||
-          stringValues.length > 1));
-
-    // Handle comma format: split single value into array if schema expects array
-    if (
-      formArrayFormat === "comma" && stringValues.length === 1 &&
-      propertySchema && effectiveType(propertySchema) === "array"
-    ) {
-      const first = stringValues[0];
-      if (first === undefined) continue;
-      const parts = first.split(",");
-      const itemSchema = propertySchema ? effectiveItems(propertySchema) : null;
-      const finalValue = parts.map((v) =>
-        itemSchema ? coerceScalar(v.trim(), itemSchema) : v.trim()
-      );
-      const path = parseKeyToPath(key, formObjectFormat);
-      setNestedValue(result, path, finalValue);
-      continue;
-    }
-
-    // Coerce values based on schema
-    let finalValue: unknown;
-    if (isArrayField) {
-      // When the schema describes an array, coerce each value using the
-      // items schema (not the array schema itself, which would resolve to
-      // type "array" and skip coercion).
-      const itemSchema = propertySchema && isArraySchema(propertySchema)
-        ? effectiveItems(propertySchema)
-        : propertySchema;
-      finalValue = stringValues.map((v) =>
-        itemSchema ? coerceScalar(v, itemSchema) : v
-      );
-    } else {
-      const firstValue = stringValues[0];
-      finalValue = firstValue !== undefined
-        ? (propertySchema
-          ? coerceScalar(firstValue, propertySchema)
-          : firstValue)
-        : undefined;
-    }
-
-    const path = parseKeyToPath(key, formObjectFormat);
-    setNestedValue(result, path, finalValue);
-  }
-
-  return { data: result, files };
+  );
+  const files = extractFiles(data);
+  return { data, files };
 }
 
 /**
@@ -216,139 +87,46 @@ export function parseUrlEncoded(
   body: string,
   options: FormParserOptions = {},
 ): ParsedFormData {
-  const {
-    schema,
-    formArrayFormat = "repeat",
-    formObjectFormat = "flat",
-    resolveSchema,
-  } = options;
+  const { schema, resolveSchema } = options;
+  const format: FormFormat = {
+    array: options.formArrayFormat ?? "repeat",
+    object: options.formObjectFormat ?? "flat",
+  };
+
+  const rootSchema = resolveRoot(schema, resolveSchema);
   const params = new URLSearchParams(body);
-
-  if (formArrayFormat === "brackets" && formObjectFormat === "brackets") {
-    const data = parseBracketEntries(
-      params.entries(),
-      schema ?? null,
-      resolveSchema,
-    );
-    return { data, files: new Map() };
-  }
-
-  const result: Record<string, unknown> = Object.create(null);
-
-  // Use shared groupFormEntries for array format normalization
-  const stringEntries: [string, string][] = [];
-  for (const [key, value] of params.entries()) {
-    stringEntries.push([key, value]);
-  }
-  const { groups, explicitArrays } = groupFormEntries(
-    stringEntries,
-    formArrayFormat,
+  const data = parseFormEntries(
+    params.entries(),
+    rootSchema ?? null,
+    format,
+    resolveSchema,
   );
-
-  // Process each field
-  for (const [key, values] of groups) {
-    const propertySchema = getPropertySchema(
-      key,
-      schema,
-      formObjectFormat,
-      resolveSchema,
-    );
-    const isExplicitArray = explicitArrays.has(key);
-    const isArrayField = isExplicitArray ||
-      (formArrayFormat !== "brackets" &&
-        ((propertySchema ? isArraySchema(propertySchema) : false) ||
-          values.length > 1));
-
-    let finalValue: unknown;
-    if (isArrayField) {
-      const itemSchema = propertySchema && isArraySchema(propertySchema)
-        ? effectiveItems(propertySchema)
-        : propertySchema;
-      finalValue = values.map((v) =>
-        itemSchema ? coerceScalar(v, itemSchema) : v
-      );
-    } else {
-      const firstValue = values[0];
-      finalValue = firstValue !== undefined
-        ? (propertySchema
-          ? coerceScalar(firstValue, propertySchema)
-          : firstValue)
-        : undefined;
-    }
-
-    const path = parseKeyToPath(key, formObjectFormat);
-    setNestedValue(result, path, finalValue);
-  }
-
-  return { data: result, files: new Map() };
+  return { data, files: new Map() };
 }
 
 /**
- * Get the schema for a potentially nested property
+ * Resolve the root body schema, following a top-level `$ref` if present.
+ * The kernel walks composition keywords on its own, so only the top-level
+ * reference is resolved here.
  */
-function getPropertySchema(
-  key: string,
+function resolveRoot(
   schema: SchemaObject | ReferenceObject | undefined,
-  objectFormat: ConcreteObjectFormat,
   resolveSchema?: (
     schema: SchemaObject | ReferenceObject,
   ) => SchemaObject | undefined,
 ): SchemaObject | undefined {
   if (!schema) return undefined;
-
-  // Resolve reference if needed
-  let resolved: SchemaObject | undefined;
-  if (isReference(schema)) {
-    resolved = resolveSchema?.(schema);
-  } else {
-    resolved = schema;
-  }
-
-  if (!resolved) return undefined;
-
-  // Parse the key path using the specified format
-  const path = parseKeyToPath(key, objectFormat);
-
-  // Navigate to the nested property schema
-  let current: SchemaObject | undefined = resolved;
-
-  for (const segment of path) {
-    if (!current) return undefined;
-
-    if (effectiveType(current) === "array" && isNumericString(segment)) {
-      // Array index - get items schema
-      const itemSchema = effectiveItems(current);
-      if (!itemSchema || typeof itemSchema === "boolean") {
-        current = undefined;
-      } else if (isReference(itemSchema)) {
-        current = resolveSchema?.(itemSchema);
-      } else {
-        current = itemSchema;
-      }
-    } else {
-      // Object property - walk through effective properties
-      const props = effectiveProperties(current);
-      if (!props) return undefined;
-      const prop = props[segment];
-      if (!prop) return undefined;
-      if (isReference(prop)) {
-        current = resolveSchema?.(prop);
-      } else {
-        current = prop;
-      }
-    }
-  }
-
-  return current;
+  if (isReference(schema)) return resolveSchema?.(schema);
+  return schema;
 }
 
 // =============================================================================
-// Post-processing for bracket tree builder
+// File extraction post-walk
 // =============================================================================
 
 /**
- * Walk a parsed bracket tree, replacing File instances with "[File]"
- * placeholders and collecting them into a files Map.
+ * Walk a parsed tree, replacing File instances with "[File]" placeholders
+ * and collecting them into a files Map keyed by dot-joined path.
  */
 function extractFiles(
   data: Record<string, unknown>,
@@ -366,11 +144,9 @@ function extractFiles(
     } else if (Array.isArray(value)) {
       const fileItems = value.filter((v): v is File => v instanceof File);
       if (fileItems.length > 0 && fileItems.length === value.length) {
-        // All items are files
         files.set(fullKey, fileItems);
         data[key] = fileItems.map(() => "[File]");
       } else {
-        // Recurse into array elements that are objects
         for (const item of value) {
           if (!(item instanceof File) && isPlainObject(item)) {
             const subFiles = extractFiles(item, fullKey);

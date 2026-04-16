@@ -478,7 +478,7 @@ Deno.test("parseUrlEncoded: coerces integer with allOf property schema", () => {
 
 Deno.test("parseUrlEncoded: coerces through allOf on root schema", () => {
   // Root-level allOf: properties spread across allOf members.
-  // getPropertySchema uses effectiveProperties to find "bar" across members.
+  // The kernel uses effectiveProperties to find "bar" across members.
   const result = parseUrlEncoded("foo=hello&bar=0", {
     schema: {
       allOf: [
@@ -1076,9 +1076,9 @@ Deno.test("parseUrlEncoded: brackets+flat bare repeated keys produce scalar", ()
     },
   });
 
-  // First value wins (consistent with URLSearchParams.get behavior).
+  // In brackets array format, bare repeated keys are scalars (last wins).
   // The key point: it is NOT an array.
-  assertEquals(result.data.tags, "a");
+  assertEquals(result.data.tags, "b");
   assert(!Array.isArray(result.data.tags));
 });
 

@@ -16,6 +16,8 @@
  */
 
 import type { Schema } from "@steady/json-schema";
+import { effectiveType, isObjectSchema } from "@steady/json-schema";
+import type { EncodingObject } from "@steady/openapi";
 import {
   formatFragmentPointer,
   type FragmentPointer,
@@ -100,6 +102,12 @@ export interface BodySchemaInfo {
   schemaPath: FragmentPointer;
   /** Whether the request body is required (requestBody.required in OpenAPI). */
   required: boolean;
+  /**
+   * Per-property encoding metadata declared on the matched media type
+   * (OpenAPI 3.x `content.<mediaType>.encoding`). Undefined when no
+   * `encoding` object is present on the spec.
+   */
+  encoding?: Record<string, EncodingObject>;
 }
 
 /** Validates data against a JSON Schema, producing a validation tree. */
@@ -329,7 +337,7 @@ export class DiagnosticEngine {
       }
     }
 
-    // 3.6 Form array format mismatch detection
+    // 3.6 Form array/object format mismatch detection
     if (request.rawFormKeys && request.formArrayFormat) {
       const contentType = getHeaderValue(request.headers, "content-type");
       const formEssence = contentType ? getMediaType(contentType) : null;
@@ -348,46 +356,68 @@ export class DiagnosticEngine {
         if (schemaProps && typeof schemaProps === "object") {
           const knownProps = new Set(Object.keys(schemaProps));
           const formArrayFormat = request.formArrayFormat;
+          const formObjectFormat = request.formObjectFormat ?? "flat";
 
-          if (formArrayFormat !== "brackets") {
-            // Detect bracket/dot notation when format is NOT brackets
-            const seen = new Set<string>();
-            for (const key of request.rawFormKeys) {
-              if (seen.has(key)) continue;
-              seen.add(key);
-              const baseName = extractBaseName(key);
-              if (baseName !== key && knownProps.has(baseName)) {
-                diagnostics.push(
-                  createFormFormatMismatchDiagnostic(
-                    key,
-                    baseName,
-                    "brackets",
-                    formArrayFormat,
-                    pathPattern,
-                  ),
-                );
-              }
-            }
-          } else {
-            // Detect bare repeated keys when format IS brackets
+          // Track which (baseName → axis) pairs we already flagged to avoid
+          // duplicate diagnostics when a key matches both axes.
+          const flagged = new Set<string>();
+
+          // Detect bracket/dot notation on bare keys; which axis to report
+          // depends on whether the SDK was likely trying to serialise an
+          // array (array axis) or an object (object axis).
+          const seen = new Set<string>();
+          for (const key of request.rawFormKeys) {
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const detected = detectKeyFormat(key);
+            if (!detected) continue;
+            const baseName = extractBaseName(key);
+            if (!knownProps.has(baseName)) continue;
+
+            const axis = resolveFormatAxis(
+              schemaProps[baseName],
+              this.specResolver,
+            );
+            const configured = axis === "object"
+              ? formObjectFormat
+              : formArrayFormat;
+            if (configured === detected) continue;
+
+            const dedupeKey = `${axis}:${baseName}`;
+            if (flagged.has(dedupeKey)) continue;
+            flagged.add(dedupeKey);
+
+            diagnostics.push(
+              createFormFormatMismatchDiagnostic({
+                actualKey: key,
+                baseName,
+                detectedFormat: detected,
+                configuredFormat: configured,
+                axis,
+                pathPattern,
+              }),
+            );
+          }
+
+          // Detect bare repeated keys when array format is brackets.
+          if (formArrayFormat === "brackets") {
             const keyCounts = new Map<string, number>();
             for (const key of request.rawFormKeys) {
               keyCounts.set(key, (keyCounts.get(key) ?? 0) + 1);
             }
             for (const [key, count] of keyCounts) {
               if (count <= 1) continue;
-              // Only flag keys with no serialization suffix (bare names)
-              // that match a known schema property
               if (extractBaseName(key) !== key) continue;
               if (!knownProps.has(key)) continue;
               diagnostics.push(
-                createFormFormatMismatchDiagnostic(
-                  `${key} (repeated ${count} times)`,
-                  key,
-                  "repeat",
-                  formArrayFormat,
+                createFormFormatMismatchDiagnostic({
+                  actualKey: `${key} (repeated ${count} times)`,
+                  baseName: key,
+                  detectedFormat: "repeat",
+                  configuredFormat: formArrayFormat,
+                  axis: "array",
                   pathPattern,
-                ),
+                }),
               );
             }
           }
@@ -858,16 +888,85 @@ function createSerializationMismatchDiagnostic(
 }
 
 /**
- * Create an E3023 diagnostic for a form array format mismatch.
+ * Classify a form key's wire notation by looking for the first
+ * serialization marker in the key. Returns null if the key has no
+ * recognisable nesting syntax.
+ */
+function detectKeyFormat(key: string): "brackets" | "dots" | null {
+  const bracketIndex = key.indexOf("[");
+  const dotIndex = key.indexOf(".");
+  if (bracketIndex > 0 && (dotIndex < 0 || bracketIndex < dotIndex)) {
+    return "brackets";
+  }
+  if (dotIndex > 0) return "dots";
+  return null;
+}
+
+/**
+ * Decide which format-flag axis applies to a schema property: object
+ * format for object-typed properties, array format otherwise.
+ *
+ * Walks composition (allOf/anyOf/oneOf) via `effectiveType` /
+ * `isObjectSchema` so that a property like
+ * `{ allOf: [{ type: "object", ... }] }` is correctly routed to the
+ * object axis.
+ *
+ * A $ref that hasn't been resolved (no resolver surfaced the target)
+ * is assumed to be an object. This keeps nested refs on the object
+ * axis; the wrong axis is less useful than the right one, and most
+ * $refs in multipart bodies point at object schemas.
+ */
+function resolveFormatAxis(
+  propSchema: unknown,
+  resolver: SpecResolver,
+): "object" | "array" {
+  if (!propSchema || typeof propSchema !== "object") return "array";
+  const schema = propSchema as Schema;
+
+  // Unresolved $ref: try to resolve via the spec resolver, otherwise
+  // default to the object axis (most multipart complex props are objects).
+  if ("$ref" in schema && typeof schema.$ref === "string") {
+    const resolved = resolver.resolve(schema.$ref as FragmentPointer);
+    if (resolved && typeof resolved !== "boolean") {
+      return isObjectSchema(resolved) ? "object" : "array";
+    }
+    return "object";
+  }
+
+  if (isObjectSchema(schema)) return "object";
+  if (effectiveType(schema) === "object") return "object";
+  return "array";
+}
+
+interface FormFormatMismatchInput {
+  actualKey: string;
+  baseName: string;
+  detectedFormat: "brackets" | "dots" | "repeat";
+  configuredFormat: ConcreteArrayFormat | ConcreteObjectFormat;
+  axis: "array" | "object";
+  pathPattern: string;
+}
+
+/**
+ * Create an E3023 diagnostic for a form field serialization mismatch on
+ * either the array or object axis.
  */
 function createFormFormatMismatchDiagnostic(
-  actualKey: string,
-  baseName: string,
-  detectedFormat: string,
-  configuredFormat: ConcreteArrayFormat,
-  pathPattern: string,
+  input: FormFormatMismatchInput,
 ): Diagnostic {
+  const {
+    actualKey,
+    baseName,
+    detectedFormat,
+    configuredFormat,
+    axis,
+    pathPattern,
+  } = input;
   const e3023 = getCode("E3023");
+  const flag = axis === "object"
+    ? "--validator-form-object-format"
+    : "--validator-form-array-format";
+  const label = axis === "object" ? "formObjectFormat" : "formArrayFormat";
 
   return {
     code: "E3023",
@@ -876,15 +975,15 @@ function createFormFormatMismatchDiagnostic(
     requestPath: `body.${baseName}`,
     specPointer: formatFragmentPointer(["paths", pathPattern]),
     message:
-      `Form field "${actualKey}" uses ${detectedFormat} encoding, but formArrayFormat is "${configuredFormat}"`,
+      `Form field "${actualKey}" uses ${detectedFormat} encoding, but ${label} is "${configuredFormat}"`,
     expected: configuredFormat,
     actual: detectedFormat,
     suggestion:
-      `Set --validator-form-array-format=${detectedFormat} to match the SDK encoding, or update the SDK to use ${configuredFormat} format`,
+      `Set ${flag}=${detectedFormat} to match the SDK encoding, or update the SDK to use ${configuredFormat} format`,
     attribution: {
       confidence: 0.8,
       reasoning: [
-        `Configured form array format: '${configuredFormat}'`,
+        `Configured ${label}: '${configuredFormat}'`,
         `Request sent '${actualKey}', which uses ${detectedFormat} encoding`,
       ],
     },

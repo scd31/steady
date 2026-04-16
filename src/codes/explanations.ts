@@ -935,32 +935,38 @@ const EXPLANATIONS: Record<ECode, Explanation> = {
 
   E3023: {
     description:
-      "A form field was sent with a different array serialization format\n" +
-      "than the configured formArrayFormat expects. For example, the SDK\n" +
-      "sent `files[]` (bracket notation) but formArrayFormat is `comma`\n" +
-      "(expecting `files=a,b`). Or the SDK sent bare repeated keys\n" +
-      "`tags=a&tags=b` but formArrayFormat is `brackets` (expecting\n" +
-      "`tags[]=a&tags[]=b`).",
+      "A form field was sent with a different serialization format than\n" +
+      "the configured form-format flags expect. This covers both the\n" +
+      "array axis (formArrayFormat: repeat/brackets/comma/...) and the\n" +
+      "object axis (formObjectFormat: flat/brackets/dots/...).\n\n" +
+      "Array examples: the SDK sent `files[]=a&files[]=b` but\n" +
+      "formArrayFormat is `comma`, or `tags=a&tags=b` but formArrayFormat\n" +
+      "is `brackets`.\n\n" +
+      "Object examples: the SDK sent `expires_after.anchor=...` but\n" +
+      "formObjectFormat is `flat`, or `user[name]=...` but\n" +
+      "formObjectFormat is `dots`.",
     reasoning:
       "This is an SDK issue (or a configuration mismatch). The format\n" +
-      "flag tells Steady how the SDK encodes arrays. If the wire format\n" +
-      "doesn't match, the parser can't interpret the data correctly.\n" +
-      "This leads to downstream type errors that obscure the root cause.",
+      "flag tells Steady how the SDK encodes arrays and objects. If the\n" +
+      "wire format doesn't match, the parser can't interpret the data\n" +
+      "correctly. This leads to downstream type errors that obscure the\n" +
+      "root cause.",
     example: "  # formArrayFormat=comma, but SDK sends:\n" +
       "  #   files[]=a.txt&files[]=b.txt  (bracket notation)\n" +
       "  # Expected:\n" +
       "  #   files=a.txt,b.txt            (comma style)\n" +
       "  #\n" +
-      "  # formArrayFormat=brackets, but SDK sends:\n" +
-      "  #   tags=red&tags=blue           (repeat style)\n" +
+      "  # formObjectFormat=flat, but SDK sends:\n" +
+      "  #   expires_after.anchor=created_at  (dot notation)\n" +
       "  # Expected:\n" +
-      "  #   tags[]=red&tags[]=blue       (bracket notation)",
+      "  #   expires_after=...                (flat value)",
     fix: "Either change the format flag to match what the SDK sends\n" +
-      "(e.g. --validator-form-array-format=brackets), or update the\n" +
-      "SDK to use the configured format.\n\n" +
-      "OpenAPI supports declaring array encoding per-property via the\n" +
+      "(e.g. --validator-form-array-format=brackets or\n" +
+      "--validator-form-object-format=dots), or update the SDK to use\n" +
+      "the configured format.\n\n" +
+      "OpenAPI supports declaring encoding per-property via the\n" +
       "`encoding` section on multipart request bodies (style/explode).\n" +
-      "Most specs omit this, which is why the flag exists as a default.\n" +
+      "Most specs omit this, which is why the flags exist as a default.\n" +
       "The proper long-term fix is to declare encoding in the spec.",
     seeAlso: ["E3014", "E3008"],
   },

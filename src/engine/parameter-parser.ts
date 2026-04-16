@@ -23,7 +23,7 @@ import type { KeyValueSource } from "../param-format.ts";
 import {
   getArrayValues,
   hasParamValue,
-  parseBracketEntries,
+  parseFormEntries,
   parseNestedArrayValues,
   parseObjectValue,
   resolveArrayFormat,
@@ -195,7 +195,11 @@ export function parseQueryParam(
           type: "object" as const,
           properties: { [param.name]: schema },
         };
-        const tree = parseBracketEntries(paramEntries, wrapperSchema);
+        const tree = parseFormEntries(
+          paramEntries,
+          wrapperSchema,
+          { array: "brackets", object: "brackets" },
+        );
         return { present: true, value: tree[param.name] };
       }
       // Dots format: existing logic

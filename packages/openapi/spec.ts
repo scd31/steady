@@ -21,6 +21,7 @@ import {
 } from "@steady/json-pointer";
 import { essenceMatches, getMediaType } from "@steady/media-type";
 import type {
+  EncodingObject,
   OpenAPIRaw,
   OperationObject,
   ParameterObject,
@@ -51,6 +52,7 @@ interface BodySchemaInfo {
   schema: Schema;
   schemaPath: FragmentPointer;
   required: boolean;
+  encoding?: Record<string, EncodingObject>;
 }
 
 // ── Type guards ────────────────────────────────────────────────────
@@ -264,6 +266,7 @@ export class OpenAPISpec {
       schema,
       schemaPath: schemaPath ?? inlinePointer,
       required: requestBody.required === true,
+      encoding: mediaContent.encoding,
     };
   }
 

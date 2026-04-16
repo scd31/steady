@@ -8,7 +8,7 @@
 import type { QueryArrayFormat, QueryObjectFormat } from "./types.ts";
 import { isPlainObject } from "@steady/json-pointer";
 import {
-  coerceScalar,
+  coerceFormValue,
   effectiveItems,
   effectiveProperties,
   isArraySchema,
@@ -501,135 +501,93 @@ export function parseObjectValue(
     }
 
     case "brackets":
-      // Brackets format is handled by parseBracketEntries
+      // Brackets format is handled by parseFormEntries
       return result;
   }
 }
 
 // =============================================================================
-// Key Path Parsing
+// Form Entry Parsing: Schema-Driven Tree Builder
 // =============================================================================
 
-/**
- * Parse a key into path segments based on object format.
- *
- * @param key - The key to parse (e.g., "user[address][city]" or "user.address.city")
- * @param format - Object serialization format
- * @returns Array of path segments
- *
- * Examples:
- * - parseKeyToPath("user", "flat") → ["user"]
- * - parseKeyToPath("user[address][city]", "brackets") → ["user", "address", "city"]
- * - parseKeyToPath("user.address.city", "dots") → ["user", "address", "city"]
- * - parseKeyToPath("items[0]", "brackets") → ["items", "0"]
- */
-export function parseKeyToPath(
-  key: string,
-  format: ConcreteObjectFormat,
-): string[] {
-  switch (format) {
-    case "flat":
-    case "flat-comma":
-      // No nesting - key is used as-is
-      return [key];
-
-    case "brackets": {
-      // Parse bracket notation: user[address][city] → ["user", "address", "city"]
-      const result: string[] = [];
-
-      // Match: base name, then any number of [segment] parts
-      const match = key.match(/^([^\[]+)(.*)$/);
-      if (!match || match[1] === undefined) return [key];
-
-      result.push(match[1]);
-
-      // Extract all bracketed segments
-      const brackets = match[2] ?? "";
-      const bracketRegex = /\[([^\]]*)\]/g;
-      let bracketMatch: RegExpExecArray | null;
-
-      while ((bracketMatch = bracketRegex.exec(brackets)) !== null) {
-        const segment = bracketMatch[1];
-        if (segment !== undefined) {
-          result.push(segment);
-        }
-      }
-
-      return result;
-    }
-
-    case "dots":
-      // Split by dots: user.address.city → ["user", "address", "city"]
-      return key.split(".");
-  }
+/** Combined array + object format descriptor for form entry parsing. */
+export interface FormFormat {
+  array: ConcreteArrayFormat;
+  object: ConcreteObjectFormat;
 }
 
-// =============================================================================
-// Form Data Helpers
-// =============================================================================
-
-/**
- * Group form data entries by field name, handling array format normalization.
- *
- * For brackets format, strips [] suffix and tracks explicit array fields.
- *
- * @param entries - Iterable of [key, value] pairs
- * @param arrayFormat - Array serialization format
- * @returns Object with grouped values and explicit array field names
- */
-export function groupFormEntries(
-  entries: Iterable<[string, string]>,
-  arrayFormat: ConcreteArrayFormat,
-): {
-  groups: Map<string, string[]>;
-  explicitArrays: Set<string>;
-} {
-  const groups = new Map<string, string[]>();
-  const explicitArrays = new Set<string>();
-
-  for (const [rawKey, value] of entries) {
-    let key = rawKey;
-
-    // Normalize array notation
-    if (arrayFormat === "brackets" && rawKey.endsWith("[]")) {
-      key = rawKey.slice(0, -2);
-      explicitArrays.add(key);
-    }
-
-    const existing = groups.get(key) || [];
-    existing.push(value);
-    groups.set(key, existing);
-  }
-
-  return { groups, explicitArrays };
-}
-
-// =============================================================================
-// Bracket Notation: Stateful Tree Builder
-// =============================================================================
-
-/** A single segment in a bracket-notation path. */
-export type BracketSegment =
+/** A single segment in a structured key path. */
+export type KeySegment =
   | { type: "key"; name: string }
   | { type: "index"; index: number }
   | { type: "append" };
 
 /**
- * Parse a bracket-notation key into typed segments.
+ * Parse a raw form key into typed segments based on the active format.
  *
- * "name"           -> [key("name")]
- * "tags[]"         -> [key("tags"), append]
- * "assoc[][id]"    -> [key("assoc"), append, key("id")]
- * "items[0][name]" -> [key("items"), index(0), key("name")]
- * "a[][b][c]"      -> [key("a"), append, key("b"), key("c")]
+ * The object format decides how the key is split into a path. The array
+ * format decides whether a trailing `[]` is recognised as an append marker
+ * (only under the `brackets` array format; otherwise it is treated as a
+ * literal part of the key).
+ *
+ * Examples (objectFmt=brackets):
+ *   "name"           -> [key("name")]
+ *   "tags[]"         -> [key("tags"), append]
+ *   "assoc[][id]"    -> [key("assoc"), append, key("id")]
+ *   "items[0][name]" -> [key("items"), index(0), key("name")]
+ *
+ * Examples (objectFmt=dots):
+ *   "user.name"      -> [key("user"), key("name")]
+ *   "user.tags[]"    -> (arrayFmt=brackets) [key("user"), key("tags"), append]
+ *
+ * Examples (objectFmt=flat):
+ *   "user.name"      -> [key("user.name")]
+ *   "tags[]"         -> (arrayFmt=brackets) [key("tags"), append]
  */
-export function parseBracketSegments(rawKey: string): BracketSegment[] {
-  const match = rawKey.match(/^([^[]+)(.*)/);
-  if (!match || match[1] === undefined) {
-    return rawKey.length > 0 ? [{ type: "key", name: rawKey }] : [];
+export function parseKeySegments(
+  rawKey: string,
+  objectFmt: ConcreteObjectFormat,
+  arrayFmt: ConcreteArrayFormat,
+): KeySegment[] {
+  // Strip trailing `[]` as an explicit append marker when the array format
+  // is brackets. Other array formats treat `[]` as literal.
+  let key = rawKey;
+  let explicitAppend = false;
+  if (arrayFmt === "brackets" && key.endsWith("[]")) {
+    key = key.slice(0, -2);
+    explicitAppend = true;
   }
 
-  const segments: BracketSegment[] = [{ type: "key", name: match[1] }];
+  const base = parseKeyByObjectFormat(key, objectFmt);
+  return explicitAppend ? [...base, { type: "append" }] : base;
+}
+
+function parseKeyByObjectFormat(
+  key: string,
+  objectFmt: ConcreteObjectFormat,
+): KeySegment[] {
+  switch (objectFmt) {
+    case "flat":
+    case "flat-comma":
+      return key.length > 0 ? [{ type: "key", name: key }] : [];
+
+    case "brackets":
+      return parseBracketKey(key);
+
+    case "dots": {
+      if (key.length === 0) return [];
+      return key.split(".").map((name) => ({ type: "key", name }));
+    }
+  }
+}
+
+function parseBracketKey(key: string): KeySegment[] {
+  const match = key.match(/^([^[]+)(.*)/);
+  if (!match || match[1] === undefined) {
+    return key.length > 0 ? [{ type: "key", name: key }] : [];
+  }
+
+  const segments: KeySegment[] = [{ type: "key", name: match[1] }];
   const rest = match[2] ?? "";
   const bracketRegex = /\[([^\]]*)\]/g;
   let bracketMatch: RegExpExecArray | null;
@@ -650,13 +608,9 @@ export function parseBracketSegments(rawKey: string): BracketSegment[] {
   return segments;
 }
 
-// =============================================================================
-// Schema-Driven Bracket Parser
-// =============================================================================
-
-/** A bracket entry with parsed segments and its raw value. */
-export interface BracketEntry {
-  segments: BracketSegment[];
+/** A form entry with parsed segments and its raw value. */
+export interface KeyEntry {
+  segments: KeySegment[];
   value: string | File;
 }
 
@@ -679,46 +633,52 @@ function resolve(
 /** Coerce a terminal value using the schema, or return as-is. */
 function coerceLeaf(value: string | File, schema: Schema | null): unknown {
   if (value instanceof File) return value;
-  if (!schema || typeof schema === "boolean") return value;
-  return coerceScalar(value, schema);
+  return coerceFormValue(value, schema ?? true);
 }
 
 /**
- * Parse bracket-notation entries into a structured object tree, guided by
- * schema. Single entry point for all bracket-notation parsing: query
- * parameters, multipart form data, and URL-encoded bodies.
+ * Parse form entries into a structured object tree, guided by schema.
+ *
+ * Single entry point for all form entry parsing: multipart form data,
+ * URL-encoded bodies, and nested query parameters. The format descriptor
+ * decides both how keys are split into segments and how values are
+ * coalesced at terminal positions.
  */
-export function parseBracketEntries(
+export function parseFormEntries(
   rawEntries: Iterable<[string, string | File]>,
   schema: Schema | null,
+  format: FormFormat,
   resolver?: RefResolver,
 ): Record<string, unknown> {
-  const entries: BracketEntry[] = [];
+  const entries: KeyEntry[] = [];
   for (const [rawKey, value] of rawEntries) {
-    const segments = parseBracketSegments(rawKey);
+    const segments = parseKeySegments(rawKey, format.object, format.array);
     if (segments.length > 0) {
       entries.push({ segments, value });
     }
   }
-  return assembleObject(entries, schema, resolver);
+  return assembleObject(entries, schema, format, resolver);
 }
 
 /**
- * Recursive core: assemble a value from bracket entries guided by schema.
- */
-/**
- * Recursive core: assemble a value from bracket entries.
+ * Recursive core: assemble a value from form entries guided by schema.
  *
- * In bracket mode, the wire syntax determines structure:
- *   - [] (append) or [N] (index) → array
- *   - [name] (property access) → object
- *   - bare key (no segments) → scalar
+ * Structure comes from two signals:
+ *   - The key segments (append/index → array, key → object, empty →
+ *     terminal) always win when present.
+ *   - At the terminal (bare-entry) position, the active array format and
+ *     the schema decide whether to coalesce as scalar or array.
  *
- * Schema is used only for type coercion, never to override structure.
+ * In brackets array format, bare repeated keys are scalars (last wins)
+ * because the format distinguishes arrays by an explicit `[]`/`[N]`
+ * marker. In every other array format, bare repeated entries or an
+ * array-typed schema produce an array; comma format splits a single
+ * terminal string on commas.
  */
 function assembleValue(
-  entries: BracketEntry[],
+  entries: KeyEntry[],
   schema: Schema | null,
+  format: FormFormat,
   resolver?: RefResolver,
 ): unknown {
   if (entries.length === 0) return undefined;
@@ -726,28 +686,71 @@ function assembleValue(
   const resolved = resolve(schema, resolver) ?? null;
 
   // Terminal: all entries have no remaining segments.
-  // Bare repeated keys are scalars (last wins), not arrays.
   if (entries.every((e) => e.segments.length === 0)) {
-    if (entries.length === 1) {
-      const entry = entries[0];
-      if (entry) return coerceLeaf(entry.value, resolved);
-    }
-    const last = entries[entries.length - 1];
-    if (last) return coerceLeaf(last.value, resolved);
-    return undefined;
+    return assembleTerminal(entries, resolved, format, resolver);
   }
 
   // Non-terminal: check the first segment to determine structure.
   // Only append ([]) and index ([N]) produce arrays. Property-access
-  // keys ([name]) always produce objects, regardless of schema.
+  // keys always produce objects, regardless of schema.
   const firstSeg = entries[0]?.segments[0];
   if (firstSeg && (firstSeg.type === "append" || firstSeg.type === "index")) {
     const items = resolved ? effectiveItems(resolved) : null;
     const resolvedItems = resolve(items, resolver) ?? null;
-    return assembleArray(entries, resolvedItems, resolver);
+    return assembleArray(entries, resolvedItems, format, resolver);
   }
 
-  return assembleObject(entries, resolved, resolver);
+  return assembleObject(entries, resolved, format, resolver);
+}
+
+/**
+ * Terminal coalescing. All entries are at their leaf position; decide
+ * scalar vs array based on array format and schema.
+ */
+function assembleTerminal(
+  entries: KeyEntry[],
+  resolved: Schema | null,
+  format: FormFormat,
+  resolver?: RefResolver,
+): unknown {
+  // Brackets array format: bare repeated keys are scalars (last wins).
+  // Arrays are only produced via explicit `[]` or `[N]` markers, which
+  // would have been handled as non-terminal above.
+  if (format.array === "brackets") {
+    const last = entries[entries.length - 1];
+    return last ? coerceLeaf(last.value, resolved) : undefined;
+  }
+
+  const schemaIsArray = resolved !== null && isArraySchema(resolved);
+
+  // Comma format: a single terminal string value on an array-typed schema
+  // splits on commas into array items.
+  if (
+    format.array === "comma" &&
+    entries.length === 1 &&
+    schemaIsArray
+  ) {
+    const entry = entries[0]!;
+    if (typeof entry.value === "string") {
+      const itemSchema = resolve(effectiveItems(resolved!), resolver) ?? null;
+      const parts = entry.value.split(",").map((p) => p.trim());
+      return parts.map((p) => coerceLeaf(p, itemSchema));
+    }
+  }
+
+  // Array if the schema says array, or if there are multiple repeated
+  // entries for the same bare key (only possible in non-brackets array
+  // formats that accept repetition, e.g. `repeat`).
+  if (schemaIsArray || entries.length > 1) {
+    const itemSchema = schemaIsArray
+      ? (resolve(effectiveItems(resolved!), resolver) ?? null)
+      : resolved;
+    return entries.map((e) => coerceLeaf(e.value, itemSchema));
+  }
+
+  // Scalar
+  const first = entries[0];
+  return first ? coerceLeaf(first.value, resolved) : undefined;
 }
 
 /**
@@ -755,8 +758,9 @@ function assembleValue(
  * append ([]) or index ([N]).
  */
 function assembleArray(
-  entries: BracketEntry[],
+  entries: KeyEntry[],
   itemSchema: Schema | null,
+  format: FormFormat,
   resolver?: RefResolver,
 ): unknown[] {
   if (entries.length === 0) return [];
@@ -765,7 +769,7 @@ function assembleArray(
   if (!first) return entries.map((e) => coerceLeaf(e.value, itemSchema));
 
   if (first.type === "index") {
-    return assembleIndexedArray(entries, itemSchema, resolver);
+    return assembleIndexedArray(entries, itemSchema, format, resolver);
   }
 
   if (first.type === "append") {
@@ -776,7 +780,7 @@ function assembleArray(
     if (stripped.every((e) => e.segments.length === 0)) {
       return stripped.map((e) => coerceLeaf(e.value, itemSchema));
     }
-    return groupAppendEntries(stripped, itemSchema, resolver);
+    return groupAppendEntries(stripped, itemSchema, format, resolver);
   }
 
   return [];
@@ -784,11 +788,12 @@ function assembleArray(
 
 /** Group entries by explicit numeric index. */
 function assembleIndexedArray(
-  entries: BracketEntry[],
+  entries: KeyEntry[],
   itemSchema: Schema | null,
+  format: FormFormat,
   resolver?: RefResolver,
 ): unknown[] {
-  const byIndex = new Map<number, BracketEntry[]>();
+  const byIndex = new Map<number, KeyEntry[]>();
   for (const entry of entries) {
     const seg = entry.segments[0];
     if (!seg || seg.type !== "index") continue;
@@ -800,7 +805,7 @@ function assembleIndexedArray(
   const result: unknown[] = [];
   for (const idx of [...byIndex.keys()].sort((a, b) => a - b)) {
     const group = byIndex.get(idx);
-    if (group) result.push(assembleValue(group, itemSchema, resolver));
+    if (group) result.push(assembleValue(group, itemSchema, format, resolver));
   }
   return result;
 }
@@ -811,11 +816,12 @@ function assembleIndexedArray(
  * current element appears again.
  */
 function groupAppendEntries(
-  entries: BracketEntry[],
+  entries: KeyEntry[],
   itemSchema: Schema | null,
+  format: FormFormat,
   resolver?: RefResolver,
 ): unknown[] {
-  const elements: BracketEntry[][] = [[]];
+  const elements: KeyEntry[][] = [[]];
   const seen = new Set<string>();
 
   for (const entry of entries) {
@@ -834,19 +840,20 @@ function groupAppendEntries(
 
   return elements
     .filter((g) => g.length > 0)
-    .map((group) => assembleValue(group, itemSchema, resolver));
+    .map((group) => assembleValue(group, itemSchema, format, resolver));
 }
 
 /** Assemble an object by grouping entries by first key segment. */
 function assembleObject(
-  entries: BracketEntry[],
+  entries: KeyEntry[],
   schema: Schema | null,
+  format: FormFormat,
   resolver?: RefResolver,
 ): Record<string, unknown> {
   const resolved = (schema && typeof schema !== "boolean") ? schema : null;
   const props = resolved ? effectiveProperties(resolved) : null;
 
-  const groups = new Map<string, BracketEntry[]>();
+  const groups = new Map<string, KeyEntry[]>();
   for (const entry of entries) {
     const seg = entry.segments[0];
     if (!seg || seg.type !== "key") continue;
@@ -858,7 +865,7 @@ function assembleObject(
   const result: Record<string, unknown> = Object.create(null);
   for (const [key, subEntries] of groups) {
     const propSchema = resolve(props?.[key] ?? null, resolver) ?? null;
-    result[key] = assembleValue(subEntries, propSchema, resolver);
+    result[key] = assembleValue(subEntries, propSchema, format, resolver);
   }
   return result;
 }
