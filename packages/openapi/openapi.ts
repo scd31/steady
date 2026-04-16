@@ -1,7 +1,19 @@
 // Complete OpenAPI 3.0/3.1 type definitions
 // Based on OpenAPI Specification v3.1.0
 
+import { isPlainObject } from "@steady/json-pointer";
 import type { Schema } from "@steady/json-schema";
+
+/**
+ * Type guard that narrows `unknown` to `ReferenceObject`.
+ *
+ * An OpenAPI Reference Object is any plain object with a `$ref: string`
+ * field. Per OpenAPI 3.1, references are structurally identified by the
+ * presence of this field, not by a discriminator keyword.
+ */
+export function isReference(value: unknown): value is ReferenceObject {
+  return isPlainObject(value) && typeof value["$ref"] === "string";
+}
 
 export interface OpenAPIRaw {
   openapi: string;

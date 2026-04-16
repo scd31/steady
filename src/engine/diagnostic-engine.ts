@@ -17,7 +17,7 @@
 
 import type { Schema } from "@steady/json-schema";
 import { effectiveType, isObjectSchema } from "@steady/json-schema";
-import type { EncodingObject } from "@steady/openapi";
+import type { MediaTypeEssence } from "@steady/media-type";
 import {
   formatFragmentPointer,
   type FragmentPointer,
@@ -103,11 +103,12 @@ export interface BodySchemaInfo {
   /** Whether the request body is required (requestBody.required in OpenAPI). */
   required: boolean;
   /**
-   * Per-property encoding metadata declared on the matched media type
-   * (OpenAPI 3.x `content.<mediaType>.encoding`). Undefined when no
-   * `encoding` object is present on the spec.
+   * Per-property content type map for multipart request bodies.
+   * Populated only when the matched media type is `multipart/form-data`.
+   * Values are parsed `MediaTypeEssence` so consumers classify with
+   * `@steady/media-type` predicates instead of re-parsing strings.
    */
-  encoding?: Record<string, EncodingObject>;
+  partContentTypes?: Record<string, MediaTypeEssence>;
 }
 
 /** Validates data against a JSON Schema, producing a validation tree. */

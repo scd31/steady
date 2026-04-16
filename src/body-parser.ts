@@ -197,12 +197,13 @@ async function parseFormBody(
     formObjectFormat: options?.formObjectFormat ?? "flat",
     schema: options?.schema,
     resolveSchema: options?.resolveSchema,
+    partContentTypes: options?.partContentTypes,
   };
 
   if (isMultipartFormData(mediaType)) {
     const formData = await req.formData();
     const rawFormKeys = [...formData.keys()];
-    const parsed = parseFormData(formData, parserOptions);
+    const parsed = await parseFormData(formData, parserOptions);
     return { body: parsed.data, rawFormKeys };
   }
 

@@ -19,9 +19,15 @@ import {
   isFragmentPointer,
   isPlainObject,
 } from "@steady/json-pointer";
-import { essenceMatches, getMediaType } from "@steady/media-type";
+import {
+  essenceMatches,
+  getMediaType,
+  isMultipartFormData,
+  type MediaTypeEssence,
+} from "@steady/media-type";
+import { resolvePartContentTypes } from "./multipart.ts";
+import { isReference } from "./openapi.ts";
 import type {
-  EncodingObject,
   OpenAPIRaw,
   OperationObject,
   ParameterObject,
@@ -52,7 +58,13 @@ interface BodySchemaInfo {
   schema: Schema;
   schemaPath: FragmentPointer;
   required: boolean;
-  encoding?: Record<string, EncodingObject>;
+  /**
+   * Per-property content type map for multipart request bodies.
+   * Populated only when the matched media type is `multipart/form-data`.
+   * Values are parsed `MediaTypeEssence` so consumers classify with
+   * `@steady/media-type` predicates instead of re-parsing strings.
+   */
+  partContentTypes?: Record<string, MediaTypeEssence>;
 }
 
 // ── Type guards ────────────────────────────────────────────────────
@@ -215,7 +227,7 @@ export class OpenAPISpec {
 
     // Resolve $ref if needed
     let requestBody: RequestBodyObject;
-    if ("$ref" in operation.requestBody) {
+    if (isReference(operation.requestBody)) {
       const resolved = this.resolveRef(operation.requestBody.$ref);
       if (!isRequestBodyLike(resolved)) return null;
       requestBody = resolved;
@@ -230,18 +242,21 @@ export class OpenAPISpec {
     if (!requestEssence) return null;
 
     let matchedKey: string | null = null;
+    let matchedEssence: MediaTypeEssence | null = null;
     for (const key of Object.keys(requestBody.content)) {
       const keyEssence = getMediaType(key);
       if (!keyEssence) continue;
       if (keyEssence === requestEssence) {
         matchedKey = key;
+        matchedEssence = keyEssence;
         break;
       }
       if (!matchedKey && essenceMatches(requestEssence, keyEssence)) {
         matchedKey = key;
+        matchedEssence = keyEssence;
       }
     }
-    if (!matchedKey) return null;
+    if (!matchedKey || !matchedEssence) return null;
 
     const mediaContent = requestBody.content[matchedKey];
     if (!mediaContent?.schema) return null;
@@ -262,11 +277,15 @@ export class OpenAPISpec {
     );
     if (!schema) return null;
 
+    const partContentTypes = isMultipartFormData(matchedEssence)
+      ? resolvePartContentTypes(mediaContent, this.registry)
+      : undefined;
+
     return {
       schema,
       schemaPath: schemaPath ?? inlinePointer,
       required: requestBody.required === true,
-      encoding: mediaContent.encoding,
+      partContentTypes,
     };
   }
 
@@ -301,7 +320,7 @@ export class OpenAPISpec {
 
     // Resolve $ref if needed
     let requestBody: RequestBodyObject;
-    if ("$ref" in operation.requestBody) {
+    if (isReference(operation.requestBody)) {
       const resolved = this.resolveRef(operation.requestBody.$ref);
       if (!isRequestBodyLike(resolved)) return null;
       requestBody = resolved;
@@ -338,7 +357,7 @@ export class OpenAPISpec {
     if (!responseObjOrRef) return null;
 
     // Resolve $ref if needed
-    if ("$ref" in responseObjOrRef) {
+    if (isReference(responseObjOrRef)) {
       const resolved = this.resolveRef(responseObjOrRef.$ref);
       if (!isResponseLike(resolved)) return null;
       return resolved;
@@ -393,7 +412,7 @@ export class OpenAPISpec {
     method: string | undefined,
     index: number,
   ): { param: ParameterObject; pointer: FragmentPointer } | undefined {
-    if ("$ref" in paramOrRef) {
+    if (isReference(paramOrRef)) {
       const resolved = this.resolveRef(paramOrRef.$ref);
       if (!isParameterLike(resolved)) return undefined;
       // Pointer for the $ref target (already a fragment pointer like #/components/...)
@@ -434,7 +453,7 @@ export class OpenAPISpec {
     if (!rawSchema) return { schema: null, schemaPath: null };
 
     // If schema is a $ref, resolve through the registry
-    if ("$ref" in rawSchema && typeof rawSchema.$ref === "string") {
+    if (isReference(rawSchema)) {
       const resolved = this.resolveRef(rawSchema.$ref);
       if (isSchema(resolved)) {
         const schemaPath: FragmentPointer = isFragmentPointer(rawSchema.$ref)

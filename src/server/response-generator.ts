@@ -1,7 +1,7 @@
 import type { ResponseObject } from "../types.ts";
-import { HEADERS, isReference } from "../types.ts";
+import { HEADERS } from "../types.ts";
 import type { ReferenceObject } from "@steady/openapi";
-import { OpenAPISpec } from "@steady/openapi";
+import { isReference, OpenAPISpec } from "@steady/openapi";
 import { RegistryResponseGenerator } from "@steady/json-schema";
 import type {
   GenerateOptions,

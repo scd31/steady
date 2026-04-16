@@ -208,6 +208,215 @@ Deno.test({
   },
 });
 
+// ── JSON-encoded multipart parts ───────────────────────────────────
+
+Deno.test({
+  name:
+    "multipart: JSON-encoded object part with explicit encoding validates as object",
+  ...serverTestOpts,
+  fn: async () => {
+    await withServer(SPEC, async (ctx) => {
+      const form = new FormData();
+      form.append(
+        "metadata",
+        new File(
+          ['{"main_module":"worker.js","compatibility_date":"2024-01-01"}'],
+          "blob",
+          { type: "application/json" },
+        ),
+      );
+      form.append(
+        "script",
+        new File(["export default {}"], "worker.js", {
+          type: "application/javascript",
+        }),
+      );
+
+      const response = await ctx.fetch("/workers", {
+        method: "POST",
+        body: form,
+      });
+
+      const diags = diagnosticHeaders(response);
+      assertEquals(
+        response.status,
+        200,
+        `Expected 200, got ${response.status}. ` +
+          `error-count=${diags["x-steady-error-count"]}, ` +
+          `error-1=${diags["x-steady-error-1-code"]}: ${
+            diags["x-steady-error-1-message"]
+          }`,
+      );
+      assertEquals(diags["x-steady-error-count"], "0");
+      await response.body?.cancel();
+    });
+  },
+});
+
+Deno.test({
+  name:
+    "multipart: implicit JSON encoding for object property without explicit encoding",
+  ...serverTestOpts,
+  fn: async () => {
+    await withServer(SPEC, async (ctx) => {
+      const form = new FormData();
+      form.append(
+        "config",
+        new File(
+          ['{"region":"us-east-1","replicas":3}'],
+          "blob",
+          { type: "application/json" },
+        ),
+      );
+      form.append(
+        "source",
+        new File(["console.log('hi')"], "app.js", {
+          type: "application/javascript",
+        }),
+      );
+
+      const response = await ctx.fetch("/deployments", {
+        method: "POST",
+        body: form,
+      });
+
+      const diags = diagnosticHeaders(response);
+      assertEquals(
+        response.status,
+        200,
+        `Expected 200, got ${response.status}. ` +
+          `error-count=${diags["x-steady-error-count"]}, ` +
+          `error-1=${diags["x-steady-error-1-code"]}: ${
+            diags["x-steady-error-1-message"]
+          }`,
+      );
+      assertEquals(diags["x-steady-error-count"], "0");
+      await response.body?.cancel();
+    });
+  },
+});
+
+Deno.test({
+  name:
+    "multipart: malformed JSON in a JSON-typed part produces validation error, not crash",
+  ...serverTestOpts,
+  fn: async () => {
+    await withServer(SPEC, async (ctx) => {
+      const form = new FormData();
+      form.append(
+        "metadata",
+        new File(
+          ["not valid json {{{"],
+          "blob",
+          { type: "application/json" },
+        ),
+      );
+      form.append(
+        "script",
+        new File(["export default {}"], "worker.js", {
+          type: "application/javascript",
+        }),
+      );
+
+      const response = await ctx.fetch("/workers", {
+        method: "POST",
+        body: form,
+      });
+
+      // Should get a validation error, not a 500
+      assertEquals(response.status < 500, true);
+      await response.body?.cancel();
+    });
+  },
+});
+
+Deno.test({
+  name:
+    "multipart: binary file with application/json type and format:binary schema stays as file",
+  ...serverTestOpts,
+  fn: async () => {
+    await withServer(SPEC, async (ctx) => {
+      const form = new FormData();
+      form.append(
+        "metadata",
+        new File(
+          ['{"main_module":"worker.js"}'],
+          "blob",
+          { type: "application/json" },
+        ),
+      );
+      // script has format: binary in schema. Even though we give it
+      // application/json type, it should be treated as a file upload.
+      form.append(
+        "script",
+        new File(['{"not":"parsed"}'], "data.json", {
+          type: "application/json",
+        }),
+      );
+
+      const response = await ctx.fetch("/workers", {
+        method: "POST",
+        body: form,
+      });
+
+      const diags = diagnosticHeaders(response);
+      assertEquals(
+        response.status,
+        200,
+        `Expected 200, got ${response.status}. ` +
+          `error-count=${diags["x-steady-error-count"]}, ` +
+          `error-1=${diags["x-steady-error-1-code"]}: ${
+            diags["x-steady-error-1-message"]
+          }`,
+      );
+      assertEquals(diags["x-steady-error-count"], "0");
+      await response.body?.cancel();
+    });
+  },
+});
+
+Deno.test({
+  name:
+    "multipart: two JSON-array parts for the same key produce an array-of-arrays",
+  ...serverTestOpts,
+  fn: async () => {
+    // Regression guard. An earlier implementation merged multiple
+    // JSON parts via `Array.isArray(existing)` and would concatenate
+    // when the first value happened to be an array, losing the outer
+    // grouping. With the bucket-based merge, each part is one element
+    // of the outer array regardless of its own shape.
+    await withServer(SPEC, async (ctx) => {
+      const form = new FormData();
+      form.append(
+        "items",
+        new File(["[1,2,3]"], "blob", { type: "application/json" }),
+      );
+      form.append(
+        "items",
+        new File(["[4,5,6]"], "blob", { type: "application/json" }),
+      );
+
+      const response = await ctx.fetch("/batches", {
+        method: "POST",
+        body: form,
+      });
+
+      const diags = diagnosticHeaders(response);
+      assertEquals(
+        response.status,
+        200,
+        `Expected 200, got ${response.status}. ` +
+          `error-count=${diags["x-steady-error-count"]}, ` +
+          `error-1=${diags["x-steady-error-1-code"]}: ${
+            diags["x-steady-error-1-message"]
+          }`,
+      );
+      assertEquals(diags["x-steady-error-count"], "0");
+      await response.body?.cancel();
+    });
+  },
+});
+
 // ── Per-request header override ─────────────────────────────────────
 
 Deno.test({

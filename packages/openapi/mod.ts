@@ -6,6 +6,7 @@ export { ParseError, SpecValidationError, SteadyError } from "./errors.ts";
 export { SpecValidationError as ValidationError } from "./errors.ts";
 export type { ErrorContext } from "./errors.ts";
 export * from "./openapi.ts";
+export { resolvePartContentTypes } from "./multipart.ts";
 import _metaschema from "./schemas/openapi-3.1.json" with { type: "json" };
 
 /**

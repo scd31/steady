@@ -2,7 +2,6 @@
 
 import type { Diagnostic, IssueCategory } from "./diagnostic.ts";
 import type { LogLevel } from "./logging/mod.ts";
-import { isPlainObject } from "@steady/json-pointer";
 import type {
   ConcreteArrayFormat,
   ConcreteObjectFormat,
@@ -302,11 +301,7 @@ export type {
   SchemaObject,
 } from "@steady/openapi";
 
-import type { ReferenceObject } from "@steady/openapi";
-
-/**
- * Type guard to check if a value is a ReferenceObject
- */
-export function isReference(value: unknown): value is ReferenceObject {
-  return isPlainObject(value) && typeof value.$ref === "string";
-}
+// Re-export the canonical isReference primitive from @steady/openapi
+// so that downstream modules can import it alongside the types it
+// narrows without reaching across packages every time.
+export { isReference } from "@steady/openapi";

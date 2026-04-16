@@ -57,6 +57,9 @@ export interface TypeSchema extends BaseSchema {
   minLength?: number;
   pattern?: string;
   format?: string;
+  contentEncoding?: string;
+  contentMediaType?: string;
+  contentSchema?: Schema;
 
   // Array validation
   items?: Schema | Schema[];

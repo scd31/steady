@@ -14,13 +14,13 @@ import type { PipelineTimer } from "../timing.ts";
 import {
   HEADERS,
   isHttpMethod,
-  isReference,
   isValidArrayFormat,
   isValidFormArrayFormat,
   isValidFormObjectFormat,
   isValidObjectFormat,
   VERSION,
 } from "../types.ts";
+import { isReference } from "@steady/openapi";
 import type { OpenAPIRaw } from "@steady/openapi";
 import { GenerationError } from "../errors.ts";
 import { SchemaRegistry } from "@steady/json-schema";
@@ -354,6 +354,7 @@ export class MockServer {
           formArrayFormat,
           formObjectFormat,
           schema: bodyInfo?.schema,
+          partContentTypes: bodyInfo?.partContentTypes,
           resolveSchema: (schema) => {
             if (isReference(schema)) {
               const resolved = this.specDoc.resolveRef(schema.$ref);
