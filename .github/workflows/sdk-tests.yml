@@ -23,6 +23,7 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
+          deno-version: "2.7.11"
           cache: true
 
       - name: List SDKs
@@ -52,6 +53,7 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
+          deno-version: "2.7.11"
           cache: true
 
       - name: Setup Go

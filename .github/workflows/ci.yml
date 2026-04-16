@@ -20,6 +20,7 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
+          deno-version: "2.7.11"
           cache: true
 
       - name: Lint code
@@ -39,6 +40,7 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
+          deno-version: "2.7.11"
           cache: true
 
       - name: Run tests
@@ -58,6 +60,7 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
+          deno-version: "2.7.11"
           cache: true
 
       - name: Run fuzz tests
@@ -76,6 +79,7 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
+          deno-version: "2.7.11"
           cache: true
 
       - name: Setup Node.js
