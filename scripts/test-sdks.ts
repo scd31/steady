@@ -393,9 +393,7 @@ async function runGoTests(sdkPath: string): Promise<boolean> {
   const stderr = new TextDecoder().decode(testResult.stderr);
   const output = stdout + stderr;
 
-  // Show last 30 lines
-  const lines = output.trim().split("\n");
-  console.log(lines.slice(-30).join("\n"));
+  console.log(output.trimEnd());
 
   // Save output for analysis
   await Deno.writeTextFile(path.join(sdkPath, ".test-output.log"), output);
@@ -470,7 +468,7 @@ async function runTypescriptTests(sdkPath: string): Promise<boolean> {
     const bootstrapResult = await bootstrapCmd.output();
     const output = new TextDecoder().decode(bootstrapResult.stdout) +
       new TextDecoder().decode(bootstrapResult.stderr);
-    console.log(output.trim().split("\n").slice(-5).join("\n"));
+    console.log(output.trimEnd());
 
     if (!bootstrapResult.success) {
       warn("Bootstrap had issues, continuing anyway...");
@@ -522,9 +520,7 @@ async function runTypescriptTests(sdkPath: string): Promise<boolean> {
   // Save output
   await Deno.writeTextFile(path.join(sdkPath, ".test-output.log"), output);
 
-  // Show last 30 lines
-  const lines = output.trim().split("\n");
-  console.log(lines.slice(-30).join("\n"));
+  console.log(output.trimEnd());
 
   await printLogs(sdkPath, testResult);
 
@@ -549,8 +545,7 @@ async function runPythonTests(sdkPath: string): Promise<boolean> {
     const bootstrapResult = await bootstrapCmd.output();
     const output = new TextDecoder().decode(bootstrapResult.stdout) +
       new TextDecoder().decode(bootstrapResult.stderr);
-    // Show last few lines of bootstrap
-    console.log(output.trim().split("\n").slice(-5).join("\n"));
+    console.log(output.trimEnd());
 
     if (!bootstrapResult.success) {
       warn("Bootstrap had issues, continuing anyway...");
@@ -613,9 +608,7 @@ async function runPythonTests(sdkPath: string): Promise<boolean> {
   // Save output
   await Deno.writeTextFile(path.join(sdkPath, ".test-output.log"), output);
 
-  // Show last 30 lines
-  const lines = output.trim().split("\n");
-  console.log(lines.slice(-30).join("\n"));
+  console.log(output.trimEnd());
 
   await printLogs(sdkPath, testResult);
 
@@ -846,6 +839,6 @@ async function printLogs(sdkPath: string, testResult: Deno.CommandOutput) {
   if (!testResult.success) {
     log("  Log content:");
     const logContent = await Deno.readTextFile(logPath);
-    console.log(dim(logContent.split("\n").slice(-10).join("\n")));
+    console.log(dim(logContent.trimEnd()));
   }
 }
