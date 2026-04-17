@@ -99,6 +99,60 @@ Deno.test("resolvePartContentTypes", async (t) => {
     });
   });
 
+  // ── Reconciliation: explicit JSON vs non-JSON schema ─────────────
+
+  await t.step(
+    "explicit application/json on type: string primitive -> text/plain",
+    () => {
+      // The value is a string whose contents happen to be JSON text;
+      // the Content-Type is transport metadata, not a decode directive.
+      const mt: MediaTypeObject = {
+        schema: {
+          type: "object",
+          properties: { manifest: { type: "string" } },
+        },
+        encoding: { manifest: { contentType: "application/json" } },
+      };
+      assertEquals(resolvePartContentTypes(mt, registryWith({})), {
+        manifest: TEXT_PLAIN_ESSENCE,
+      });
+    },
+  );
+
+  await t.step(
+    "explicit application/json on format: binary -> application/octet-stream",
+    () => {
+      const mt: MediaTypeObject = {
+        schema: {
+          type: "object",
+          properties: {
+            blob: { type: "string", format: "binary" },
+          },
+        },
+        encoding: { blob: { contentType: "application/json" } },
+      };
+      assertEquals(resolvePartContentTypes(mt, registryWith({})), {
+        blob: OCTET_STREAM_ESSENCE,
+      });
+    },
+  );
+
+  await t.step(
+    "explicit +json suffix on type: string -> text/plain",
+    () => {
+      const mt: MediaTypeObject = {
+        schema: {
+          type: "object",
+          properties: { payload: { type: "string" } },
+        },
+        encoding: { payload: { contentType: "application/vnd.custom+json" } },
+      };
+      assertEquals(resolvePartContentTypes(mt, registryWith({})), {
+        payload: TEXT_PLAIN_ESSENCE,
+      });
+    },
+  );
+
   // ── Implicit from schema ─────────────────────────────────────────
 
   await t.step("type: object -> application/json", () => {

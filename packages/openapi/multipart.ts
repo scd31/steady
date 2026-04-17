@@ -26,7 +26,11 @@ import {
   type Schema,
   type SchemaRegistry,
 } from "@steady/json-schema";
-import { getMediaType, type MediaTypeEssence } from "@steady/media-type";
+import {
+  getMediaType,
+  isJsonMediaType,
+  type MediaTypeEssence,
+} from "@steady/media-type";
 import { isReference } from "./openapi.ts";
 import type {
   MediaTypeObject,
@@ -75,15 +79,31 @@ export function resolvePartContentTypes(
   }
 
   for (const name of names) {
-    const explicit = mediaType.encoding?.[name]?.contentType;
-    if (explicit !== undefined) {
-      const essence = getMediaType(explicit);
-      if (essence) result[name] = essence;
+    const propSchema = rootSchema?.properties?.[name];
+    const implicit = implicitEssence(propSchema, registry);
+
+    const explicitRaw = mediaType.encoding?.[name]?.contentType;
+    if (explicitRaw !== undefined) {
+      const explicit = getMediaType(explicitRaw);
+      if (!explicit) continue;
+
+      // Reconcile explicit Content-Type with the schema. When the
+      // explicit encoding is JSON but the schema implies a non-JSON
+      // value (primitive -> text/plain, format:binary -> octet-stream),
+      // the schema wins. The explicit Content-Type is transport
+      // metadata about the part's serialization; the API value is
+      // still a string or bytes, not a parsed JSON tree. This is the
+      // pattern used by specs that describe a string whose contents
+      // happen to be JSON text.
+      if (implicit && isJsonMediaType(explicit) && !isJsonMediaType(implicit)) {
+        result[name] = implicit;
+        continue;
+      }
+      result[name] = explicit;
       continue;
     }
-    const propSchema = rootSchema?.properties?.[name];
-    const essence = implicitEssence(propSchema, registry);
-    if (essence) result[name] = essence;
+
+    if (implicit) result[name] = implicit;
   }
 
   return result;

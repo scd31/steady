@@ -162,6 +162,32 @@ paths:
                   - ok
               example:
                 ok: true
+  /manifests:
+    post:
+      operationId: CreateManifest
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            encoding:
+              manifest:
+                contentType: application/json
+            schema:
+              $ref: "#/components/schemas/CreateManifestBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required:
+                  - ok
+              example:
+                ok: true
 components:
   schemas:
     CreateSkillVersionBody:
@@ -242,3 +268,10 @@ components:
               type: integer
       required:
         - items
+    CreateManifestBody:
+      type: object
+      properties:
+        manifest:
+          type: string
+      required:
+        - manifest

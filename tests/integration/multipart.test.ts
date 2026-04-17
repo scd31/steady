@@ -417,6 +417,42 @@ Deno.test({
   },
 });
 
+// ── type: string + encoding contentType: application/json ─────────
+
+Deno.test({
+  name:
+    "multipart: type: string with encoding application/json keeps value as string",
+  ...serverTestOpts,
+  fn: async () => {
+    // When the schema says the field is a string but encoding says
+    // the part's Content-Type is application/json, the value is a
+    // string whose contents happen to be JSON text. Steady must not
+    // decode it: schema wins over transport metadata.
+    await withServer(SPEC, async (ctx) => {
+      const form = new FormData();
+      form.append("manifest", '{"index.html":"abc123","style.css":"def456"}');
+
+      const response = await ctx.fetch("/manifests", {
+        method: "POST",
+        body: form,
+      });
+
+      const diags = diagnosticHeaders(response);
+      assertEquals(
+        response.status,
+        200,
+        `Expected 200, got ${response.status}. ` +
+          `error-count=${diags["x-steady-error-count"]}, ` +
+          `error-1=${diags["x-steady-error-1-code"]}: ${
+            diags["x-steady-error-1-message"]
+          }`,
+      );
+      assertEquals(diags["x-steady-error-count"], "0");
+      await response.body?.cancel();
+    });
+  },
+});
+
 // ── Per-request header override ─────────────────────────────────────
 
 Deno.test({
