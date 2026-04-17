@@ -10,12 +10,14 @@
 ### Bug Fixes
 
 - **ci:** pin Deno to 2.7.11 to avoid node:http crash
-- **generator:** thread PointerPath through SchemaRegistry and eliminate response fabrication
+- **generator:** thread PointerPath through SchemaRegistry and eliminate
+  response fabrication
 
 ### Code Refactoring
 
 - unify form parsing into single schema-driven kernel
-- migrate openapi, server, and streaming pointer builders to formatFragmentPointer
+- migrate openapi, server, and streaming pointer builders to
+  formatFragmentPointer
 - **engine:** migrate spec-analyzer and diagnostic-engine to PointerPath
 - **json-schema:** thread PointerPath through schema-indexer and tree-validator
 
