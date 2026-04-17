@@ -188,6 +188,29 @@ paths:
                   - ok
               example:
                 ok: true
+  /files:
+    post:
+      operationId: CreateFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/CreateFileBody"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                required:
+                  - id
+              example:
+                id: file_123
 components:
   schemas:
     CreateSkillVersionBody:
@@ -268,6 +291,34 @@ components:
               type: integer
       required:
         - items
+    ExpiresAfter:
+      type: object
+      properties:
+        anchor:
+          type: string
+          enum:
+            - created_at
+        seconds:
+          type: integer
+      required:
+        - anchor
+        - seconds
+    CreateFileBody:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+        purpose:
+          type: string
+          enum:
+            - assistants
+            - batch
+        expires_after:
+          $ref: "#/components/schemas/ExpiresAfter"
+      required:
+        - file
+        - purpose
     CreateManifestBody:
       type: object
       properties:

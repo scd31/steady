@@ -417,6 +417,142 @@ Deno.test({
   },
 });
 
+// ── Nested object property, flat SDK serialization ─────────────────
+
+Deno.test({
+  name:
+    "multipart: nested object sent as dot-notation flat keys unflattens to object",
+  ...serverTestOpts,
+  fn: async () => {
+    // SDKs (e.g. Go) serialize nested object properties as flat
+    // dot-notation keys rather than JSON-encoded parts. The schema
+    // says expires_after is an object, so partContentTypes labels it
+    // JSON. The form keys `expires_after.anchor` and
+    // `expires_after.seconds` do not match `expires_after` exactly,
+    // so they fall through to the kernel's dot-unflattening path.
+    await withServer(SPEC, async (ctx) => {
+      const form = new FormData();
+      form.append(
+        "file",
+        new File(["file contents"], "data.bin", {
+          type: "application/octet-stream",
+        }),
+      );
+      form.append("purpose", "assistants");
+      form.append("expires_after.anchor", "created_at");
+      form.append("expires_after.seconds", "3600");
+
+      const response = await ctx.fetch("/files", {
+        method: "POST",
+        body: form,
+      });
+
+      const diags = diagnosticHeaders(response);
+      assertEquals(
+        response.status,
+        200,
+        `Expected 200, got ${response.status}. ` +
+          `error-count=${diags["x-steady-error-count"]}, ` +
+          `error-1=${diags["x-steady-error-1-code"]}: ${
+            diags["x-steady-error-1-message"]
+          }`,
+      );
+      assertEquals(diags["x-steady-error-count"], "0");
+      await response.body?.cancel();
+    });
+  },
+});
+
+Deno.test({
+  name:
+    "multipart: nested object sent as JSON-encoded part validates as object",
+  ...serverTestOpts,
+  fn: async () => {
+    // Same spec as the flat-keys test, but this time the SDK sends
+    // expires_after as a single JSON-encoded part. partContentTypes
+    // labels the key JSON, so the parser decodes it inline.
+    await withServer(SPEC, async (ctx) => {
+      const form = new FormData();
+      form.append(
+        "file",
+        new File(["file contents"], "data.bin", {
+          type: "application/octet-stream",
+        }),
+      );
+      form.append("purpose", "assistants");
+      form.append(
+        "expires_after",
+        new File(
+          ['{"anchor":"created_at","seconds":3600}'],
+          "blob",
+          { type: "application/json" },
+        ),
+      );
+
+      const response = await ctx.fetch("/files", {
+        method: "POST",
+        body: form,
+      });
+
+      const diags = diagnosticHeaders(response);
+      assertEquals(
+        response.status,
+        200,
+        `Expected 200, got ${response.status}. ` +
+          `error-count=${diags["x-steady-error-count"]}, ` +
+          `error-1=${diags["x-steady-error-1-code"]}: ${
+            diags["x-steady-error-1-message"]
+          }`,
+      );
+      assertEquals(diags["x-steady-error-count"], "0");
+      await response.body?.cancel();
+    });
+  },
+});
+
+Deno.test({
+  name:
+    "multipart: nested object sent as bracketed flat keys unflattens to object",
+  ...serverTestOpts,
+  fn: async () => {
+    // Rails/PHP-style brackets serialization: `expires_after[anchor]`.
+    await withServer(
+      SPEC,
+      async (ctx) => {
+        const form = new FormData();
+        form.append(
+          "file",
+          new File(["file contents"], "data.bin", {
+            type: "application/octet-stream",
+          }),
+        );
+        form.append("purpose", "assistants");
+        form.append("expires_after[anchor]", "created_at");
+        form.append("expires_after[seconds]", "3600");
+
+        const response = await ctx.fetch("/files", {
+          method: "POST",
+          body: form,
+        });
+
+        const diags = diagnosticHeaders(response);
+        assertEquals(
+          response.status,
+          200,
+          `Expected 200, got ${response.status}. ` +
+            `error-count=${diags["x-steady-error-count"]}, ` +
+            `error-1=${diags["x-steady-error-1-code"]}: ${
+              diags["x-steady-error-1-message"]
+            }`,
+        );
+        assertEquals(diags["x-steady-error-count"], "0");
+        await response.body?.cancel();
+      },
+      { validator: { formObjectFormat: "brackets" } },
+    );
+  },
+});
+
 // ── type: string + encoding contentType: application/json ─────────
 
 Deno.test({
