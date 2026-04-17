@@ -650,3 +650,31 @@ Deno.test({
     });
   },
 });
+
+Deno.test({
+  name:
+    "empty response schema (application/json) returns valid JSON {}, not empty body",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    // Per JSON Schema semantics, `schema: {}` permits any instance.
+    // The generator has no shape to infer and returns null, but the
+    // HTTP response body for application/json must still be valid
+    // JSON. The HTTP layer falls back to {} so SDK clients don't
+    // crash inside response.json().
+    await withServer(
+      "./tests/specs/empty-response-schema.yaml",
+      async (ctx) => {
+        const response = await ctx.fetch("/any");
+        assertEquals(response.status, 200);
+        assertEquals(
+          response.headers.get("content-type"),
+          "application/json",
+        );
+        const text = await response.text();
+        assertEquals(text.length > 0, true, "body must not be empty");
+        assertEquals(JSON.parse(text), {});
+      },
+    );
+  },
+});

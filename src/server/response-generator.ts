@@ -234,6 +234,22 @@ export function generateResponseFromObject(
           minimal = true;
         }
       }
+
+      // Generator returns null when the schema gives it no shape to
+      // infer (e.g. `schema: {}` or `true`, which per JSON Schema
+      // accept any instance). An empty body is not valid JSON for
+      // the client, so at the HTTP boundary fall back to {}. Mirrors
+      // the "no content object" branch below.
+      if (
+        body === null &&
+        contentType &&
+        !NULL_BODY_STATUS_STRINGS.has(statusCode)
+      ) {
+        const essence = getMediaType(contentType);
+        if (essence && isJsonMediaType(essence)) {
+          body = {};
+        }
+      }
     }
   } else if (
     acceptsJson(acceptTypes) && !NULL_BODY_STATUS_STRINGS.has(statusCode)
