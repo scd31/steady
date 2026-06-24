@@ -22,7 +22,7 @@ const args = parseArgs(Deno.args, {
 
 // Get version from deno.json
 const denoJson = JSON.parse(await Deno.readTextFile("./deno.json"));
-const version = args._[0] as string || denoJson.version;
+const version = (args._[0] as string) || denoJson.version;
 
 if (!version) {
   console.error(
@@ -127,7 +127,7 @@ for (const platform of platforms) {
     version,
     description:
       `Platform-specific binary for @stdy/cli (${platform.os}-${platform.cpu})`,
-    license: "Elastic-2.0",
+    license: "MIT",
     repository: {
       type: "git",
       url: "git+https://github.com/dgellow/steady.git",
@@ -237,7 +237,7 @@ const mainPkgJson = {
   version,
   description:
     "OpenAPI 3 mock server. Validates SDKs against OpenAPI specs with clear error attribution.",
-  license: "Elastic-2.0",
+  license: "MIT",
   repository: {
     type: "git",
     url: "git+https://github.com/dgellow/steady.git",

@@ -4,12 +4,14 @@
 
 ### Bug Fixes
 
-- **server:** return valid JSON {} for application/json responses with permissive schema
+- **server:** return valid JSON {} for application/json responses with
+  permissive schema
 - **openapi:** keep multipart string parts as strings when encoding says JSON
 
 ### Tests
 
-- **multipart:** cover nested-object serialization as dots, brackets, and JSON part
+- **multipart:** cover nested-object serialization as dots, brackets, and JSON
+  part
 
 ### Chores
 
